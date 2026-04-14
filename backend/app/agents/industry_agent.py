@@ -11,6 +11,7 @@ from app.models.stock import Stock
 class IndustryAgent(BaseAgent):
     agent_type = "industry"
     max_age_days = 7  # refresh weekly
+    model = "claude-opus-4-20250514"
 
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         # Get the stock's sector/industry info

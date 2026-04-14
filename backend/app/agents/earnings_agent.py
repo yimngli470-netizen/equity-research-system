@@ -9,6 +9,7 @@ from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 class EarningsAgent(BaseAgent):
     agent_type = "earnings"
     max_age_days = 30  # refresh monthly or when new quarter drops
+    model = "claude-opus-4-20250514"
 
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         snapshot = await get_computed_metrics(db, ticker)
