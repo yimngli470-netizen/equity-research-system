@@ -9,16 +9,20 @@
 - [x] GitHub repo created (public): github.com/yimngli470-netizen/equity-research-system
 - [x] NVDA added as first test stock
 
-## Phase 2: Data Ingestion — NOT STARTED
-- [ ] `ingestion/prices.py` — fetch daily prices via yfinance
-- [ ] `ingestion/fundamentals.py` — fetch quarterly financials via yfinance
-- [ ] `ingestion/news.py` — fetch news articles via NewsAPI
-- [ ] `ingestion/transcripts.py` — fetch earnings transcripts via SEC EDGAR
-- [ ] `ingestion/insider.py` — fetch insider trades via SEC EDGAR
-- [ ] `ingestion/embeddings.py` — generate vector embeddings for documents
-- [ ] Wire all ingestion functions into `scheduler.py`
-- [ ] Add manual trigger endpoint: `POST /api/ingestion/run`
-- [ ] Test full ingestion pipeline for watchlist stocks
+## Phase 2: Data Ingestion — COMPLETE (2026-04-13)
+- [x] `ingestion/prices.py` — daily prices via yfinance (275 days per stock, upsert)
+- [x] `ingestion/fundamentals.py` — quarterly financials (income, cash flow, balance sheet)
+- [x] `ingestion/fundamentals.py` — valuation snapshots (forward P/E, PEG, P/S, EPS, margins)
+- [x] `ingestion/news.py` — factual news from Yahoo Finance (free, no API key)
+- [x] `ingestion/pipeline.py` — orchestrator with per-ticker error isolation
+- [x] `ingestion/scheduler.py` — daily cron at 21:30 UTC wired to full pipeline
+- [x] `api/ingestion.py` — manual trigger: `POST /api/ingestion/run`
+- [x] New endpoints: `GET /stocks/{ticker}/financials`, `GET /stocks/{ticker}/valuation`
+- [x] Valuations table + Alembic migration
+- [x] Tested: NVDA, MU, AAPL — all zero errors
+- [ ] `ingestion/transcripts.py` — earnings transcripts via SEC EDGAR (deferred to Phase 3)
+- [ ] `ingestion/insider.py` — insider trades via SEC EDGAR (deferred)
+- [ ] `ingestion/embeddings.py` — vector embeddings for documents (deferred to Phase 3)
 
 ## Phase 3: AI Research Agents — NOT STARTED
 - [ ] `agents/base.py` — shared agent logic (Claude API call, retry, structured output)
