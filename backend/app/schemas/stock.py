@@ -38,6 +38,50 @@ class DailyPriceResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FinancialResponse(BaseModel):
+    ticker: str
+    period: str
+    period_end_date: date
+    revenue: float | None
+    gross_profit: float | None
+    operating_income: float | None
+    net_income: float | None
+    eps: float | None
+    free_cash_flow: float | None
+    operating_cash_flow: float | None
+    total_debt: float | None
+    cash_and_equivalents: float | None
+    total_assets: float | None
+    total_equity: float | None
+    shares_outstanding: float | None
+
+    model_config = {"from_attributes": True}
+
+
+class ValuationResponse(BaseModel):
+    ticker: str
+    date: date
+    forward_pe: float | None
+    trailing_pe: float | None
+    peg_ratio: float | None
+    price_to_sales: float | None
+    price_to_book: float | None
+    ev_to_revenue: float | None
+    ev_to_ebitda: float | None
+    trailing_eps: float | None
+    forward_eps: float | None
+    earnings_growth: float | None
+    revenue_growth: float | None
+    gross_margins: float | None
+    operating_margins: float | None
+    profit_margins: float | None
+    market_cap: float | None
+    enterprise_value: float | None
+    shares_outstanding: float | None
+
+    model_config = {"from_attributes": True}
+
+
 class StockScoreResponse(BaseModel):
     ticker: str
     date: date

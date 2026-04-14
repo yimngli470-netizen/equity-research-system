@@ -6,6 +6,7 @@ from app.models.analysis import AnalysisReport
 from app.models.score import QuantFeature, StockScore
 from app.models.earnings import EarningsEvent
 from app.models.insider import InsiderTrade
+from app.models.valuation import Valuation
 
 __all__ = [
     "Stock",
@@ -18,4 +19,5 @@ __all__ = [
     "StockScore",
     "EarningsEvent",
     "InsiderTrade",
+    "Valuation",
 ]
