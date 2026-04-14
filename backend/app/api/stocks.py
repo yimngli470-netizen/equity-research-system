@@ -9,9 +9,13 @@ from app.models.stock import Stock
 from app.models.price import DailyPrice
 from app.models.score import StockScore
 from app.models.analysis import AnalysisReport
+from app.models.financial import Financial
+from app.models.valuation import Valuation
 from app.schemas.stock import (
     AnalysisReportResponse,
     DailyPriceResponse,
+    FinancialResponse,
+    ValuationResponse,
     StockCreate,
     StockResponse,
     StockScoreResponse,
@@ -105,6 +109,28 @@ async def get_prices(
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/{ticker}/financials", response_model=list[FinancialResponse])
+async def get_financials(ticker: str, limit: int = 8, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Financial)
+        .where(Financial.ticker == ticker.upper())
+        .order_by(Financial.period_end_date.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+@router.get("/{ticker}/valuation", response_model=ValuationResponse | None)
+async def get_latest_valuation(ticker: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Valuation)
+        .where(Valuation.ticker == ticker.upper())
+        .order_by(Valuation.date.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 @router.get("/{ticker}/scores", response_model=list[StockScoreResponse])
