@@ -24,23 +24,28 @@
 - [ ] `ingestion/insider.py` — insider trades via SEC EDGAR (deferred)
 - [ ] `ingestion/embeddings.py` — vector embeddings for documents (deferred to Phase 3)
 
-## Phase 3: AI Research Agents — NOT STARTED
-- [ ] `agents/base.py` — shared agent logic (Claude API call, retry, structured output)
-- [ ] `agents/news_agent.py` — news impact scoring and sentiment
-- [ ] `agents/earnings_agent.py` — earnings deep-dive, tone analysis
-- [ ] `agents/industry_agent.py` — cycle positioning, competitive landscape
-- [ ] `agents/valuation_agent.py` — DCF, multiples, target price range
-- [ ] `agents/orchestrator.py` — parallel agent execution per ticker
-- [ ] Frontend: render agent reports on StockDetail page
+## Phase 3: AI Research Agents — COMPLETE (2026-04-13)
+- [x] `agents/base.py` — shared agent logic (Claude API call, caching by max_age_days, structured JSON output)
+- [x] `agents/news_agent.py` — news impact scoring and sentiment (Sonnet 4, daily refresh)
+- [x] `agents/earnings_agent.py` — earnings deep-dive, trend analysis (Opus 4, monthly refresh)
+- [x] `agents/industry_agent.py` — cycle positioning, competitive landscape (Opus 4, weekly refresh)
+- [x] `agents/valuation_agent.py` — DCF, multiples, target price range (Opus 4, weekly refresh)
+- [x] `agents/orchestrator.py` — sequential agent execution per ticker with error isolation
+- [x] `ingestion/computed_metrics.py` — derived growth rates, margins, momentum for agent context
+- [x] `api/analysis.py` — POST /api/analysis/run, GET /api/analysis/agents
+- [x] Tested: all 4 agents on NVDA with reports cached in analysis_reports table
+- [ ] Frontend: render agent reports on StockDetail page (deferred to Phase 4/5)
 
-## Phase 4: Quant & Scoring — NOT STARTED
-- [ ] `quant/hard_features.py` — growth, profitability, valuation, momentum metrics
-- [ ] `quant/event_features.py` — earnings surprise, guidance, insider signals
-- [ ] `quant/ai_features.py` — sentiment, narrative change, risk, theme exposure
-- [ ] `quant/normalizer.py` — normalize all features to 0-1
-- [ ] `scoring/calculator.py` — weighted composite score
-- [ ] `scoring/weights.py` — configurable category weights
-- [ ] Frontend: score cards, breakdown bars, score history chart
+## Phase 4: Quant & Scoring — COMPLETE (2026-04-14)
+- [x] `quant/hard_features.py` — growth, profitability, valuation, momentum from computed metrics
+- [x] `quant/ai_features.py` — sentiment, risk, event, valuation features from agent JSONB reports
+- [x] `quant/normalizer.py` — piecewise linear normalization to 0-1 with per-feature configs
+- [x] `scoring/weights.py` — configurable category weights (7 categories, sum to 1.0) + signal thresholds
+- [x] `scoring/calculator.py` — weighted composite score, saves to quant_features + stock_scores tables
+- [x] `api/scoring.py` — POST /api/scoring/run, GET /api/scoring/weights, GET /api/scoring/features/{ticker}
+- [x] Frontend: ScoreCard shows composite score bar + signal badge on Dashboard
+- [x] Frontend: StockDetail has "Calculate Score" button, agent reports show summary with expandable raw JSON
+- [x] Tested: NVDA 0.76 STRONG_BUY (49 features), MU 0.77 STRONG_BUY (29), AAPL 0.60 HOLD (29)
 
 ## Phase 5: Decision Engine & Polish — NOT STARTED
 - [ ] `decision/engine.py` — rule-based signal generation

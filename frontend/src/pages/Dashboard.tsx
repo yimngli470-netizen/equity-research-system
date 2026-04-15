@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Stock } from '../api/client';
+import type { Stock, StockScore } from '../api/client';
 import { api } from '../api/client';
 import ScoreCard from '../components/ScoreCard';
 
 export default function Dashboard() {
   const [stocks, setStocks] = useState<Stock[]>([]);
+  const [scores, setScores] = useState<Record<string, StockScore | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,6 +24,19 @@ export default function Dashboard() {
       setLoading(true);
       const data = await api.stocks.list();
       setStocks(data);
+
+      // Fetch latest scores for each stock
+      const scoreMap: Record<string, StockScore | null> = {};
+      await Promise.all(
+        data.map(async (s) => {
+          try {
+            scoreMap[s.ticker] = await api.scores.latest(s.ticker);
+          } catch {
+            scoreMap[s.ticker] = null;
+          }
+        })
+      );
+      setScores(scoreMap);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load stocks');
     } finally {
@@ -101,7 +115,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {stocks.map((stock) => (
             <Link key={stock.ticker} to={`/stock/${stock.ticker}`} className="no-underline">
-              <ScoreCard stock={stock} />
+              <ScoreCard stock={stock} score={scores[stock.ticker]} />
             </Link>
           ))}
         </div>

@@ -79,5 +79,34 @@ export const api = {
       return request<AnalysisReport[]>(`/stocks/${ticker}/analysis${params}`);
     },
   },
+  scoring: {
+    run: (ticker: string, weights?: Record<string, number>) =>
+      request<{
+        ticker: string;
+        date: string;
+        growth_score: number;
+        profitability_score: number;
+        valuation_score: number;
+        momentum_score: number;
+        sentiment_score: number;
+        risk_score: number;
+        event_score: number;
+        composite_score: number;
+        signal: string;
+        feature_count: number;
+      }>('/scoring/run', {
+        method: 'POST',
+        body: JSON.stringify({ ticker, weights }),
+      }),
+    weights: () =>
+      request<{
+        weights: Record<string, number>;
+        thresholds: Record<string, number>;
+      }>('/scoring/weights'),
+    features: (ticker: string) =>
+      request<{ feature_name: string; feature_value: number; category: string }[]>(
+        `/scoring/features/${ticker}`
+      ),
+  },
   health: () => request<{ status: string; env: string }>('/health'),
 };
