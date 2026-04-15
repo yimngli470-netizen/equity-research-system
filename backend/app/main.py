@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.analysis import router as analysis_router
 from app.api.ingestion import router as ingestion_router
+from app.api.scoring import router as scoring_router
 from app.api.stocks import router as stocks_router
 from app.config import settings
 
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(stocks_router)
 app.include_router(ingestion_router)
 app.include_router(analysis_router)
+app.include_router(scoring_router)
 
 
 @app.get("/api/health")
