@@ -36,6 +36,7 @@ backend/
       document.py            #   Document (news articles, embedding Vector(1536))
       analysis.py            #   AnalysisReport (ticker, agent_type, run_date, report JSONB)
       score.py               #   QuantFeature (per-feature scores), StockScore (composite + signal)
+      decision.py            #   StockDecision (raw/final signal, confidence, risk_flags JSONB, reasoning)
       earnings.py            #   EarningsEvent (beat/miss, guidance)
       insider.py             #   InsiderTrade
     schemas/stock.py         # Pydantic response models with from_attributes = True
@@ -44,6 +45,7 @@ backend/
       ingestion.py           #   POST /api/ingestion/run
       analysis.py            #   POST /api/analysis/run, GET /api/analysis/agents
       scoring.py             #   POST /api/scoring/run, GET /api/scoring/weights, GET /api/scoring/features/{ticker}
+      decision.py            #   POST /api/decision/run, GET /api/decision/{ticker}/latest
     ingestion/               # Layer 1: data collection
       pipeline.py            #   run_full_ingestion() orchestrator
       prices.py              #   Daily prices via yfinance (upsert)
@@ -65,7 +67,9 @@ backend/
     scoring/                 # Layer 4: composite scoring
       weights.py             #   7-category weights (sum to 1.0) + signal thresholds (configurable)
       calculator.py          #   Weighted composite score → signal, saves to quant_features + stock_scores
-    decision/                # Layer 5: signal generation (Phase 5 — not yet implemented)
+    decision/                # Layer 5: decision engine
+      risk_flags.py          #   18 rules across 7 categories → CRITICAL/MAJOR/WATCH flags
+      engine.py              #   Adjusts raw signal based on flags, assesses confidence, saves to stock_decisions
   alembic/                   # DB migrations
 frontend/
   src/
@@ -98,6 +102,12 @@ frontend/
    → normalizer.py: normalize all features to 0-1
    → calculator.py: average features per category → weighted composite → signal
    → Save to quant_features + stock_scores tables
+
+4. POST /api/decision/run {ticker}
+   → Fetch latest stock_scores + quant_features from DB
+   → risk_flags.py: evaluate 18 rules across 7 categories → list of RiskFlag(level, rule, category, message)
+   → engine.py: adjust signal based on flags, assess confidence, generate reasoning
+   → Save to stock_decisions table
 ```
 
 ### Agent Caching Strategy
@@ -132,6 +142,52 @@ Each agent has a `max_age_days` setting. When triggered:
 
 Missing categories (no agent reports yet) default to 0.5 (neutral).
 
+### Decision Engine & Risk Flags
+The decision engine sits on top of the scoring system. The raw composite score is purely mathematical (weighted average). The decision engine adds rule-based judgment to catch specific red flags that a simple average might wash out.
+
+**Signal adjustment rules** (applied sequentially):
+1. Any **CRITICAL** flag → cap signal at HOLD (never recommend buying)
+2. Each **MAJOR** flag → downgrade signal by one step (max 2 downgrades from major flags)
+3. **WATCH** flags → informational only, no signal change
+
+Signal ladder: `SELL → REDUCE → HOLD → BUY → STRONG_BUY`
+
+**Confidence assessment** (how much to trust the signal):
+- **High**: 45+ features (all agents ran), ≤1 major flag
+- **Moderate**: decent data but some flags, or 1 critical, or ≤3 major
+- **Low**: <35 features (missing agent reports), or 2+ critical flags
+
+**Risk flag rules** (18 rules across 7 categories):
+
+| Level | Rule | Category | Condition (on normalized 0-1 features) |
+|-------|------|----------|---------------------------------------|
+| CRITICAL | ai_overvalued | valuation | `valuation_verdict_score < 0.15` — AI says significantly overvalued |
+| CRITICAL | severe_decline_12m | momentum | `momentum_12m < 0.1` — severe 12-month price decline |
+| CRITICAL | deteriorating_outlook | quality | `fwd_revenue_signal < 0.2` AND `fwd_margin_signal < 0.2` |
+| MAJOR | extreme_pe | valuation | `forward_pe < 0.05` — extremely elevated P/E |
+| MAJOR | high_peg | valuation | `peg_ratio < 0.1` — growth doesn't justify premium |
+| MAJOR | low_valuation_score | valuation | valuation category score `< 0.25` |
+| MAJOR | revenue_decline | growth | `revenue_yoy < 0.2` — revenue declining YoY |
+| MAJOR | negative_operating_margin | profitability | `operating_margin < 0.05` |
+| MAJOR | margin_compression | profitability | `gross_margin_change_yoy < 0.3` AND `operating_margin_change_yoy < 0.3` |
+| MAJOR | sharp_decline_3m | momentum | `momentum_3m < 0.15` |
+| MAJOR | low_earnings_quality | quality | `earnings_quality < 0.3` |
+| MAJOR | value_trap | quality | valuation score `> 0.75` but profitability score `< 0.3` |
+| WATCH | growth_deceleration | growth | `revenue_acceleration < 0.15` |
+| WATCH | inconsistent_growth | growth | `growth_consistency < 0.3` |
+| WATCH | op_margin_declining | profitability | `operating_margin_change_yoy < 0.2` (when no margin_compression) |
+| WATCH | negative_leverage | profitability | `operating_leverage < 0.2` |
+| WATCH | low_fcf_conversion | quality | `fcf_conversion < 0.1` |
+| WATCH | dead_cat_bounce | momentum | `momentum_1m > 0.7` AND `momentum_12m < 0.3` |
+| WATCH | negative_sentiment | sentiment | `news_sentiment < 0.15` |
+| WATCH | high_industry_risk | sentiment | `industry_risk_avg < 0.2` (inverted: high risk = low score) |
+| WATCH | weak_moat | sentiment | `moat_strength < 0.3` |
+| WATCH | growth_valuation_gap | valuation | growth score `> 0.8` but valuation score `< 0.3` |
+| WATCH | low_conviction | quality | all category scores between 0.35-0.65 |
+| WATCH | fwd_revenue_weak | quality | `fwd_revenue_signal < 0.2` (when no deteriorating_outlook) |
+
+Note: feature thresholds are on **normalized** values (0-1), not raw values. E.g., `forward_pe < 0.05` means the P/E is extremely high (normalized inverted: expensive = low score).
+
 ### Computed Metrics (not stored — derived on-the-fly)
 `ingestion/computed_metrics.py` builds a `ComputedSnapshot` from raw DB data:
 - QoQ and YoY growth rates for revenue, gross profit, operating income, net income, EPS
@@ -158,10 +214,12 @@ POST /api/scoring/run                     # Calculate score {ticker, weights?}
 GET  /api/scoring/weights                 # View default weights + thresholds
 GET  /api/scoring/features/{ticker}       # View all normalized features
 GET  /api/analysis/agents                 # List agents with cache settings + models
+POST /api/decision/run                    # Run decision engine {ticker}
+GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 ```
 
 ## Database
-- **12 tables** across models/. Key tables: `stocks`, `daily_prices`, `financials`, `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`
+- **13 tables** across models/. Key tables: `stocks`, `daily_prices`, `financials`, `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`, `stock_decisions`
 - Migrations via Alembic: `docker compose exec backend alembic upgrade head`
 - Postgres on host port 5433 (5432 used by local Postgres)
 
@@ -174,11 +232,10 @@ GET  /api/analysis/agents                 # List agents with cache settings + mo
 - Agent reports stored as JSONB for schema flexibility across agent types
 - Upserts use `on_conflict_do_update` on unique constraints for idempotent data ingestion
 
-## What's Not Yet Built (Phase 5)
-- `decision/engine.py` — rule-based signal generation with risk flags
+## What's Not Yet Built
 - Interactive DCF calculator (frontend)
 - Stock comparison page
 - Settings page (manage watchlist, adjust weights)
-- Scheduler wiring: auto-run agents + scoring after daily ingestion
+- Scheduler wiring: auto-run agents + scoring + decision after daily ingestion
 - Document embeddings (pgvector) not yet active
 - SEC EDGAR transcripts and insider trades ingestion deferred

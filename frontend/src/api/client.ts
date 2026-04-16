@@ -57,6 +57,25 @@ export interface AnalysisReport {
   created_at: string;
 }
 
+export interface RiskFlag {
+  level: string;
+  rule: string;
+  category: string;
+  message: string;
+}
+
+export interface Decision {
+  ticker: string;
+  date: string;
+  raw_signal: string;
+  raw_composite: number;
+  final_signal: string;
+  confidence: string;
+  risk_flags: RiskFlag[];
+  reasoning: string;
+  scores: Record<string, number>;
+}
+
 export const api = {
   stocks: {
     list: () => request<Stock[]>('/stocks/'),
@@ -107,6 +126,14 @@ export const api = {
       request<{ feature_name: string; feature_value: number; category: string }[]>(
         `/scoring/features/${ticker}`
       ),
+  },
+  decision: {
+    run: (ticker: string) =>
+      request<Decision>('/decision/run', {
+        method: 'POST',
+        body: JSON.stringify({ ticker }),
+      }),
+    latest: (ticker: string) => request<Decision | null>(`/decision/${ticker}/latest`),
   },
   health: () => request<{ status: string; env: string }>('/health'),
 };
