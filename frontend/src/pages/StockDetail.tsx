@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { Stock, StockScore, AnalysisReport, Decision, RiskFlag } from '../api/client';
 import { api } from '../api/client';
 import FinancialsTable from '../components/FinancialsTable';
@@ -132,6 +132,7 @@ function DecisionPanel({ decision }: { decision: Decision }) {
 
 export default function StockDetail() {
   const { ticker } = useParams<{ ticker: string }>();
+  const navigate = useNavigate();
   const [stock, setStock] = useState<Stock | null>(null);
   const [score, setScore] = useState<StockScore | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -212,6 +213,12 @@ export default function StockDetail() {
     }
   }
 
+  async function handleRemove() {
+    if (!ticker || !confirm(`Remove ${ticker} from your watchlist?`)) return;
+    await api.stocks.remove(ticker);
+    navigate('/');
+  }
+
   if (loading) return <div className="text-gray-500">Loading...</div>;
   if (!stock) return <div className="text-red-500">Stock {ticker} not found.</div>;
 
@@ -221,12 +228,20 @@ export default function StockDetail() {
         &larr; Back to Dashboard
       </Link>
 
-      <div className="flex items-baseline gap-4 mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">{stock.ticker}</h1>
-        <span className="text-xl text-gray-500">{stock.name}</span>
-        {stock.sector && (
-          <span className="text-sm bg-gray-100 text-gray-600 px-2 py-1 rounded">{stock.sector}</span>
-        )}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-baseline gap-4">
+          <h1 className="text-3xl font-bold text-gray-900">{stock.ticker}</h1>
+          <span className="text-xl text-gray-500">{stock.name}</span>
+          {stock.sector && (
+            <span className="text-sm bg-gray-100 text-gray-600 px-2 py-1 rounded">{stock.sector}</span>
+          )}
+        </div>
+        <button
+          onClick={handleRemove}
+          className="text-sm text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-transparent hover:border-red-200"
+        >
+          Remove Stock
+        </button>
       </div>
 
       {/* Price Chart */}
