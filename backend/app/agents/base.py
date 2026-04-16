@@ -65,8 +65,9 @@ class BaseAgent(ABC):
         system_prompt = self.get_system_prompt()
         user_prompt = self.get_user_prompt(ticker, context)
 
-        # Call Claude API
-        report = self._call_claude(system_prompt, user_prompt)
+        # Call Claude API in a thread to avoid blocking the async event loop
+        import asyncio
+        report = await asyncio.to_thread(self._call_claude, system_prompt, user_prompt)
 
         # Save to DB
         await self._save_report(db, ticker, report)

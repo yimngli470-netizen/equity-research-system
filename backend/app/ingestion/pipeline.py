@@ -1,5 +1,6 @@
 """Orchestrates the full ingestion pipeline for all active stocks."""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 
@@ -24,9 +25,41 @@ class IngestionResult:
     errors: list[str] = field(default_factory=list)
 
 
+async def _update_stock_info(ticker: str) -> None:
+    """Populate sector, industry, and name from yfinance if missing."""
+    import yfinance as yf
+
+    async with async_session() as db:
+        stock = await db.get(Stock, ticker)
+        if not stock:
+            return
+
+        # Skip if already populated
+        if stock.sector and stock.industry:
+            return
+
+        try:
+            info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info)
+            if info:
+                if not stock.sector:
+                    stock.sector = info.get("sector")
+                if not stock.industry:
+                    stock.industry = info.get("industry")
+                # Also update name if it's just the ticker
+                if stock.name == ticker or not stock.name:
+                    stock.name = info.get("longName") or info.get("shortName") or stock.name
+                await db.commit()
+                logger.info("Updated stock info for %s: sector=%s, industry=%s", ticker, stock.sector, stock.industry)
+        except Exception:
+            logger.exception("Failed to update stock info for %s", ticker)
+
+
 async def ingest_ticker(ticker: str) -> IngestionResult:
     """Run all ingestion steps for a single ticker."""
     result = IngestionResult(ticker=ticker)
+
+    # Auto-populate sector/industry from yfinance
+    await _update_stock_info(ticker)
 
     async with async_session() as db:
         # Prices

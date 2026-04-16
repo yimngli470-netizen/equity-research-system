@@ -12,7 +12,6 @@ export default function Dashboard() {
 
   // Add stock form
   const [ticker, setTicker] = useState('');
-  const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -46,12 +45,12 @@ export default function Dashboard() {
 
   async function handleAddStock(e: React.FormEvent) {
     e.preventDefault();
-    if (!ticker.trim() || !name.trim()) return;
+    if (!ticker.trim()) return;
     try {
       setAdding(true);
-      await api.stocks.add({ ticker: ticker.trim().toUpperCase(), name: name.trim() });
+      const t = ticker.trim().toUpperCase();
+      await api.stocks.add({ ticker: t, name: t });
       setTicker('');
-      setName('');
       await loadStocks();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add stock');
@@ -76,17 +75,7 @@ export default function Dashboard() {
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             placeholder="NVDA"
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="NVIDIA Corporation"
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
         <button

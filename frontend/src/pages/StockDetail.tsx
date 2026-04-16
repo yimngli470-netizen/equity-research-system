@@ -137,8 +137,8 @@ export default function StockDetail() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scoring, setScoring] = useState(false);
-  const [scoreMessage, setScoreMessage] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [pipelineMessage, setPipelineMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ticker) return;
@@ -165,12 +165,20 @@ export default function StockDetail() {
     }
   }
 
-  async function handleRunScoring() {
+  async function handleRunPipeline() {
     if (!ticker) return;
     try {
-      setScoring(true);
-      setScoreMessage(null);
-      // Run scoring first
+      setRunning(true);
+      setPipelineMessage('Running AI agents (this may take a minute)...');
+
+      // Step 1: Run AI agents
+      const agentResult = await api.analysis.run(ticker);
+      const agentSummary = agentResult.results
+        .map((r) => `${r.agent_type}=${r.cached ? 'cached' : r.success ? 'ok' : 'failed'}`)
+        .join(', ');
+      setPipelineMessage(`Agents done (${agentSummary}). Calculating score...`);
+
+      // Step 2: Run scoring
       const scoreResult = await api.scoring.run(ticker);
       setScore({
         ticker: scoreResult.ticker,
@@ -185,16 +193,22 @@ export default function StockDetail() {
         composite_score: scoreResult.composite_score,
         signal: scoreResult.signal,
       });
-      // Then run decision engine
+
+      // Step 3: Run decision engine
       const decisionResult = await api.decision.run(ticker);
       setDecision(decisionResult);
-      setScoreMessage(
-        `Score: ${scoreResult.composite_score.toFixed(3)} | Decision: ${decisionResult.final_signal} (${decisionResult.confidence} confidence, ${decisionResult.risk_flags.length} flags)`
+
+      // Step 4: Refresh reports list
+      const reportsData = await api.analysis.list(ticker).catch(() => []);
+      setReports(reportsData);
+
+      setPipelineMessage(
+        `Pipeline complete: ${scoreResult.feature_count} features | Score: ${scoreResult.composite_score.toFixed(3)} | Signal: ${decisionResult.final_signal} (${decisionResult.confidence} confidence, ${decisionResult.risk_flags.length} flags)`
       );
     } catch (err) {
-      setScoreMessage(err instanceof Error ? err.message : 'Scoring failed');
+      setPipelineMessage(err instanceof Error ? err.message : 'Pipeline failed');
     } finally {
-      setScoring(false);
+      setRunning(false);
     }
   }
 
@@ -230,17 +244,22 @@ export default function StockDetail() {
         <div className="flex items-center gap-4 mb-4">
           <h2 className="text-xl font-semibold text-gray-800">Decision & Score</h2>
           <button
-            onClick={handleRunScoring}
-            disabled={scoring}
+            onClick={handleRunPipeline}
+            disabled={running}
             className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
-            {scoring ? 'Calculating...' : score ? 'Recalculate' : 'Calculate Score'}
+            {running ? 'Running...' : score ? 'Run Full Pipeline' : 'Run Analysis'}
           </button>
+          {running && (
+            <span className="text-xs text-gray-400">Agents + Scoring + Decision</span>
+          )}
         </div>
 
-        {scoreMessage && (
-          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-lg mb-4 text-sm">
-            {scoreMessage}
+        {pipelineMessage && (
+          <div className={`px-4 py-2 rounded-lg mb-4 text-sm border ${
+            running ? 'bg-yellow-50 border-yellow-200 text-yellow-700' : 'bg-blue-50 border-blue-200 text-blue-700'
+          }`}>
+            {pipelineMessage}
           </div>
         )}
 

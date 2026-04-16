@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,19 +60,55 @@ async def list_stocks(db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=StockResponse, status_code=201)
 async def add_stock(stock_in: StockCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.get(Stock, stock_in.ticker.upper())
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Stock {stock_in.ticker} already exists")
+    ticker = stock_in.ticker.upper()
+    existing = await db.get(Stock, ticker)
+    if existing and existing.active:
+        raise HTTPException(status_code=409, detail=f"Stock {ticker} already exists")
+
+    # Reactivate soft-deleted stock
+    if existing and not existing.active:
+        existing.active = True
+        await db.commit()
+        await db.refresh(existing)
+        import asyncio
+        from app.ingestion.pipeline import ingest_ticker
+        asyncio.create_task(ingest_ticker(ticker))
+        return existing
+
+    # Auto-resolve name, sector, industry from yfinance if not provided
+    name = stock_in.name
+    sector = stock_in.sector
+    industry = stock_in.industry
+
+    if not sector or not industry or name == ticker:
+        try:
+            import yfinance as yf
+            info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info)
+            if info:
+                if not sector:
+                    sector = info.get("sector")
+                if not industry:
+                    industry = info.get("industry")
+                if name == ticker or not name:
+                    name = info.get("longName") or info.get("shortName") or name
+        except Exception:
+            pass  # proceed with whatever we have
 
     stock = Stock(
-        ticker=stock_in.ticker.upper(),
-        name=stock_in.name,
-        sector=stock_in.sector,
-        industry=stock_in.industry,
+        ticker=ticker,
+        name=name,
+        sector=sector,
+        industry=industry,
     )
     db.add(stock)
     await db.commit()
     await db.refresh(stock)
+
+    # Auto-trigger ingestion in background
+    import asyncio
+    from app.ingestion.pipeline import ingest_ticker
+    asyncio.create_task(ingest_ticker(ticker))
+
     return stock
 
 

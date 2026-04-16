@@ -1,5 +1,6 @@
 """Fetch quarterly financials and point-in-time valuation metrics from yfinance."""
 
+import asyncio
 import logging
 import math
 from datetime import date
@@ -44,9 +45,10 @@ async def ingest_financials(db: AsyncSession, ticker: str) -> int:
 
     stock = yf.Ticker(ticker)
 
-    income = stock.quarterly_income_stmt
-    cashflow = stock.quarterly_cashflow
-    balance = stock.quarterly_balance_sheet
+    def _fetch():
+        return stock.quarterly_income_stmt, stock.quarterly_cashflow, stock.quarterly_balance_sheet
+
+    income, cashflow, balance = await asyncio.to_thread(_fetch)
 
     if income.empty:
         logger.warning("No income statement data for %s", ticker)
@@ -113,7 +115,7 @@ async def ingest_valuation(db: AsyncSession, ticker: str) -> bool:
     logger.info("Fetching valuation metrics for %s", ticker)
 
     stock = yf.Ticker(ticker)
-    info = stock.info
+    info = await asyncio.to_thread(lambda: stock.info)
 
     if not info:
         logger.warning("No info data for %s", ticker)

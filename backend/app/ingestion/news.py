@@ -3,6 +3,7 @@
 Filters for STORY content type and extracts factual information only.
 """
 
+import asyncio
 import logging
 from datetime import date, datetime
 
@@ -26,7 +27,7 @@ async def ingest_news(db: AsyncSession, ticker: str) -> int:
     logger.info("Fetching news for %s", ticker)
 
     stock = yf.Ticker(ticker)
-    news_items = stock.news
+    news_items = await asyncio.to_thread(lambda: stock.news)
 
     if not news_items:
         logger.warning("No news returned for %s", ticker)
