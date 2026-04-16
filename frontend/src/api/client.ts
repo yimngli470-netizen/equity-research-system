@@ -97,6 +97,11 @@ export const api = {
       const params = agentType ? `?agent_type=${agentType}` : '';
       return request<AnalysisReport[]>(`/stocks/${ticker}/analysis${params}`);
     },
+    run: (ticker: string, force = false) =>
+      request<{ ticker: string; results: { agent_type: string; success: boolean; cached: boolean }[]; all_succeeded: boolean }>(
+        '/analysis/run',
+        { method: 'POST', body: JSON.stringify({ ticker, force }) }
+      ),
   },
   scoring: {
     run: (ticker: string, weights?: Record<string, number>) =>

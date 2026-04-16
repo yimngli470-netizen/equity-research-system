@@ -47,9 +47,15 @@
 - [x] Frontend: StockDetail has "Calculate Score" button, agent reports show summary with expandable raw JSON
 - [x] Tested: NVDA 0.76 STRONG_BUY (49 features), MU 0.77 STRONG_BUY (29), AAPL 0.60 HOLD (29)
 
-## Phase 5: Decision Engine & Polish — NOT STARTED
-- [ ] `decision/engine.py` — rule-based signal generation
-- [ ] `decision/risk_flags.py` — critical/major/watch flag system
+## Phase 5: Decision Engine & Polish — IN PROGRESS (2026-04-15)
+- [x] `decision/risk_flags.py` — 18 rules across 7 categories (CRITICAL/MAJOR/WATCH)
+- [x] `decision/engine.py` — adjusts signal based on flags, confidence assessment, reasoning
+- [x] `models/decision.py` + Alembic migration — stock_decisions table
+- [x] `api/decision.py` — POST /api/decision/run, GET /api/decision/{ticker}/latest
+- [x] Scheduler wiring — full pipeline (ingestion → agents → scoring → decision) daily at 21:30 UTC
+- [x] Frontend: PriceChart (recharts, 1M/3M/6M/1Y range selector)
+- [x] Frontend: FinancialsTable (quarterly revenue, margins, EPS, FCF with YoY growth)
+- [x] Frontend: DecisionPanel (final signal, confidence badge, risk flag cards)
 - [ ] Interactive DCF calculator (frontend)
 - [ ] Stock comparison page
 - [ ] Settings page (manage watchlist, adjust weights)

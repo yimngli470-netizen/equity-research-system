@@ -1,5 +1,6 @@
 """Fetch daily price history from yfinance and upsert into daily_prices."""
 
+import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -35,7 +36,9 @@ async def ingest_prices(
     end = date.today()
 
     stock = yf.Ticker(ticker)
-    df = stock.history(start=start.isoformat(), end=end.isoformat(), auto_adjust=False)
+    df = await asyncio.to_thread(
+        stock.history, start=start.isoformat(), end=end.isoformat(), auto_adjust=False
+    )
 
     if df.empty:
         logger.warning("No price data returned for %s", ticker)
