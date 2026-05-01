@@ -69,9 +69,13 @@ class ComputedSnapshot:
     quarters: list[QuarterMetrics] = field(default_factory=list)
     valuation: dict | None = None
     latest_price: float | None = None
+    latest_price_date: date | None = None
     price_1m_ago: float | None = None
+    price_1m_date: date | None = None
     price_3m_ago: float | None = None
+    price_3m_date: date | None = None
     price_12m_ago: float | None = None
+    price_12m_date: date | None = None
     momentum_1m: float | None = None
     momentum_3m: float | None = None
     momentum_12m: float | None = None
@@ -222,14 +226,18 @@ async def get_computed_metrics(db: AsyncSession, ticker: str) -> ComputedSnapsho
 
     if prices:
         snapshot.latest_price = prices[0].close
+        snapshot.latest_price_date = prices[0].date
         if len(prices) >= 22:
             snapshot.price_1m_ago = prices[21].close
+            snapshot.price_1m_date = prices[21].date
             snapshot.momentum_1m = _growth(prices[0].close, prices[21].close)
         if len(prices) >= 64:
             snapshot.price_3m_ago = prices[63].close
+            snapshot.price_3m_date = prices[63].date
             snapshot.momentum_3m = _growth(prices[0].close, prices[63].close)
         if len(prices) >= 253:
             snapshot.price_12m_ago = prices[252].close
+            snapshot.price_12m_date = prices[252].date
             snapshot.momentum_12m = _growth(prices[0].close, prices[252].close)
 
     return snapshot
@@ -244,13 +252,14 @@ def format_for_llm(snapshot: ComputedSnapshot) -> str:
 
     # Price & Momentum
     if snapshot.latest_price:
-        lines.append(f"Current Price: ${snapshot.latest_price:.2f}")
+        date_label = f" ({snapshot.latest_price_date})" if snapshot.latest_price_date else ""
+        lines.append(f"Latest Close{date_label}: ${snapshot.latest_price:.2f}")
         if snapshot.momentum_1m is not None:
-            lines.append(f"  1M Momentum: {snapshot.momentum_1m:+.1%}")
+            lines.append(f"  1M Momentum since {snapshot.price_1m_date}: {snapshot.momentum_1m:+.1%}")
         if snapshot.momentum_3m is not None:
-            lines.append(f"  3M Momentum: {snapshot.momentum_3m:+.1%}")
+            lines.append(f"  3M Momentum since {snapshot.price_3m_date}: {snapshot.momentum_3m:+.1%}")
         if snapshot.momentum_12m is not None:
-            lines.append(f"  12M Momentum: {snapshot.momentum_12m:+.1%}")
+            lines.append(f"  12M Momentum since {snapshot.price_12m_date}: {snapshot.momentum_12m:+.1%}")
         lines.append("")
 
     # Valuation

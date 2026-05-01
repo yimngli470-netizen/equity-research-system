@@ -33,7 +33,9 @@ async def ingest_prices(
     logger.info("Fetching prices for %s (lookback=%d days)", ticker, lookback_days)
 
     start = date.today() - timedelta(days=lookback_days)
-    end = date.today()
+    # yfinance treats `end` as exclusive; include tomorrow so today's completed
+    # daily bar is eligible when the user refreshes after market close.
+    end = date.today() + timedelta(days=1)
 
     stock = yf.Ticker(ticker)
     df = await asyncio.to_thread(

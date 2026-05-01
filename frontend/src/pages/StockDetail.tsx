@@ -34,7 +34,7 @@ function AgentReportCard({ report }: { report: AnalysisReport }) {
       {summary && (
         <p className="text-sm text-gray-600 mb-3 leading-relaxed">{summary}</p>
       )}
-      {!summary && rawSummary && typeof rawSummary === 'object' && (
+      {!summary && rawSummary != null && typeof rawSummary === 'object' && (
         <p className="text-sm text-gray-600 mb-3 leading-relaxed">
           {(() => {
             const s = rawSummary as Record<string, unknown>;
@@ -184,16 +184,29 @@ export default function StockDetail() {
     if (!ticker) return;
     try {
       setRunning(true);
-      setPipelineMessage('Running AI agents (this may take a minute)...');
+      setPipelineMessage('Refreshing market, financial, valuation, and news data...');
 
-      // Step 1: Run AI agents
-      const agentResult = await api.analysis.run(ticker);
+      // Step 1: Refresh DB data first. The AI agents only see what ingestion has stored.
+      const ingestionResult = await api.ingestion.run([ticker]);
+      const ingestionSummary = ingestionResult[0];
+      if (ingestionSummary?.errors.length) {
+        setPipelineMessage(
+          `Ingestion finished with warnings (${ingestionSummary.errors.join(', ')}). Running AI agents...`
+        );
+      } else {
+        setPipelineMessage(
+          `Data refreshed (${ingestionSummary?.prices ?? 0} price rows, ${ingestionSummary?.financials ?? 0} financial rows, ${ingestionSummary?.news ?? 0} news items). Running AI agents...`
+        );
+      }
+
+      // Step 2: Run AI agents — force=true bypasses cache so all agents use the refreshed DB data
+      const agentResult = await api.analysis.run(ticker, true);
       const agentSummary = agentResult.results
         .map((r) => `${r.agent_type}=${r.cached ? 'cached' : r.success ? 'ok' : 'failed'}`)
         .join(', ');
       setPipelineMessage(`Agents done (${agentSummary}). Calculating score...`);
 
-      // Step 2: Run scoring
+      // Step 3: Run scoring
       const scoreResult = await api.scoring.run(ticker);
       setScore({
         ticker: scoreResult.ticker,
@@ -209,11 +222,11 @@ export default function StockDetail() {
         signal: scoreResult.signal,
       });
 
-      // Step 3: Run decision engine
+      // Step 4: Run decision engine
       const decisionResult = await api.decision.run(ticker);
       setDecision(decisionResult);
 
-      // Step 4: Refresh reports list
+      // Step 5: Refresh reports list
       const reportsData = await api.analysis.list(ticker).catch(() => []);
       setReports(reportsData);
 

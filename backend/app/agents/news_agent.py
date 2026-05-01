@@ -13,6 +13,14 @@ class NewsAgent(BaseAgent):
     agent_type = "news"
     max_age_days = 1  # refresh daily
 
+    def postprocess_report(self, report: dict, ticker: str) -> dict:
+        """Keep report metadata deterministic instead of model-generated."""
+        if "error" in report:
+            return report
+        report["ticker"] = ticker
+        report["analysis_date"] = date.today().isoformat()
+        return report
+
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         cutoff = date.today() - timedelta(days=14)
         result = await db.execute(
