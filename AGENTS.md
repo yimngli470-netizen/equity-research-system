@@ -8,7 +8,7 @@ A 6-layer AI-augmented equity research platform for personal stock analysis. Tra
 - **Database:** PostgreSQL 16 + pgvector (vector search for documents)
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
 - **Infrastructure:** Docker Compose (local), 5 services: db, redis, backend, frontend, scheduler
-- **AI:** Claude API (Anthropic SDK) — Opus 4 for deep analysis, Sonnet 4 for daily tasks
+- **AI:** Codex API (Anthropic SDK) — Opus 4 for deep analysis, Sonnet 4 for daily tasks
 
 ## How to Run
 ```bash
@@ -58,7 +58,7 @@ backend/
       scheduler.py           #   APScheduler daily cron at 21:30 UTC
       computed_metrics.py    #   Derived growth rates, margins, momentum (on-the-fly, not stored)
     agents/                  # Layer 2: AI research agents
-      base.py                #   BaseAgent ABC: cache check → Claude API call → save JSONB
+      base.py                #   BaseAgent ABC: cache check → Codex API call → save JSONB
       news_agent.py          #   Sonnet 4, daily refresh, news sentiment + impact scoring
       earnings_agent.py      #   Opus 4, monthly refresh, earnings deep-dive + transcript analysis
       industry_agent.py      #   Opus 4, weekly refresh, cycle position + competitive landscape
@@ -104,7 +104,7 @@ frontend/
 2. POST /api/analysis/run {ticker}
    → For each agent (news, earnings, industry, valuation):
      → Check cache: if analysis_reports row exists and is fresh (within max_age_days), return cached
-     → Else: build context from DB → call Claude API → parse JSON → save to analysis_reports (JSONB)
+     → Else: build context from DB → call Codex API → parse JSON → save to analysis_reports (JSONB)
 
 3. POST /api/scoring/run {ticker}
    → hard_features.py: extract 31 features from computed_metrics (financials + prices + valuation)
@@ -123,7 +123,7 @@ frontend/
 ### Agent Caching Strategy
 Each agent has a `max_age_days` setting. When triggered:
 - If a report exists in `analysis_reports` within that window → return cached (no API call)
-- Else → call Claude, save new report
+- Else → call Codex, save new report
 - `force=true` bypasses cache
 
 | Agent | Model | Refresh | Purpose | Data Sources |
@@ -137,7 +137,7 @@ Each agent has a `max_age_days` setting. When triggered:
 ### Refresh Strategy
 The system has two trigger paths with deliberately different cache semantics:
 
-- **"Run Full Pipeline" button (frontend, `StockDetail.tsx`)** — passes `force=true` to `/api/analysis/run`. Bypasses the cache for all 5 agents → scoring → decision. This is the user-facing **hard refresh**: use it after earnings releases, news shocks, or any time you want guaranteed-fresh analysis. Cost: ~4 Claude calls (Sonnet news + 3 Opus + Sonnet validation) per click.
+- **"Run Full Pipeline" button (frontend, `StockDetail.tsx`)** — passes `force=true` to `/api/analysis/run`. Bypasses the cache for all 5 agents → scoring → decision. This is the user-facing **hard refresh**: use it after earnings releases, news shocks, or any time you want guaranteed-fresh analysis. Cost: ~4 Codex calls (Sonnet news + 3 Opus + Sonnet validation) per click.
 - **Daily scheduler (`ingestion/scheduler.py`, 21:30 UTC)** — runs ingestion for all active stocks. Agent/scoring/decision wiring is **not yet hooked up** ("What's Not Yet Built" item). When wired, it should run **cache-aware** (no `force`) so news refreshes daily but Opus agents only re-run when their windows lapse.
 
 **Known staleness gotcha:** time-based caching alone can return a stale earnings report for up to 30 days after a new quarterly release (the cache window is exactly long enough to span an entire quarter). Mitigation by design: the user clicks the button after earnings. We rejected event-aware cache invalidation as overkill — the button's existence makes it unnecessary.
@@ -259,7 +259,7 @@ GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 |--------|------|------|--------|
 | **yfinance** | Free | Prices, financials, valuation multiples, news | daily_prices, financials, valuations, documents |
 | **FMP** | Free tier (250 calls/day) | Earnings transcripts, EPS surprises, analyst estimates | earnings_transcripts, earnings_events, analyst_estimates |
-| **Claude API** | Per-token | AI analysis via 5 agents (news, earnings, industry, valuation, validation) | analysis_reports |
+| **Codex API** | Per-token | AI analysis via 5 agents (news, earnings, industry, valuation, validation) | analysis_reports |
 
 FMP integration is gated behind `FMP_API_KEY` env var. If not set, FMP ingestion steps are silently skipped and agents fall back to yfinance-only context.
 

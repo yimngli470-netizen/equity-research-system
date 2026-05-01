@@ -1,5 +1,7 @@
 """Valuation Analyst Agent — multiples analysis, DCF assessment, target price range."""
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,7 @@ class ValuationAgent(BaseAgent):
         result = await db.execute(
             select(AnalystEstimate)
             .where(AnalystEstimate.ticker == ticker)
+            .where(AnalystEstimate.period_end_date >= date.today())
             .order_by(AnalystEstimate.period_end_date.asc())
             .limit(4)
         )

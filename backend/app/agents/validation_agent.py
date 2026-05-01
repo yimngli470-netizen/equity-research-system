@@ -16,6 +16,7 @@ from app.models.analysis import AnalysisReport
 from app.models.earnings import EarningsEvent
 from app.models.estimate import AnalystEstimate
 from app.models.financial import Financial
+from app.models.price import DailyPrice
 from app.models.valuation import Valuation
 
 
@@ -23,6 +24,50 @@ class ValidationAgent(BaseAgent):
     agent_type = "validation"
     max_age_days = 1  # always re-run after agents
     model = "claude-sonnet-4-20250514"
+
+    def postprocess_report(self, report: dict, ticker: str) -> dict:
+        """Keep validation identity and dates deterministic.
+
+        The validator can assess claims, but metadata must come from the app.
+        """
+        if "error" in report:
+            return report
+        report["ticker"] = ticker
+        report["validation_date"] = date.today().isoformat()
+        checks = report.get("checks", [])
+        if isinstance(checks, list):
+            counts = {
+                "confirmed": 0,
+                "close": 0,
+                "contradicted": 0,
+                "unverifiable": 0,
+            }
+            flagged_issues = []
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                verdict = str(check.get("verdict", "")).upper()
+                key = verdict.lower()
+                if key in counts:
+                    counts[key] += 1
+                if verdict == "CONTRADICTED":
+                    claim = check.get("claim", "Unknown claim")
+                    detail = check.get("detail", "")
+                    flagged_issues.append(f"{claim}: {detail}")
+
+            total = sum(counts.values())
+            reliability = (
+                (counts["confirmed"] + 0.5 * counts["close"]) / total
+                if total
+                else 0.0
+            )
+            report["summary"] = {
+                "total_checks": total,
+                **counts,
+                "reliability_score": round(reliability, 3),
+                "flagged_issues": flagged_issues,
+            }
+        return report
 
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         sections = []
@@ -58,17 +103,70 @@ class ValidationAgent(BaseAgent):
         # Section 2: Hard data from DB
         sections.append("\n=== VERIFIED HARD DATA ===")
 
-        # Latest 4 quarters of financials
+        # Data freshness markers
+        latest_price = None
+        result = await db.execute(
+            select(DailyPrice)
+            .where(DailyPrice.ticker == ticker)
+            .order_by(DailyPrice.date.desc())
+            .limit(1)
+        )
+        latest_price = result.scalar_one_or_none()
+
+        # Latest 8 quarters of financials so YoY claims can be verified.
         result = await db.execute(
             select(Financial)
             .where(Financial.ticker == ticker)
             .order_by(Financial.period_end_date.desc())
-            .limit(4)
+            .limit(8)
         )
         financials = result.scalars().all()
+
+        result = await db.execute(
+            select(Valuation)
+            .where(Valuation.ticker == ticker)
+            .order_by(Valuation.date.desc())
+            .limit(1)
+        )
+        val = result.scalar_one_or_none()
+
+        sections.append("\n--- DATA FRESHNESS (from DB metadata) ---")
+        sections.append(f"  Validation run date: {date.today().isoformat()}")
+        if latest_price:
+            sections.append(
+                f"  Latest daily price row: {latest_price.date} close=${latest_price.close:.2f}"
+            )
+        else:
+            sections.append("  Latest daily price row: NONE")
         if financials:
-            sections.append("\n--- QUARTERLY FINANCIALS (from DB) ---")
-            for f in financials:
+            sections.append(
+                f"  Latest financial period: {financials[0].period} ending {financials[0].period_end_date}"
+            )
+        else:
+            sections.append("  Latest financial period: NONE")
+        if val:
+            sections.append(f"  Latest valuation snapshot: {val.date}")
+        else:
+            sections.append("  Latest valuation snapshot: NONE")
+
+        # Latest prices
+        result = await db.execute(
+            select(DailyPrice)
+            .where(DailyPrice.ticker == ticker)
+            .order_by(DailyPrice.date.desc())
+            .limit(5)
+        )
+        prices = result.scalars().all()
+        if prices:
+            sections.append("\n--- DAILY PRICES (latest 5 rows from DB) ---")
+            for p in prices:
+                sections.append(
+                    f"  {p.date}: open=${p.open:.2f} high=${p.high:.2f} low=${p.low:.2f} close=${p.close:.2f} volume={p.volume}"
+                )
+
+        if financials:
+            sections.append("\n--- QUARTERLY FINANCIALS (latest 8 from DB) ---")
+            for i, f in enumerate(financials):
                 parts = [f"  {f.period} ({f.period_end_date}):"]
                 if f.revenue is not None:
                     parts.append(f"Revenue=${f.revenue/1e9:.2f}B")
@@ -82,18 +180,21 @@ class ValidationAgent(BaseAgent):
                     parts.append(f"OM={f.operating_income/f.revenue:.1%}")
                 if f.free_cash_flow is not None:
                     parts.append(f"FCF=${f.free_cash_flow/1e9:.2f}B")
+                if f.revenue is not None and i + 1 < len(financials):
+                    prev_q = financials[i + 1]
+                    if prev_q.revenue:
+                        rev_qoq = (f.revenue - prev_q.revenue) / abs(prev_q.revenue)
+                        parts.append(f"Rev QoQ={rev_qoq:+.1%}")
+                if f.revenue is not None and i + 4 < len(financials):
+                    prev_y = financials[i + 4]
+                    if prev_y.revenue:
+                        rev_yoy = (f.revenue - prev_y.revenue) / abs(prev_y.revenue)
+                        parts.append(f"Rev YoY={rev_yoy:+.1%}")
                 sections.append(" ".join(parts))
 
         # Latest valuation multiples
-        result = await db.execute(
-            select(Valuation)
-            .where(Valuation.ticker == ticker)
-            .order_by(Valuation.date.desc())
-            .limit(1)
-        )
-        val = result.scalar_one_or_none()
         if val:
-            sections.append("\n--- VALUATION MULTIPLES (from DB) ---")
+            sections.append(f"\n--- VALUATION MULTIPLES (DB snapshot {val.date}) ---")
             lines = []
             if val.forward_pe is not None:
                 lines.append(f"  Forward P/E: {val.forward_pe:.1f}")
@@ -137,6 +238,7 @@ class ValidationAgent(BaseAgent):
         result = await db.execute(
             select(AnalystEstimate)
             .where(AnalystEstimate.ticker == ticker)
+            .where(AnalystEstimate.period_end_date >= date.today())
             .order_by(AnalystEstimate.period_end_date.asc())
             .limit(4)
         )
@@ -173,6 +275,8 @@ Focus on:
 
 Do NOT judge opinions, analysis quality, or investment conclusions.
 Only flag factual errors — wrong numbers that could lead to wrong analysis.
+Use the data freshness section when evaluating claims about "current" or "latest" data. If the latest DB row is stale relative to the validation run date, say so in the relevant check detail.
+The application will overwrite ticker, validation_date, and summary counts after your response; focus on the checks themselves.
 
 You must respond with valid JSON only, no other text. Use this exact schema:
 {
@@ -198,9 +302,8 @@ You must respond with valid JSON only, no other text. Use this exact schema:
   }
 }
 
-The reliability_score should be: (confirmed + close) / (confirmed + close + contradicted).
-If there are no contradictions, reliability_score = 1.0.
-Exclude unverifiable claims from the score calculation."""
+The reliability_score should penalize missing verification coverage: (confirmed + 0.5 * close) / total_checks.
+Do not give a perfect reliability score when many claims are UNVERIFIABLE."""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:
         return f"""Validate the factual claims in the following agent reports for {ticker} against the verified hard data from the database. Check every quantitative claim you can find.

@@ -68,6 +68,7 @@ class BaseAgent(ABC):
         # Call Claude API in a thread to avoid blocking the async event loop
         import asyncio
         report = await asyncio.to_thread(self._call_claude, system_prompt, user_prompt)
+        report = self.postprocess_report(report, ticker)
 
         # Save to DB
         await self._save_report(db, ticker, report)
@@ -91,6 +92,12 @@ class BaseAgent(ABC):
     def get_user_prompt(self, ticker: str, context: str) -> str:
         """Return the user prompt with ticker-specific context."""
         ...
+
+    def postprocess_report(self, report: dict, ticker: str) -> dict:
+        """Apply deterministic cleanup before saving an agent report."""
+        if "error" not in report:
+            report["ticker"] = ticker
+        return report
 
     def _call_claude(self, system_prompt: str, user_prompt: str) -> dict:
         """Call Claude API and parse the JSON response."""

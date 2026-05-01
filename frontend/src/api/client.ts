@@ -77,6 +77,15 @@ export interface Decision {
   scores: Record<string, number>;
 }
 
+export interface IngestionResult {
+  ticker: string;
+  prices: number;
+  financials: number;
+  valuation: boolean;
+  news: number;
+  errors: string[];
+}
+
 export const api = {
   stocks: {
     list: () => request<Stock[]>('/stocks/'),
@@ -140,6 +149,13 @@ export const api = {
         body: JSON.stringify({ ticker }),
       }),
     latest: (ticker: string) => request<Decision | null>(`/decision/${ticker}/latest`),
+  },
+  ingestion: {
+    run: (tickers?: string[]) =>
+      request<IngestionResult[]>('/ingestion/run', {
+        method: 'POST',
+        body: JSON.stringify({ tickers }),
+      }),
   },
   health: () => request<{ status: string; env: string }>('/health'),
 };

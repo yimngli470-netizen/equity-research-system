@@ -97,9 +97,12 @@ export default function PriceChart({ ticker }: { ticker: string }) {
           />
           <Tooltip
             contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Close']}
-            labelFormatter={(label: string) => {
-              const date = new Date(label + 'T00:00:00');
+            formatter={(value) => {
+              const numericValue = typeof value === 'number' ? value : Number(value);
+              return [`$${numericValue.toFixed(2)}`, 'Close'];
+            }}
+            labelFormatter={(label) => {
+              const date = new Date(String(label) + 'T00:00:00');
               return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
             }}
           />
