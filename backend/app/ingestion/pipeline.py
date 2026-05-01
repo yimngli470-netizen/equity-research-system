@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import async_session
 from app.ingestion.fundamentals import ingest_financials, ingest_valuation
 from app.ingestion.news import ingest_news
@@ -22,6 +23,9 @@ class IngestionResult:
     financials: int = 0
     valuation: bool = False
     news: int = 0
+    transcripts: int = 0
+    earnings_surprises: int = 0
+    analyst_estimates: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -90,6 +94,30 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("News ingestion failed for %s", ticker)
             result.errors.append(f"news: {e}")
 
+        # FMP data (gated behind API key)
+        if settings.fmp_api_key:
+            from app.ingestion.analyst_estimates import ingest_analyst_estimates
+            from app.ingestion.earnings_surprises import ingest_earnings_surprises
+            from app.ingestion.transcripts import ingest_transcripts
+
+            try:
+                result.transcripts = await ingest_transcripts(db, ticker)
+            except Exception as e:
+                logger.exception("Transcript ingestion failed for %s", ticker)
+                result.errors.append(f"transcripts: {e}")
+
+            try:
+                result.earnings_surprises = await ingest_earnings_surprises(db, ticker)
+            except Exception as e:
+                logger.exception("Earnings surprise ingestion failed for %s", ticker)
+                result.errors.append(f"earnings_surprises: {e}")
+
+            try:
+                result.analyst_estimates = await ingest_analyst_estimates(db, ticker)
+            except Exception as e:
+                logger.exception("Analyst estimates ingestion failed for %s", ticker)
+                result.errors.append(f"analyst_estimates: {e}")
+
     return result
 
 
@@ -120,8 +148,9 @@ async def run_full_ingestion(tickers: list[str] | None = None) -> list[Ingestion
         r = await ingest_ticker(ticker)
         results.append(r)
         logger.info(
-            "%s: prices=%d, financials=%d, valuation=%s, news=%d, errors=%d",
-            r.ticker, r.prices, r.financials, r.valuation, r.news, len(r.errors),
+            "%s: prices=%d, financials=%d, valuation=%s, news=%d, transcripts=%d, surprises=%d, estimates=%d, errors=%d",
+            r.ticker, r.prices, r.financials, r.valuation, r.news,
+            r.transcripts, r.earnings_surprises, r.analyst_estimates, len(r.errors),
         )
 
     return results

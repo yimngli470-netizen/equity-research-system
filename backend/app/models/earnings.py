@@ -18,3 +18,5 @@ class EarningsEvent(Base):
     revenue_estimate: Mapped[float | None] = mapped_column(Float)
     revenue_actual: Mapped[float | None] = mapped_column(Float)
     guidance_direction: Mapped[str | None] = mapped_column(String(20))  # 'raise', 'cut', 'maintain'
+    eps_surprise_pct: Mapped[float | None] = mapped_column(Float)
+    revenue_surprise_pct: Mapped[float | None] = mapped_column(Float)

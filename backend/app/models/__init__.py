@@ -8,6 +8,8 @@ from app.models.earnings import EarningsEvent
 from app.models.insider import InsiderTrade
 from app.models.valuation import Valuation
 from app.models.decision import StockDecision
+from app.models.transcript import EarningsTranscript
+from app.models.estimate import AnalystEstimate
 
 __all__ = [
     "Stock",
@@ -22,4 +24,6 @@ __all__ = [
     "InsiderTrade",
     "Valuation",
     "StockDecision",
+    "EarningsTranscript",
+    "AnalystEstimate",
 ]

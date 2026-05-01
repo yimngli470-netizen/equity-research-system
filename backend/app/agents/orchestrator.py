@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.earnings_agent import EarningsAgent
 from app.agents.industry_agent import IndustryAgent
 from app.agents.news_agent import NewsAgent
+from app.agents.validation_agent import ValidationAgent
 from app.agents.valuation_agent import ValuationAgent
 from app.database import async_session
 
@@ -20,6 +21,7 @@ AGENTS = {
     "earnings": EarningsAgent,
     "industry": IndustryAgent,
     "valuation": ValuationAgent,
+    "validation": ValidationAgent,
 }
 
 
@@ -101,6 +103,10 @@ async def run_all_agents(
         if t not in AGENTS:
             raise ValueError(f"Unknown agent type: {t}. Available: {list(AGENTS.keys())}")
 
+    # Validation agent always runs last and with force=True
+    run_validation = "validation" in types
+    types = [t for t in types if t != "validation"]
+
     logger.info("Running agents for %s: %s (force=%s)", ticker, types, force)
 
     result = OrchestrationResult(ticker=ticker)
@@ -114,5 +120,12 @@ async def run_all_agents(
             "[%s] %s → %s",
             agent_type, ticker, status,
         )
+
+    # Run validation last — always force since it depends on fresh agent outputs
+    if run_validation:
+        agent_result = await _run_single_agent("validation", ticker, force=True)
+        result.results.append(agent_result)
+        status = "ok" if agent_result.success else "FAILED"
+        logger.info("[validation] %s → %s", ticker, status)
 
     return result

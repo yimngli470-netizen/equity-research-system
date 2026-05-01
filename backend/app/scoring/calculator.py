@@ -95,6 +95,7 @@ async def calculate_score(
     norm_event = normalize_features("event", ai.get("event", {}))
     norm_risk = normalize_features("risk", ai.get("risk", {}))
     norm_valuation_ai = normalize_features("ai_valuation", ai.get("ai_valuation", {}))
+    norm_validation = normalize_features("validation", ai.get("validation", {}))
 
     # Step 3: Category scores
     growth_score = _category_score(norm_growth)
@@ -154,6 +155,9 @@ async def calculate_score(
         all_features.append(("risk", name, val))
     for name, val in norm_valuation_ai.items():
         all_features.append(("ai_valuation", name, val))
+    # Validation features saved for decision engine but not weighted in composite
+    for name, val in norm_validation.items():
+        all_features.append(("validation", name, val))
 
     feature_count = 0
     for category, feature_name, value in all_features:
