@@ -51,24 +51,30 @@ backend/
       prices.py              #   Daily prices via yfinance (upsert)
       fundamentals.py        #   Quarterly financials + valuation snapshots via yfinance
       news.py                #   News articles from yfinance (STORY type only)
+      fmp_client.py          #   FMP API client (250 calls/day free tier, rate-limited)
+      transcripts.py         #   Earnings call transcripts from FMP (split prepared remarks + Q&A)
+      earnings_surprises.py  #   EPS beat/miss history from FMP → earnings_events table
+      analyst_estimates.py   #   Consensus estimates from FMP → analyst_estimates table
       scheduler.py           #   APScheduler daily cron at 21:30 UTC
       computed_metrics.py    #   Derived growth rates, margins, momentum (on-the-fly, not stored)
     agents/                  # Layer 2: AI research agents
       base.py                #   BaseAgent ABC: cache check → Claude API call → save JSONB
       news_agent.py          #   Sonnet 4, daily refresh, news sentiment + impact scoring
-      earnings_agent.py      #   Opus 4, monthly refresh, earnings deep-dive + quality score
+      earnings_agent.py      #   Opus 4, monthly refresh, earnings deep-dive + transcript analysis
       industry_agent.py      #   Opus 4, weekly refresh, cycle position + competitive landscape
-      valuation_agent.py     #   Opus 4, weekly refresh, DCF + multiples + target price
-      orchestrator.py        #   run_all_agents() sequential execution with error isolation
+      valuation_agent.py     #   Opus 4, weekly refresh, DCF + multiples + consensus comparison
+      validation_agent.py    #   Sonnet 4, runs after all agents, cross-checks claims vs hard data
+      orchestrator.py        #   run_all_agents() sequential execution, validation always last
+      transcript_utils.py    #   Keyword-based transcript filtering for agent context windows
     quant/                   # Layer 3: feature extraction
       hard_features.py       #   31 features from financials: growth, profitability, valuation, momentum
-      ai_features.py         #   22 features from agent JSONB reports: sentiment, risk, event, ai_valuation
+      ai_features.py         #   32+ features from agent JSONB reports: sentiment, risk, event, ai_valuation, validation
       normalizer.py          #   Piecewise linear normalization to 0-1 with per-feature configs
     scoring/                 # Layer 4: composite scoring
       weights.py             #   7-category weights (sum to 1.0) + signal thresholds (configurable)
       calculator.py          #   Weighted composite score → signal, saves to quant_features + stock_scores
     decision/                # Layer 5: decision engine
-      risk_flags.py          #   18 rules across 7 categories → CRITICAL/MAJOR/WATCH flags
+      risk_flags.py          #   21 rules across 7 categories → CRITICAL/MAJOR/WATCH flags
       engine.py              #   Adjusts raw signal based on flags, assesses confidence, saves to stock_decisions
   alembic/                   # DB migrations
 frontend/
@@ -90,6 +96,10 @@ frontend/
    → prices.py: daily OHLCV from yfinance (upsert by ticker+date)
    → fundamentals.py: quarterly financials + valuation snapshot
    → news.py: recent news articles → documents table
+   → (if FMP_API_KEY set):
+     → transcripts.py: earnings call transcripts → earnings_transcripts table
+     → earnings_surprises.py: EPS beat/miss history → earnings_events table
+     → analyst_estimates.py: consensus estimates → analyst_estimates table
 
 2. POST /api/analysis/run {ticker}
    → For each agent (news, earnings, industry, valuation):
@@ -116,22 +126,23 @@ Each agent has a `max_age_days` setting. When triggered:
 - Else → call Claude, save new report
 - `force=true` bypasses cache
 
-| Agent | Model | Refresh | Purpose |
-|-------|-------|---------|---------|
-| News | Sonnet 4 | Daily | Factual news impact scoring |
-| Earnings | Opus 4 | Monthly | Quarterly results deep-dive |
-| Industry | Opus 4 | Weekly | Cycle position, competitive landscape |
-| Valuation | Opus 4 | Weekly | DCF, multiples, target price range |
+| Agent | Model | Refresh | Purpose | Data Sources |
+|-------|-------|---------|---------|-------------|
+| News | Sonnet 4 | Daily | Factual news impact scoring | yfinance news |
+| Earnings | Opus 4 | Monthly | Quarterly deep-dive + transcript analysis | yfinance financials + FMP transcripts + FMP surprises |
+| Industry | Opus 4 | Weekly | Cycle position, competitive landscape | yfinance + FMP transcript competitive excerpts |
+| Valuation | Opus 4 | Weekly | DCF, multiples, consensus comparison | yfinance + FMP estimates + FMP transcript guidance |
+| Validation | Sonnet 4 | Every run | Cross-check agent claims vs hard DB data | All agent reports + DB financials/valuation/estimates |
 
 ### Scoring System
-**49+ features** across 8 extraction categories, mapped to **7 scoring categories**:
+**60+ features** across 9 extraction categories, mapped to **7 scoring categories** (+ validation meta-category):
 
 | Scoring Category | Weight | Sources |
 |-----------------|--------|---------|
 | Growth (20%) | Revenue/EPS/NI YoY & QoQ, consistency, acceleration | hard_features |
 | Valuation (20%) | 50% hard multiples (P/E, PEG, P/S) + 50% AI assessment | hard + ai_features |
 | Profitability (15%) | Margins, margin trends, operating leverage, FCF conversion | hard_features |
-| Event (15%) | Earnings quality, trend signals, forward outlook | ai_features (earnings agent) |
+| Event (15%) | Earnings quality, trend signals, forward outlook, management tone, beat/miss history | ai_features (earnings agent + FMP) |
 | Momentum (10%) | 1M, 3M, 12M price returns | hard_features |
 | Sentiment (10%) | News sentiment, industry cycle, indicator signals | ai_features (news + industry) |
 | Risk (10%) | Risk severity, moat strength, market share trend | ai_features (earnings + industry) |
@@ -185,6 +196,9 @@ Signal ladder: `SELL → REDUCE → HOLD → BUY → STRONG_BUY`
 | WATCH | growth_valuation_gap | valuation | growth score `> 0.8` but valuation score `< 0.3` |
 | WATCH | low_conviction | quality | all category scores between 0.35-0.65 |
 | WATCH | fwd_revenue_weak | quality | `fwd_revenue_signal < 0.2` (when no deteriorating_outlook) |
+| MAJOR | consistent_misses | quality | `eps_beat_rate < 0.25` — missed EPS in 3+ of last 4 quarters |
+| WATCH | low_agent_reliability | quality | `agent_reliability < 0.4` — validation found significant contradictions |
+| WATCH | management_evasive | quality | `management_tone < 0.2` — evasive/defensive tone on earnings call |
 
 Note: feature thresholds are on **normalized** values (0-1), not raw values. E.g., `forward_pe < 0.05` means the P/E is extremely high (normalized inverted: expensive = low score).
 
@@ -219,7 +233,7 @@ GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 ```
 
 ## Database
-- **13 tables** across models/. Key tables: `stocks`, `daily_prices`, `financials`, `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`, `stock_decisions`
+- **15 tables** across models/. Key tables: `stocks`, `daily_prices`, `financials`, `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`, `stock_decisions`, `earnings_transcripts`, `analyst_estimates`, `earnings_events`
 - Migrations via Alembic: `docker compose exec backend alembic upgrade head`
 - Postgres on host port 5433 (5432 used by local Postgres)
 
@@ -231,6 +245,15 @@ GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 - `.env` file at project root (copied from `.env.example`, gitignored) — contains ANTHROPIC_API_KEY, DATABASE_URL
 - Agent reports stored as JSONB for schema flexibility across agent types
 - Upserts use `on_conflict_do_update` on unique constraints for idempotent data ingestion
+
+## Data Sources
+| Source | Cost | Data | Tables |
+|--------|------|------|--------|
+| **yfinance** | Free | Prices, financials, valuation multiples, news | daily_prices, financials, valuations, documents |
+| **FMP** | Free tier (250 calls/day) | Earnings transcripts, EPS surprises, analyst estimates | earnings_transcripts, earnings_events, analyst_estimates |
+| **Claude API** | Per-token | AI analysis via 5 agents (news, earnings, industry, valuation, validation) | analysis_reports |
+
+FMP integration is gated behind `FMP_API_KEY` env var. If not set, FMP ingestion steps are silently skipped and agents fall back to yfinance-only context.
 
 ## What's Not Yet Built
 - Interactive DCF calculator (frontend)

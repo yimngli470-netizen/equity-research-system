@@ -4,8 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
+from app.agents.transcript_utils import extract_competitive_mentions
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.stock import Stock
+from app.models.transcript import EarningsTranscript
 
 
 class IndustryAgent(BaseAgent):
@@ -23,11 +25,26 @@ class IndustryAgent(BaseAgent):
         snapshot = await get_computed_metrics(db, ticker)
         financial_context = format_for_llm(snapshot)
 
-        return f"""Company: {stock.name} ({ticker})
+        context = f"""Company: {stock.name} ({ticker})
 Sector: {sector}
 Industry: {industry}
 
 {financial_context}"""
+
+        # Add competitive mentions from most recent transcript
+        result = await db.execute(
+            select(EarningsTranscript)
+            .where(EarningsTranscript.ticker == ticker)
+            .order_by(EarningsTranscript.year.desc(), EarningsTranscript.quarter.desc())
+            .limit(1)
+        )
+        transcript = result.scalar_one_or_none()
+        if transcript:
+            competitive = extract_competitive_mentions(transcript.full_text)
+            if competitive:
+                context += f"\n\n{competitive}"
+
+        return context
 
     def get_system_prompt(self) -> str:
         return """You are a senior industry analyst. Given a company's financial data and its sector/industry classification, provide a comprehensive industry analysis.
@@ -40,6 +57,7 @@ You should assess:
 5. INDUSTRY RISKS — Cyclicality, regulation, disruption, concentration risks specific to this sector.
 
 Use your knowledge of the industry to provide context beyond just the financial numbers.
+If earnings call transcript excerpts are provided, ground your competitive assessment in management's own statements about competitors, market share, and positioning.
 
 You must respond with valid JSON only, no other text. Use this exact schema:
 {
@@ -76,8 +94,14 @@ You must respond with valid JSON only, no other text. Use this exact schema:
       "detail": "string"
     }
   ],
+  "transcript_evidence": {
+    "competitive_mentions": ["string — direct quotes or paraphrases from transcript about competition"],
+    "management_market_view": "string — management's stated view of the market"
+  },
   "summary": "string — 3-4 sentence industry assessment"
-}"""
+}
+
+If no transcript data is available, set transcript_evidence to null."""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:
         return f"""Provide an industry analysis for the following company. Assess its cycle position, competitive landscape, theme exposures, and key risks.

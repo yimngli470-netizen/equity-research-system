@@ -10,7 +10,8 @@ function AgentReportCard({ report }: { report: AnalysisReport }) {
   const [expanded, setExpanded] = useState(false);
   const data = report.report as Record<string, unknown>;
 
-  const summary = (data.summary as string) || null;
+  const rawSummary = data.summary;
+  const summary = typeof rawSummary === 'string' ? rawSummary : null;
   const signal = (data.signal as string) || (data.valuation_verdict as string) || null;
 
   return (
@@ -32,6 +33,19 @@ function AgentReportCard({ report }: { report: AnalysisReport }) {
 
       {summary && (
         <p className="text-sm text-gray-600 mb-3 leading-relaxed">{summary}</p>
+      )}
+      {!summary && rawSummary && typeof rawSummary === 'object' && (
+        <p className="text-sm text-gray-600 mb-3 leading-relaxed">
+          {(() => {
+            const s = rawSummary as Record<string, unknown>;
+            const parts: string[] = [];
+            if (s.total_checks != null) parts.push(`${s.total_checks} checks`);
+            if (s.confirmed != null) parts.push(`${s.confirmed} confirmed`);
+            if (s.contradicted != null) parts.push(`${s.contradicted} contradicted`);
+            if (s.reliability_score != null) parts.push(`reliability: ${Number(s.reliability_score).toFixed(2)}`);
+            return parts.length > 0 ? parts.join(' · ') : JSON.stringify(s);
+          })()}
+        </p>
       )}
 
       <button

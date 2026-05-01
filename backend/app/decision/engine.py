@@ -45,6 +45,7 @@ def _assess_confidence(
     feature_count: int,
     flags: list[RiskFlag],
     scores: dict[str, float],
+    features: dict[str, float] | None = None,
 ) -> str:
     """Assess confidence in the signal based on data completeness and flags."""
     # Low confidence if few features (missing agent reports)
@@ -59,6 +60,15 @@ def _assess_confidence(
         return "low"
     if critical_count >= 1 or major_count >= 3:
         return "moderate"
+
+    # Validation-based confidence modifier: low reliability → downgrade
+    if features:
+        reliability = features.get("agent_reliability")
+        if reliability is not None and reliability < 0.5:
+            return "low"
+        contradiction_rate = features.get("contradiction_rate")
+        if contradiction_rate is not None and contradiction_rate > 0.3:
+            return "moderate"
 
     # Check for extreme scores (very high conviction either way)
     composite_values = list(scores.values())
@@ -201,7 +211,7 @@ async def run_decision(
         final_signal = _downgrade_signal(final_signal, major_downgrades)
 
     # Assess confidence
-    confidence = _assess_confidence(feature_count, flags, scores)
+    confidence = _assess_confidence(feature_count, flags, scores, features)
 
     # Build reasoning
     reasoning = _build_reasoning(raw_signal, final_signal, scores, flags, confidence)

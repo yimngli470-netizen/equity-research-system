@@ -99,6 +99,10 @@ EVENT_NORMS: dict[str, tuple[float, float, bool]] = {
     "fwd_revenue_signal":     (0.0, 1.0, False),
     "fwd_margin_signal":      (0.0, 1.0, False),
     "fwd_confidence":         (0.0, 1.0, False),
+    "management_tone":        (0.0, 1.0, False),   # already mapped 0-1
+    "eps_beat_rate":           (0.0, 1.0, False),   # 0/4 to 4/4
+    "avg_surprise_pct":       (-0.10, 0.10, False), # -10% to +10%
+    "beat_trend":              (0.0, 1.0, False),   # already mapped 0-1
 }
 
 RISK_NORMS: dict[str, tuple[float, float, bool]] = {
@@ -116,6 +120,15 @@ AI_VALUATION_NORMS: dict[str, tuple[float, float, bool]] = {
     "vs_peers":                 (0.0, 1.0, False),
     "valuation_verdict_score":  (0.0, 1.0, False),
     "target_upside":            (-0.30, 0.50, False),
+    "eps_vs_consensus":         (0.0, 1.0, False),   # already mapped 0-1
+    "revenue_vs_consensus":     (0.0, 1.0, False),
+    "guidance_tone":            (0.0, 1.0, False),
+    "guidance_vs_consensus":    (0.0, 1.0, False),
+}
+
+VALIDATION_NORMS: dict[str, tuple[float, float, bool]] = {
+    "agent_reliability":  (0.0, 1.0, False),
+    "contradiction_rate": (0.0, 0.50, True),  # fewer contradictions → higher score
 }
 
 
@@ -128,6 +141,7 @@ ALL_NORMS: dict[str, dict[str, tuple[float, float, bool]]] = {
     "event": EVENT_NORMS,
     "risk": RISK_NORMS,
     "ai_valuation": AI_VALUATION_NORMS,
+    "validation": VALIDATION_NORMS,
 }
 
 

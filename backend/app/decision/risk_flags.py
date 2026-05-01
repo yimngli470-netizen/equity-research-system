@@ -334,6 +334,46 @@ def check_divergence_flags(
     return flags
 
 
+def check_transcript_flags(
+    scores: dict[str, float],
+    features: dict[str, float],
+) -> list[RiskFlag]:
+    """Check for transcript/validation-related risks."""
+    flags = []
+
+    # Low agent reliability from validation agent
+    reliability = features.get("agent_reliability")
+    if reliability is not None and reliability < 0.4:
+        flags.append(RiskFlag(
+            level="watch",
+            rule="low_agent_reliability",
+            category="quality",
+            message="Validation agent found significant contradictions in agent outputs — treat analysis with caution",
+        ))
+
+    # Management tone is evasive/defensive on earnings call
+    tone = features.get("management_tone")
+    if tone is not None and tone < 0.2:
+        flags.append(RiskFlag(
+            level="watch",
+            rule="management_evasive",
+            category="quality",
+            message="Management tone on earnings call was evasive or defensive — potential red flag",
+        ))
+
+    # Consistent EPS misses
+    beat_rate = features.get("eps_beat_rate")
+    if beat_rate is not None and beat_rate < 0.25:
+        flags.append(RiskFlag(
+            level="major",
+            rule="consistent_misses",
+            category="quality",
+            message="Company has missed EPS estimates in 3+ of the last 4 quarters",
+        ))
+
+    return flags
+
+
 def evaluate_risk_flags(
     scores: dict[str, float],
     features: dict[str, float],
@@ -348,6 +388,7 @@ def evaluate_risk_flags(
     flags.extend(check_sentiment_flags(scores, features))
     flags.extend(check_quality_flags(scores, features))
     flags.extend(check_divergence_flags(scores))
+    flags.extend(check_transcript_flags(scores, features))
 
     # Sort: critical first, then major, then watch
     level_order = {"critical": 0, "major": 1, "watch": 2}

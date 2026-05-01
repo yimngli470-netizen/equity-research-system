@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     anthropic_api_key: str = ""
     news_api_key: str = ""
+    fmp_api_key: str = ""
     env: str = "development"
     log_level: str = "INFO"
 

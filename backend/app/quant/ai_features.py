@@ -90,6 +90,20 @@ def _extract_earnings_features(report: dict) -> dict[str, float | None]:
     else:
         features["earnings_risk_avg"] = None
 
+    # Transcript analysis features (new — from FMP transcripts)
+    transcript = report.get("transcript_analysis") or {}
+    tone_map = {"confident": 1.0, "cautious": 0.5, "defensive": 0.2, "evasive": 0.0}
+    features["management_tone"] = tone_map.get(transcript.get("management_tone"))
+
+    # Beat/miss history features
+    beat_miss = report.get("beat_miss_history") or {}
+    beats = beat_miss.get("last_4q_eps_beats")
+    features["eps_beat_rate"] = beats / 4.0 if beats is not None else None
+    features["avg_surprise_pct"] = beat_miss.get("avg_surprise_pct")
+
+    beat_trend_map = {"improving": 1.0, "stable": 0.5, "deteriorating": 0.0}
+    features["beat_trend"] = beat_trend_map.get(beat_miss.get("trend"))
+
     return features
 
 
@@ -175,6 +189,35 @@ def _extract_valuation_agent_features(report: dict) -> dict[str, float | None]:
     else:
         features["target_upside"] = None
 
+    # Consensus comparison features (new — from FMP analyst estimates)
+    consensus = report.get("consensus_comparison") or {}
+    vs_map = {"above": 0.8, "in_line": 0.5, "below": 0.2}
+    features["eps_vs_consensus"] = vs_map.get(consensus.get("your_eps_vs_consensus"))
+    features["revenue_vs_consensus"] = vs_map.get(consensus.get("your_revenue_vs_consensus"))
+
+    # Guidance assessment features
+    guidance = report.get("guidance_assessment") or {}
+    guidance_tone_map = {"confident": 1.0, "cautious": 0.5, "vague": 0.2}
+    features["guidance_tone"] = guidance_tone_map.get(guidance.get("management_guidance_tone"))
+    features["guidance_vs_consensus"] = vs_map.get(guidance.get("guidance_vs_consensus"))
+
+    return features
+
+
+def _extract_validation_features(report: dict) -> dict[str, float | None]:
+    """Extract features from validation agent report."""
+    features: dict[str, float | None] = {}
+    summary = report.get("summary", {})
+
+    features["agent_reliability"] = summary.get("reliability_score")
+
+    total = summary.get("total_checks", 0)
+    contradicted = summary.get("contradicted", 0)
+    if total > 0:
+        features["contradiction_rate"] = contradicted / total
+    else:
+        features["contradiction_rate"] = None
+
     return features
 
 
@@ -195,11 +238,13 @@ async def extract_all_ai_features(
     earnings_report = await _get_latest_report(db, ticker, "earnings")
     industry_report = await _get_latest_report(db, ticker, "industry")
     valuation_report = await _get_latest_report(db, ticker, "valuation")
+    validation_report = await _get_latest_report(db, ticker, "validation")
 
     news_feats = _extract_news_features(news_report) if news_report else {}
     earnings_feats = _extract_earnings_features(earnings_report) if earnings_report else {}
     industry_feats = _extract_industry_features(industry_report) if industry_report else {}
     valuation_feats = _extract_valuation_agent_features(valuation_report) if valuation_report else {}
+    validation_feats = _extract_validation_features(validation_report) if validation_report else {}
 
     # Organize into scoring categories
     sentiment = {
@@ -217,6 +262,10 @@ async def extract_all_ai_features(
         "fwd_revenue_signal": earnings_feats.get("fwd_revenue_signal"),
         "fwd_margin_signal": earnings_feats.get("fwd_margin_signal"),
         "fwd_confidence": earnings_feats.get("fwd_confidence"),
+        "management_tone": earnings_feats.get("management_tone"),
+        "eps_beat_rate": earnings_feats.get("eps_beat_rate"),
+        "avg_surprise_pct": earnings_feats.get("avg_surprise_pct"),
+        "beat_trend": earnings_feats.get("beat_trend"),
     }
 
     risk = {
@@ -234,6 +283,15 @@ async def extract_all_ai_features(
         "vs_peers": valuation_feats.get("vs_peers"),
         "valuation_verdict_score": valuation_feats.get("valuation_verdict_score"),
         "target_upside": valuation_feats.get("target_upside"),
+        "eps_vs_consensus": valuation_feats.get("eps_vs_consensus"),
+        "revenue_vs_consensus": valuation_feats.get("revenue_vs_consensus"),
+        "guidance_tone": valuation_feats.get("guidance_tone"),
+        "guidance_vs_consensus": valuation_feats.get("guidance_vs_consensus"),
+    }
+
+    validation = {
+        "agent_reliability": validation_feats.get("agent_reliability"),
+        "contradiction_rate": validation_feats.get("contradiction_rate"),
     }
 
     return {
@@ -241,4 +299,5 @@ async def extract_all_ai_features(
         "event": event,
         "risk": risk,
         "ai_valuation": ai_valuation,
+        "validation": validation,
     }
