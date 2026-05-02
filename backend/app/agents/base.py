@@ -65,6 +65,10 @@ class BaseAgent(ABC):
         system_prompt = self.get_system_prompt()
         user_prompt = self.get_user_prompt(ticker, context)
 
+        # Anchor the agent in real time so it stops hallucinating "validation_date: 2024-12-19"
+        # and so claims about "current" / "latest" data have a concrete reference point.
+        user_prompt = f"Today's date is {date.today().isoformat()}.\n\n{user_prompt}"
+
         # Call Claude API in a thread to avoid blocking the async event loop
         import asyncio
         report = await asyncio.to_thread(self._call_claude, system_prompt, user_prompt)

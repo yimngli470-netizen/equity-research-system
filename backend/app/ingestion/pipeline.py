@@ -73,7 +73,9 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("Price ingestion failed for %s", ticker)
             result.errors.append(f"prices: {e}")
 
-        # Quarterly financials
+        # Quarterly financials — yfinance for the daily path (free, no FMP budget).
+        # FMP financials are available on demand via /api/ingestion/backfill (saves the
+        # 250-call/day budget for transcripts, which are FMP's unique value-add).
         try:
             result.financials = await ingest_financials(db, ticker)
         except Exception as e:

@@ -1,7 +1,8 @@
 """FMP (Financial Modeling Prep) API client.
 
-Free tier: 250 calls/day. Provides earnings transcripts,
-earnings surprises, and analyst estimates.
+Free tier: 250 calls/day. Uses the /stable/ API (the v3 endpoints were
+deprecated 2025-08-31). Provides earnings transcripts, earnings calendar
+(actuals + estimates), analyst estimates, and financial statements.
 """
 
 import asyncio
@@ -14,7 +15,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://financialmodelingprep.com/api/v3"
+BASE_URL = "https://financialmodelingprep.com/stable"
 
 
 class FMPRateLimitError(Exception):
@@ -75,40 +76,74 @@ class FMPClient:
         """
         data = await asyncio.to_thread(
             self._do_get,
-            f"earning_call_transcript/{ticker}",
-            {"year": year, "quarter": quarter},
+            "earning-call-transcript",
+            {"symbol": ticker, "year": year, "quarter": quarter},
         )
         if not data:
             return None
-        # FMP returns a list; take the first (and usually only) result
         if isinstance(data, list):
             return data[0] if data else None
         return data
 
-    async def get_earnings_surprises(self, ticker: str) -> list[dict]:
-        """Fetch earnings surprise history (actual vs estimate).
+    async def get_earnings_calendar(self, ticker: str) -> list[dict]:
+        """Fetch earnings history with actuals AND estimates.
 
-        Returns list of dicts with: date, symbol, actualEarningResult,
-        estimatedEarning, etc.
+        Replaces the old earnings-surprises endpoint. Returns list of dicts:
+        date, symbol, epsActual, epsEstimated, revenueActual, revenueEstimated.
+        Future-dated rows have null actuals.
         """
         data = await asyncio.to_thread(
             self._do_get,
-            f"earnings-surprises/{ticker}",
+            "earnings",
+            {"symbol": ticker},
         )
         return data if isinstance(data, list) else []
 
     async def get_analyst_estimates(
-        self, ticker: str, period: str = "quarter"
+        self, ticker: str, period: str = "annual"
     ) -> list[dict]:
         """Fetch consensus analyst estimates.
 
-        Returns list of dicts with: date, symbol, estimatedRevenueAvg,
-        estimatedEpsAvg, etc.
+        Free tier supports period="annual" only. Quarterly is premium.
+        Returns list of dicts with: date, symbol, revenueAvg, epsAvg, etc.
         """
         data = await asyncio.to_thread(
             self._do_get,
-            f"analyst-estimates/{ticker}",
-            {"period": period},
+            "analyst-estimates",
+            {"symbol": ticker, "period": period},
+        )
+        return data if isinstance(data, list) else []
+
+    async def get_income_statement(
+        self, ticker: str, period: str = "quarter", limit: int = 20
+    ) -> list[dict]:
+        """Fetch quarterly (or annual) income statements."""
+        data = await asyncio.to_thread(
+            self._do_get,
+            "income-statement",
+            {"symbol": ticker, "period": period, "limit": limit},
+        )
+        return data if isinstance(data, list) else []
+
+    async def get_cash_flow_statement(
+        self, ticker: str, period: str = "quarter", limit: int = 20
+    ) -> list[dict]:
+        """Fetch quarterly (or annual) cash flow statements."""
+        data = await asyncio.to_thread(
+            self._do_get,
+            "cash-flow-statement",
+            {"symbol": ticker, "period": period, "limit": limit},
+        )
+        return data if isinstance(data, list) else []
+
+    async def get_balance_sheet_statement(
+        self, ticker: str, period: str = "quarter", limit: int = 20
+    ) -> list[dict]:
+        """Fetch quarterly (or annual) balance sheet statements."""
+        data = await asyncio.to_thread(
+            self._do_get,
+            "balance-sheet-statement",
+            {"symbol": ticker, "period": period, "limit": limit},
         )
         return data if isinstance(data, list) else []
 

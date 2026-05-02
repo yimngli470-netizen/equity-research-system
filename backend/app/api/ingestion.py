@@ -12,6 +12,9 @@ class IngestionResultResponse(BaseModel):
     financials: int
     valuation: bool
     news: int
+    transcripts: int = 0
+    earnings_surprises: int = 0
+    analyst_estimates: int = 0
     errors: list[str]
 
 
@@ -34,6 +37,9 @@ async def trigger_ingestion(request: IngestionRequest | None = None):
             financials=r.financials,
             valuation=r.valuation,
             news=r.news,
+            transcripts=r.transcripts,
+            earnings_surprises=r.earnings_surprises,
+            analyst_estimates=r.analyst_estimates,
             errors=r.errors,
         )
         for r in results
