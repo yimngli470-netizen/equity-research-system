@@ -21,8 +21,9 @@ async def ingest_analyst_estimates(db: AsyncSession, ticker: str) -> int:
     if not client:
         return 0
 
-    logger.info("Fetching analyst estimates for %s", ticker)
-    data = await client.get_analyst_estimates(ticker, period="quarter")
+    # Free tier only supports annual estimates; quarterly is premium.
+    logger.info("Fetching annual analyst estimates for %s", ticker)
+    data = await client.get_analyst_estimates(ticker, period="annual")
 
     if not data:
         logger.info("No analyst estimate data for %s", ticker)
@@ -39,16 +40,17 @@ async def ingest_analyst_estimates(db: AsyncSession, ticker: str) -> int:
         except (ValueError, TypeError):
             continue
 
+        # New stable API uses Avg/High/Low (vs old estimated*Avg)
         rows.append({
             "ticker": ticker,
             "period_end_date": period_end,
-            "eps_consensus": item.get("estimatedEpsAvg"),
-            "eps_high": item.get("estimatedEpsHigh"),
-            "eps_low": item.get("estimatedEpsLow"),
-            "revenue_consensus": item.get("estimatedRevenueAvg"),
-            "revenue_high": item.get("estimatedRevenueHigh"),
-            "revenue_low": item.get("estimatedRevenueLow"),
-            "number_of_analysts": item.get("numberAnalystEstimatedEps"),
+            "eps_consensus": item.get("epsAvg") or item.get("estimatedEpsAvg"),
+            "eps_high": item.get("epsHigh") or item.get("estimatedEpsHigh"),
+            "eps_low": item.get("epsLow") or item.get("estimatedEpsLow"),
+            "revenue_consensus": item.get("revenueAvg") or item.get("estimatedRevenueAvg"),
+            "revenue_high": item.get("revenueHigh") or item.get("estimatedRevenueHigh"),
+            "revenue_low": item.get("revenueLow") or item.get("estimatedRevenueLow"),
+            "number_of_analysts": item.get("numAnalystsRevenue") or item.get("numberAnalystEstimatedEps"),
         })
 
     if not rows:

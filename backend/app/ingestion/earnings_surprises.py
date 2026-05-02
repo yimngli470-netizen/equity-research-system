@@ -22,11 +22,11 @@ async def ingest_earnings_surprises(db: AsyncSession, ticker: str) -> int:
     if not client:
         return 0
 
-    logger.info("Fetching earnings surprises for %s", ticker)
-    data = await client.get_earnings_surprises(ticker)
+    logger.info("Fetching earnings calendar for %s", ticker)
+    data = await client.get_earnings_calendar(ticker)
 
     if not data:
-        logger.info("No earnings surprise data for %s", ticker)
+        logger.info("No earnings data for %s", ticker)
         return 0
 
     rows = []
@@ -40,11 +40,15 @@ async def ingest_earnings_surprises(db: AsyncSession, ticker: str) -> int:
         except (ValueError, TypeError):
             continue
 
-        actual_eps = item.get("actualEarningResult")
-        estimated_eps = item.get("estimatedEarning")
+        # Skip future-dated rows where actuals haven't reported yet
+        actual_eps = item.get("epsActual")
+        if actual_eps is None:
+            continue
+
+        estimated_eps = item.get("epsEstimated")
 
         eps_surprise_pct = None
-        if actual_eps is not None and estimated_eps and estimated_eps != 0:
+        if estimated_eps and estimated_eps != 0:
             eps_surprise_pct = (actual_eps - estimated_eps) / abs(estimated_eps)
 
         rows.append({
