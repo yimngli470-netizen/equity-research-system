@@ -1,15 +1,18 @@
 """Valuation Analyst Agent — multiples analysis, DCF assessment, target price range."""
 
+import logging
 from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
-from app.agents.transcript_utils import extract_guidance_mentions
+from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.estimate import AnalystEstimate
 from app.models.transcript import EarningsTranscript
+
+logger = logging.getLogger(__name__)
 
 
 class ValuationAgent(BaseAgent):
@@ -52,10 +55,15 @@ class ValuationAgent(BaseAgent):
             .limit(1)
         )
         transcript = result.scalar_one_or_none()
-        if transcript:
-            guidance = extract_guidance_mentions(transcript.full_text)
-            if guidance:
-                context += f"\n\n{guidance}"
+        if transcript and transcript.summary:
+            block = format_summary_for_agent(transcript.summary, focus="valuation")
+            if block:
+                context += f"\n\n{block}"
+        elif transcript:
+            logger.warning(
+                "[valuation] %s Q%d %d transcript has no summary — skipping transcript context",
+                ticker, transcript.quarter, transcript.year,
+            )
 
         return context
 

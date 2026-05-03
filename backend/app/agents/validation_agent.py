@@ -12,11 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
+from app.agents.transcript_utils import prepare_earnings_context
 from app.models.analysis import AnalysisReport
 from app.models.earnings import EarningsEvent
 from app.models.estimate import AnalystEstimate
 from app.models.financial import Financial
 from app.models.price import DailyPrice
+from app.models.transcript import EarningsTranscript
 from app.models.valuation import Valuation
 
 
@@ -253,6 +255,32 @@ class ValidationAgent(BaseAgent):
                     parts.append(f"Rev consensus=${e.revenue_consensus/1e9:.2f}B")
                 sections.append(" ".join(parts))
 
+        # Latest earnings transcript — lets validator verify segment-level claims,
+        # forward guidance, and management quotes that aren't in any structured table.
+        result = await db.execute(
+            select(EarningsTranscript)
+            .where(EarningsTranscript.ticker == ticker)
+            .order_by(EarningsTranscript.year.desc(), EarningsTranscript.quarter.desc())
+            .limit(1)
+        )
+        transcript = result.scalar_one_or_none()
+        if transcript:
+            excerpt = prepare_earnings_context(
+                transcript.prepared_remarks or "",
+                transcript.qa_section or "",
+                max_tokens=8000,
+            )
+            if excerpt:
+                sections.append(
+                    f"\n--- EARNINGS CALL TRANSCRIPT (Q{transcript.quarter} {transcript.year}, "
+                    f"{transcript.transcript_date}) ---"
+                )
+                sections.append(
+                    "Verify segment revenue, guidance figures, backlog, and management "
+                    "quotes against this transcript. Treat figures cited verbatim by management as CONFIRMED."
+                )
+                sections.append(excerpt)
+
         return "\n".join(sections)
 
     def get_system_prompt(self) -> str:
@@ -261,19 +289,34 @@ class ValidationAgent(BaseAgent):
 For each agent report, identify quantitative claims (numbers, percentages, trends) and check them against the verified data provided.
 
 For each claim, classify it as:
-- CONFIRMED — matches the hard data exactly or very closely
-- CLOSE — within 5% of the actual value (rounding differences)
-- CONTRADICTED — conflicts with the hard data (include the correct value)
-- UNVERIFIABLE — no hard data available to check this claim
+- CONFIRMED — matches the hard data within tolerance (see below)
+- CLOSE — outside tolerance but directionally correct and within 5% relative error
+- CONTRADICTED — clearly wrong: opposite direction, wrong order of magnitude, or >5% relative error
+- UNVERIFIABLE — no hard data available to check this claim, OR claim is forward-looking (see below)
+
+TOLERANCE BANDS (use CONFIRMED, not CONTRADICTED, when within these):
+- Percentages / margins / growth rates: ±0.2pp (e.g. 18.5% vs 18.6% → CONFIRMED)
+- Dollar amounts: ±1% relative (e.g. $59.89B vs $59.9B → CONFIRMED)
+- Multiples (P/E, P/S, EV/EBITDA): ±0.1x (e.g. 16.8x vs 16.9x → CONFIRMED)
+- Be especially generous on rounding-driven differences in derived figures
+  (margins, growth rates, ratios) — these inherit precision loss from inputs.
+
+FORWARD-LOOKING ASSUMPTIONS (mark UNVERIFIABLE, not CONTRADICTED):
+- DCF model inputs (assumed growth rates, WACC, terminal growth, fcf_margin)
+- Forward year projections that aren't in the analyst-estimates table
+- Target prices and intrinsic value figures
+- Capex / spending guidance unless explicitly in the database
+These are the agent's modeling choices, not facts to verify against historicals.
 
 Focus on:
-1. Revenue, earnings, and margin figures cited by agents
-2. Growth rates and trend directions
-3. Valuation multiples referenced
-4. Forward estimates compared to actual consensus data
-5. Any specific dollar amounts or percentages
+1. Revenue, earnings, and margin figures cited as historical (CHECK these)
+2. Growth rates and trend directions when claimed about specific past quarters
+3. Valuation multiples referenced (compare to DB snapshot)
+4. Forward analyst estimates (compare to analyst_estimates rows only)
+5. Any specific dollar amounts cited as historical fact
 
 Do NOT judge opinions, analysis quality, or investment conclusions.
+Do NOT flag DCF assumptions as wrong — they are projections, not facts.
 Only flag factual errors — wrong numbers that could lead to wrong analysis.
 Use the data freshness section when evaluating claims about "current" or "latest" data. If the latest DB row is stale relative to the validation run date, say so in the relevant check detail.
 The application will overwrite ticker, validation_date, and summary counts after your response; focus on the checks themselves.

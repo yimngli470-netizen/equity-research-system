@@ -1,13 +1,17 @@
 """Industry Analyst Agent — sector positioning, cycle analysis, competitive landscape."""
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
-from app.agents.transcript_utils import extract_competitive_mentions
+from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.stock import Stock
 from app.models.transcript import EarningsTranscript
+
+logger = logging.getLogger(__name__)
 
 
 class IndustryAgent(BaseAgent):
@@ -39,10 +43,15 @@ Industry: {industry}
             .limit(1)
         )
         transcript = result.scalar_one_or_none()
-        if transcript:
-            competitive = extract_competitive_mentions(transcript.full_text)
-            if competitive:
-                context += f"\n\n{competitive}"
+        if transcript and transcript.summary:
+            block = format_summary_for_agent(transcript.summary, focus="industry")
+            if block:
+                context += f"\n\n{block}"
+        elif transcript:
+            logger.warning(
+                "[industry] %s Q%d %d transcript has no summary — skipping transcript context",
+                ticker, transcript.quarter, transcript.year,
+            )
 
         return context
 

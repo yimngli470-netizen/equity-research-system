@@ -205,3 +205,54 @@ async def get_analysis_reports(
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/{ticker}/transcript-debug")
+async def debug_transcript_filters(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Inspect what each consumer sees from the latest transcript.
+
+    Shows two distinct views:
+    - The LLM-generated structured summary (what earnings/industry/valuation
+      agents actually consume — see transcript_summarizer.py)
+    - The keyword-filtered raw text (what the validator consumes so it can
+      cross-check against source quotes)
+    """
+    from app.agents.transcript_summarizer import format_summary_for_agent
+    from app.agents.transcript_utils import prepare_earnings_context
+    from app.models.transcript import EarningsTranscript
+
+    result = await db.execute(
+        select(EarningsTranscript)
+        .where(EarningsTranscript.ticker == ticker.upper())
+        .order_by(EarningsTranscript.year.desc(), EarningsTranscript.quarter.desc())
+        .limit(1)
+    )
+    transcript = result.scalar_one_or_none()
+    if not transcript:
+        raise HTTPException(404, f"No transcript found for {ticker}")
+
+    full_text = transcript.full_text or ""
+    prepared = transcript.prepared_remarks or ""
+    qa = transcript.qa_section or ""
+
+    summary = transcript.summary
+    return {
+        "ticker": ticker.upper(),
+        "transcript": {
+            "year": transcript.year,
+            "quarter": transcript.quarter,
+            "transcript_date": transcript.transcript_date.isoformat() if transcript.transcript_date else None,
+            "full_text_chars": len(full_text),
+            "prepared_remarks_chars": len(prepared),
+            "qa_section_chars": len(qa),
+            "estimated_tokens_full": len(full_text) // 4,
+            "has_llm_summary": summary is not None,
+        },
+        "llm_summary_raw": summary,
+        "agent_views": {
+            "earnings_agent (LLM summary)": format_summary_for_agent(summary, focus="earnings") if summary else None,
+            "industry_agent (LLM summary)": format_summary_for_agent(summary, focus="industry") if summary else None,
+            "valuation_agent (LLM summary)": format_summary_for_agent(summary, focus="valuation") if summary else None,
+            "validation_agent (keyword-filtered raw)": prepare_earnings_context(prepared, qa, max_tokens=8000),
+        },
+    }

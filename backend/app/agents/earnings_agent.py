@@ -1,13 +1,17 @@
 """Earnings Analyst Agent — deep dive into quarterly results and trends."""
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
-from app.agents.transcript_utils import prepare_earnings_context
+from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.earnings import EarningsEvent
 from app.models.transcript import EarningsTranscript
+
+logger = logging.getLogger(__name__)
 
 
 class EarningsAgent(BaseAgent):
@@ -27,12 +31,21 @@ class EarningsAgent(BaseAgent):
             .limit(1)
         )
         transcript = result.scalar_one_or_none()
-        if transcript:
-            filtered = prepare_earnings_context(
-                transcript.prepared_remarks, transcript.qa_section
+        if transcript and transcript.summary:
+            block = format_summary_for_agent(transcript.summary, focus="earnings")
+            if block:
+                context += (
+                    f"\n\n--- EARNINGS CALL (Q{transcript.quarter} {transcript.year}) ---\n"
+                    f"{block}"
+                )
+        elif transcript:
+            # Latest transcript exists but summarizer didn't produce output
+            # (transient API/parse failure). Skip transcript context for this run
+            # rather than feeding stale or low-quality data to the agent.
+            logger.warning(
+                "[earnings] %s Q%d %d transcript has no summary — skipping transcript context",
+                ticker, transcript.quarter, transcript.year,
             )
-            if filtered:
-                context += f"\n\n--- EARNINGS CALL TRANSCRIPT (Q{transcript.quarter} {transcript.year}) ---\n{filtered}"
 
         # Add beat/miss history (last 4 quarters)
         result = await db.execute(

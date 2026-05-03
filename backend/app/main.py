@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +10,16 @@ from app.api.ingestion import router as ingestion_router
 from app.api.scoring import router as scoring_router
 from app.api.stocks import router as stocks_router
 from app.config import settings
+
+# Configure app-level logging so logger.info() calls in app.* modules
+# (agents, ingestion, transcript_utils, etc.) actually appear in container logs.
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logging.getLogger("app").setLevel(
+    getattr(logging, settings.log_level.upper(), logging.INFO)
+)
 
 
 @asynccontextmanager

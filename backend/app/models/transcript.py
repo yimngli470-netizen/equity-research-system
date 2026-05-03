@@ -23,6 +23,10 @@ class EarningsTranscript(Base):
     prepared_remarks: Mapped[str | None] = mapped_column(Text)
     qa_section: Mapped[str | None] = mapped_column(Text)
     speakers: Mapped[dict | None] = mapped_column(JSONB)
+    # LLM-generated structured summary of the transcript. Computed once on
+    # ingestion (transcripts are immutable). Consumed by earnings/industry/valuation
+    # agents instead of keyword-filtered raw text.
+    summary: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
