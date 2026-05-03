@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.transcript_summarizer import summarize_transcript
 from app.ingestion.fmp_client import get_fmp_client
 from app.models.financial import Financial
 from app.models.transcript import EarningsTranscript
@@ -136,6 +137,10 @@ async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
             except (ValueError, TypeError):
                 transcript_date = period_end
 
+        # Summarize first (one Sonnet call) so consumers get a structured view
+        # instead of keyword-filtered raw text. Failures here don't block storage.
+        summary = await summarize_transcript(ticker, year, quarter, content)
+
         stmt = insert(EarningsTranscript).values(
             ticker=ticker,
             year=year,
@@ -145,6 +150,7 @@ async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
             prepared_remarks=prepared,
             qa_section=qa,
             speakers=speakers,
+            summary=summary,
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_transcript_ticker_yr_q",
@@ -153,6 +159,7 @@ async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
                 "prepared_remarks": stmt.excluded.prepared_remarks,
                 "qa_section": stmt.excluded.qa_section,
                 "speakers": stmt.excluded.speakers,
+                "summary": stmt.excluded.summary,
                 "transcript_date": stmt.excluded.transcript_date,
             },
         )

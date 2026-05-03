@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.analysis import AnalysisReport
+from app.models.financial import Financial
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,15 @@ class BaseAgent(ABC):
 
         # Anchor the agent in real time so it stops hallucinating "validation_date: 2024-12-19"
         # and so claims about "current" / "latest" data have a concrete reference point.
-        user_prompt = f"Today's date is {date.today().isoformat()}.\n\n{user_prompt}"
+        prefix = f"Today's date is {date.today().isoformat()}."
+
+        # If a quarter was reported in the last 90 days, surface it so agents anchor
+        # their analysis on the just-released quarter instead of the prior one.
+        recency = await self._get_recency_marker(db, ticker)
+        if recency:
+            prefix = f"{prefix}\n{recency}"
+
+        user_prompt = f"{prefix}\n\n{user_prompt}"
 
         # Call Claude API in a thread to avoid blocking the async event loop
         import asyncio
@@ -131,6 +140,31 @@ class BaseAgent(ABC):
         except anthropic.APIError as e:
             logger.error("[%s] Claude API error: %s", self.agent_type, e)
             return {"error": f"API error: {e}"}
+
+    async def _get_recency_marker(self, db: AsyncSession, ticker: str) -> str | None:
+        """Return a one-line marker if the ticker just reported earnings.
+
+        Anchors agents on the freshly-released quarter so they don't keep
+        narrating about the prior quarter even when newer data is available.
+        """
+        result = await db.execute(
+            select(Financial)
+            .where(Financial.ticker == ticker)
+            .order_by(Financial.period_end_date.desc())
+            .limit(1)
+        )
+        latest = result.scalar_one_or_none()
+        if not latest:
+            return None
+        days_old = (date.today() - latest.period_end_date).days
+        if days_old < 0 or days_old > 90:
+            return None
+        return (
+            f"NOTE: {ticker}'s most recently reported quarter is {latest.period} "
+            f"(ended {latest.period_end_date}, {days_old} days ago). "
+            f"Anchor your analysis on THIS quarter — discuss what changed in {latest.period} "
+            f"vs prior quarters, not just trailing trends."
+        )
 
     async def _get_cached(self, db: AsyncSession, ticker: str) -> AnalysisReport | None:
         """Check for a fresh cached report."""

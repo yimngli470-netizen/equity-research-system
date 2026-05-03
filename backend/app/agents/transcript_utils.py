@@ -1,13 +1,20 @@
-"""Transcript filtering utilities for agent context windows.
+"""Transcript filtering for the validation agent only.
 
-Transcripts can be 10-30K tokens. These functions extract the most
-relevant paragraphs for each agent's focus area using keyword-based
-scoring (no LLM calls).
+The earnings/industry/valuation agents read the LLM-generated structured
+summary stored in `earnings_transcripts.summary` (see transcript_summarizer.py).
+The validation agent deliberately does NOT read the summary — it verifies
+agent claims against the *raw* transcript so it can catch summarizer
+hallucinations as well. That's why we keep keyword filtering: the validator
+needs a budget-friendly slice of the raw text.
+
+Approach: keyword-based paragraph scoring (no LLM calls).
 """
 
+import logging
 import re
 
-# Approximate tokens per character (conservative for English text)
+logger = logging.getLogger(__name__)
+
 CHARS_PER_TOKEN = 4
 
 
@@ -22,28 +29,21 @@ def _split_paragraphs(text: str) -> list[str]:
 
 
 def _score_paragraph(paragraph: str, keywords: list[str], bonus_keywords: list[str] | None = None) -> float:
-    """Score a paragraph by keyword density.
-
-    Higher score = more relevant. Counts keyword occurrences
-    relative to paragraph length.
-    """
+    """Score a paragraph by keyword density."""
     text_lower = paragraph.lower()
     score = 0.0
 
     for kw in keywords:
-        count = text_lower.count(kw.lower())
-        score += count
+        score += text_lower.count(kw.lower())
 
     if bonus_keywords:
         for kw in bonus_keywords:
-            count = text_lower.count(kw.lower())
-            score += count * 1.5
+            score += text_lower.count(kw.lower()) * 1.5
 
     # Bonus for paragraphs containing numbers (likely quantitative)
     numbers = re.findall(r"\$[\d,.]+|\d+\.?\d*%|\d{1,3}(?:,\d{3})+", paragraph)
     score += len(numbers) * 0.5
 
-    # Normalize by paragraph length to avoid favoring very long paragraphs
     word_count = len(paragraph.split())
     if word_count > 0:
         score = score / (word_count ** 0.5)
@@ -51,30 +51,33 @@ def _score_paragraph(paragraph: str, keywords: list[str], bonus_keywords: list[s
     return score
 
 
-def _select_top_paragraphs(paragraphs: list[str], scores: list[float], max_tokens: int) -> str:
-    """Select highest-scoring paragraphs that fit within the token budget.
-
-    Preserves original order (not sorted by score) for readability.
-    """
-    indexed = list(enumerate(scores))
-    indexed.sort(key=lambda x: x[1], reverse=True)
+def _select_top_paragraphs(paragraphs: list[str], scores: list[float], max_tokens: int) -> tuple[str, dict]:
+    """Pick highest-scoring paragraphs that fit the token budget, keep original order."""
+    indexed = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
 
     selected_indices = set()
+    selected_scores: list[float] = []
     total_tokens = 0
 
-    for idx, _score in indexed:
+    for idx, score in indexed:
         tokens = _estimate_tokens(paragraphs[idx])
         if total_tokens + tokens > max_tokens:
             continue
         selected_indices.add(idx)
+        selected_scores.append(score)
         total_tokens += tokens
 
-    # Return in original order
     result = [paragraphs[i] for i in sorted(selected_indices)]
-    return "\n\n".join(result)
+    stats = {
+        "paragraphs_total": len(paragraphs),
+        "paragraphs_selected": len(selected_indices),
+        "tokens_estimated": total_tokens,
+        "tokens_budget": max_tokens,
+        "top_score": max(selected_scores) if selected_scores else 0.0,
+        "min_selected_score": min(selected_scores) if selected_scores else 0.0,
+    }
+    return "\n\n".join(result), stats
 
-
-# --- Public API ---
 
 FINANCIAL_KEYWORDS = [
     "revenue", "earnings", "profit", "margin", "growth", "decline",
@@ -83,30 +86,17 @@ FINANCIAL_KEYWORDS = [
     "quarter", "sequential", "basis points", "billion", "million",
 ]
 
-COMPETITIVE_KEYWORDS = [
-    "competitor", "competition", "market share", "pricing", "advantage",
-    "differentiation", "moat", "barrier", "leadership", "versus",
-    "compared to", "ahead of", "behind", "threat", "disruption",
-    "customer", "win", "lost", "switching", "landscape",
-]
-
-GUIDANCE_KEYWORDS = [
-    "guidance", "outlook", "expect", "forecast", "anticipate",
-    "target", "goal", "plan", "project", "next quarter", "next year",
-    "full year", "fiscal year", "going forward", "long-term", "medium-term",
-    "capital expenditure", "capex", "invest", "accelerate", "decelerate",
-]
-
 
 def prepare_earnings_context(
     prepared_remarks: str | None,
     qa_section: str | None,
     max_tokens: int = 5000,
 ) -> str:
-    """Filter transcript for the earnings agent.
+    """Filter raw transcript text for the validation agent.
 
-    Prioritizes: financial figures, segment breakdowns, one-time items,
-    management commentary on results, forward guidance.
+    Returns paragraphs densest in financial figures, segment breakdowns,
+    one-time items, and management commentary. Used so the validator can
+    cross-check agent claims against source quotes within a token budget.
     """
     parts = []
 
@@ -117,7 +107,12 @@ def prepare_earnings_context(
             _score_paragraph(p, FINANCIAL_KEYWORDS, bonus_keywords=["segment", "one-time", "non-recurring", "restructuring"])
             for p in paragraphs
         ]
-        filtered = _select_top_paragraphs(paragraphs, scores, remarks_budget)
+        filtered, stats = _select_top_paragraphs(paragraphs, scores, remarks_budget)
+        logger.info(
+            "[transcript_filter:validator/remarks] %d/%d paragraphs selected, %d/%d tokens (top score %.2f)",
+            stats["paragraphs_selected"], stats["paragraphs_total"],
+            stats["tokens_estimated"], stats["tokens_budget"], stats["top_score"],
+        )
         if filtered:
             parts.append("=== PREPARED REMARKS (key excerpts) ===\n" + filtered)
 
@@ -128,52 +123,13 @@ def prepare_earnings_context(
             _score_paragraph(p, FINANCIAL_KEYWORDS, bonus_keywords=["concern", "risk", "surprised", "disappointing", "strong"])
             for p in paragraphs
         ]
-        filtered = _select_top_paragraphs(paragraphs, scores, qa_budget)
+        filtered, stats = _select_top_paragraphs(paragraphs, scores, qa_budget)
+        logger.info(
+            "[transcript_filter:validator/qa] %d/%d paragraphs selected, %d/%d tokens (top score %.2f)",
+            stats["paragraphs_selected"], stats["paragraphs_total"],
+            stats["tokens_estimated"], stats["tokens_budget"], stats["top_score"],
+        )
         if filtered:
             parts.append("=== ANALYST Q&A (key exchanges) ===\n" + filtered)
 
     return "\n\n".join(parts) if parts else ""
-
-
-def extract_competitive_mentions(
-    full_text: str | None,
-    max_tokens: int = 1500,
-) -> str:
-    """Filter transcript for the industry agent.
-
-    Extracts paragraphs mentioning competitors, market share,
-    pricing dynamics, and competitive positioning.
-    """
-    if not full_text:
-        return ""
-
-    paragraphs = _split_paragraphs(full_text)
-    scores = [
-        _score_paragraph(p, COMPETITIVE_KEYWORDS, bonus_keywords=FINANCIAL_KEYWORDS[:5])
-        for p in paragraphs
-    ]
-    filtered = _select_top_paragraphs(paragraphs, scores, max_tokens)
-
-    return f"=== TRANSCRIPT: Competitive Mentions ===\n{filtered}" if filtered else ""
-
-
-def extract_guidance_mentions(
-    full_text: str | None,
-    max_tokens: int = 1500,
-) -> str:
-    """Filter transcript for the valuation agent.
-
-    Extracts forward-looking statements, guidance, capex plans,
-    and management expectations.
-    """
-    if not full_text:
-        return ""
-
-    paragraphs = _split_paragraphs(full_text)
-    scores = [
-        _score_paragraph(p, GUIDANCE_KEYWORDS, bonus_keywords=FINANCIAL_KEYWORDS[:5])
-        for p in paragraphs
-    ]
-    filtered = _select_top_paragraphs(paragraphs, scores, max_tokens)
-
-    return f"=== TRANSCRIPT: Forward Guidance ===\n{filtered}" if filtered else ""
