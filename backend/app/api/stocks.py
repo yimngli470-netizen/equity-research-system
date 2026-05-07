@@ -207,6 +207,26 @@ async def get_analysis_reports(
     return result.scalars().all()
 
 
+@router.get("/{ticker}/freshness")
+async def get_freshness(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Deterministic freshness report — pure code, no LLM.
+
+    Tells you per-category (price, financials, valuation, news, transcripts,
+    analyst_estimates, transcript_summary) whether the data we have is the
+    latest, stale, missing, or unknown. Agents prepend warnings to their
+    prompts so they don't call stale data 'current'.
+    """
+    from app.data_freshness import build_freshness_report
+
+    # 404 if the ticker isn't tracked, so the caller knows
+    stock = await db.get(Stock, ticker.upper())
+    if stock is None:
+        raise HTTPException(404, f"Stock {ticker} not found")
+
+    report = await build_freshness_report(db, ticker.upper())
+    return report.to_dict()
+
+
 @router.get("/{ticker}/transcript-debug")
 async def debug_transcript_filters(ticker: str, db: AsyncSession = Depends(get_db)):
     """Inspect what each consumer sees from the latest transcript.

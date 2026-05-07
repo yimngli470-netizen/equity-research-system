@@ -68,15 +68,35 @@ class BaseAgent(ABC):
 
         # Anchor the agent in real time so it stops hallucinating "validation_date: 2024-12-19"
         # and so claims about "current" / "latest" data have a concrete reference point.
-        prefix = f"Today's date is {date.today().isoformat()}."
+        prefix_parts = [f"Today's date is {date.today().isoformat()}."]
 
         # If a quarter was reported in the last 90 days, surface it so agents anchor
         # their analysis on the just-released quarter instead of the prior one.
         recency = await self._get_recency_marker(db, ticker)
         if recency:
-            prefix = f"{prefix}\n{recency}"
+            prefix_parts.append(recency)
 
-        user_prompt = f"{prefix}\n\n{user_prompt}"
+        # Deterministic data freshness warnings — prevents agents from calling
+        # stale data current. Pure code (no LLM); only emits when something is
+        # actually stale.
+        from app.data_freshness import build_freshness_report, format_freshness_warnings
+        try:
+            freshness_report = await build_freshness_report(db, ticker)
+            warnings = format_freshness_warnings(freshness_report)
+            if warnings:
+                stale_cats = [
+                    name for name, c in freshness_report.categories.items()
+                    if c.status.value in ("stale", "missing")
+                ]
+                logger.info(
+                    "[%s] %s freshness: injecting warnings for %s",
+                    self.agent_type, ticker, ", ".join(stale_cats),
+                )
+                prefix_parts.append(warnings)
+        except Exception:
+            logger.exception("[%s] freshness check failed for %s", self.agent_type, ticker)
+
+        user_prompt = "\n\n".join(prefix_parts) + f"\n\n{user_prompt}"
 
         # Call Claude API in a thread to avoid blocking the async event loop
         import asyncio
