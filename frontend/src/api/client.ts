@@ -83,7 +83,32 @@ export interface IngestionResult {
   financials: number;
   valuation: boolean;
   news: number;
+  transcripts: number;
+  earnings_surprises: number;
+  analyst_estimates: number;
   errors: string[];
+}
+
+export interface ValuationResponse {
+  ticker: string;
+  date: string;
+  forward_pe: number | null;
+  trailing_pe: number | null;
+  peg_ratio: number | null;
+  price_to_sales: number | null;
+  price_to_book: number | null;
+  ev_to_revenue: number | null;
+  ev_to_ebitda: number | null;
+  trailing_eps: number | null;
+  forward_eps: number | null;
+  earnings_growth: number | null;
+  revenue_growth: number | null;
+  gross_margins: number | null;
+  operating_margins: number | null;
+  profit_margins: number | null;
+  market_cap: number | null;
+  enterprise_value: number | null;
+  shares_outstanding: number | null;
 }
 
 export const api = {
@@ -93,6 +118,8 @@ export const api = {
     add: (data: { ticker: string; name: string; sector?: string; industry?: string }) =>
       request<Stock>('/stocks/', { method: 'POST', body: JSON.stringify(data) }),
     remove: (ticker: string) => request<void>(`/stocks/${ticker}`, { method: 'DELETE' }),
+    valuation: (ticker: string) =>
+      request<ValuationResponse | null>(`/stocks/${ticker}/valuation`),
   },
   prices: {
     get: (ticker: string, limit = 252) =>
@@ -108,7 +135,7 @@ export const api = {
       return request<AnalysisReport[]>(`/stocks/${ticker}/analysis${params}`);
     },
     run: (ticker: string, force = false) =>
-      request<{ ticker: string; results: { agent_type: string; success: boolean; cached: boolean }[]; all_succeeded: boolean }>(
+      request<{ ticker: string; results: { agent_type: string; success: boolean; cached: boolean; error?: string | null }[]; all_succeeded: boolean }>(
         '/analysis/run',
         { method: 'POST', body: JSON.stringify({ ticker, force }) }
       ),

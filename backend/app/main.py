@@ -20,6 +20,7 @@ logging.basicConfig(
 logging.getLogger("app").setLevel(
     getattr(logging, settings.log_level.upper(), logging.INFO)
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

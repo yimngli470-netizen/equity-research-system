@@ -22,6 +22,10 @@ class FMPRateLimitError(Exception):
     pass
 
 
+class FMPAccessError(Exception):
+    pass
+
+
 class FMPClient:
     """Thin async wrapper around the FMP REST API."""
 
@@ -54,6 +58,12 @@ class FMPClient:
         self._call_count += 1
         logger.debug("FMP [%d/250] GET %s → %d", self._call_count, endpoint, resp.status_code)
 
+        if resp.status_code in (402, 403):
+            raise FMPAccessError(
+                f"FMP endpoint '{endpoint}' is unavailable under the current subscription "
+                f"(HTTP {resp.status_code})"
+            )
+
         if resp.status_code != 200:
             logger.error("FMP API error %d: %s", resp.status_code, resp.text[:200])
             return None
@@ -62,7 +72,12 @@ class FMPClient:
 
         # FMP returns {"Error Message": "..."} on bad requests
         if isinstance(data, dict) and "Error Message" in data:
-            logger.error("FMP error: %s", data["Error Message"])
+            msg = str(data["Error Message"])
+            if any(word in msg.lower() for word in ("subscription", "premium", "restricted")):
+                raise FMPAccessError(
+                    f"FMP endpoint '{endpoint}' is unavailable under the current subscription"
+                )
+            logger.error("FMP error: %s", msg)
             return None
 
         return data

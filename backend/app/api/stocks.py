@@ -112,12 +112,30 @@ async def add_stock(stock_in: StockCreate, db: AsyncSession = Depends(get_db)):
     return stock
 
 
-@router.get("/{ticker}", response_model=StockResponse)
+@router.get("/{ticker}", response_model=StockWithLatestPrice)
 async def get_stock(ticker: str, db: AsyncSession = Depends(get_db)):
     stock = await db.get(Stock, ticker.upper())
     if not stock:
         raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
-    return stock
+
+    prices_result = await db.execute(
+        select(DailyPrice)
+        .where(DailyPrice.ticker == stock.ticker)
+        .order_by(DailyPrice.date.desc())
+        .limit(2)
+    )
+    prices = prices_result.scalars().all()
+
+    latest_price = prices[0].close if prices else None
+    change_pct = None
+    if len(prices) >= 2:
+        change_pct = (prices[0].close - prices[1].close) / prices[1].close
+
+    return StockWithLatestPrice(
+        **StockResponse.model_validate(stock).model_dump(),
+        latest_price=latest_price,
+        price_change_pct=change_pct,
+    )
 
 
 @router.delete("/{ticker}", status_code=204)

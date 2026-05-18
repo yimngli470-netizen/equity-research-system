@@ -2,8 +2,10 @@
 
 import logging
 import re
+import asyncio
 from datetime import date, datetime
 
+import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,42 @@ from app.models.financial import Financial
 from app.models.transcript import EarningsTranscript
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_fiscal_year_end_month(ticker: str) -> int | None:
+    """Infer fiscal year-end month from yfinance metadata."""
+    try:
+        info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info)
+    except Exception:
+        logger.exception("Failed to fetch fiscal year metadata for %s", ticker)
+        return None
+
+    for key in ("lastFiscalYearEnd", "nextFiscalYearEnd"):
+        ts = info.get(key) if info else None
+        if ts:
+            try:
+                return datetime.utcfromtimestamp(int(ts)).date().month
+            except (TypeError, ValueError, OSError):
+                continue
+    return None
+
+
+def _fiscal_period_from_end_date(
+    period_end: date,
+    fiscal_year_end_month: int | None,
+) -> tuple[int, int]:
+    """Return fiscal year/quarter for a period-end date.
+
+    Falls back to calendar quarter when fiscal-year metadata is unavailable.
+    """
+    if fiscal_year_end_month is None:
+        return period_end.year, (period_end.month - 1) // 3 + 1
+
+    fiscal_start_month = fiscal_year_end_month % 12 + 1
+    month_offset = (period_end.month - fiscal_start_month) % 12
+    quarter = month_offset // 3 + 1
+    year = period_end.year if period_end.month <= fiscal_year_end_month else period_end.year + 1
+    return year, quarter
 
 
 def _split_transcript(content: str) -> tuple[str | None, str | None]:
@@ -101,10 +139,10 @@ async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
         logger.info("No financial data for %s, skipping transcript ingestion", ticker)
         return 0
 
+    fiscal_year_end_month = await _get_fiscal_year_end_month(ticker)
     stored = 0
     for period_end in quarters:
-        year = period_end.year
-        quarter = (period_end.month - 1) // 3 + 1
+        year, quarter = _fiscal_period_from_end_date(period_end, fiscal_year_end_month)
 
         # Check if we already have this transcript
         existing = await db.execute(

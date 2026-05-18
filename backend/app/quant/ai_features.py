@@ -68,7 +68,14 @@ def _extract_earnings_features(report: dict) -> dict[str, float | None]:
 
     # Trend analysis
     trend = report.get("trend_analysis", {})
-    trend_map = {"accelerating": 1.0, "expanding": 1.0, "stable": 0.5, "decelerating": 0.0, "compressing": 0.0}
+    trend_map = {
+        "accelerating": 1.0,
+        "expanding": 1.0,
+        "stable": 0.5,
+        "decelerating": 0.0,
+        "compressing": 0.0,
+        "unknown": None,
+    }
     features["revenue_trend_signal"] = trend_map.get(trend.get("revenue_trend"))
     features["margin_trend_signal"] = trend_map.get(trend.get("margin_trend"))
 

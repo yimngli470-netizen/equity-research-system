@@ -35,7 +35,8 @@ def check_valuation_flags(
     """Check for valuation-related risks."""
     flags = []
 
-    # Extremely high P/E
+    # Extremely high P/E. Feature is normalized/inverted: raw P/E >= ~57.5 maps below 0.05.
+    # Non-positive raw P/E values are normalized to 0.0 upstream because loss-based P/E is not cheap.
     fwd_pe = features.get("forward_pe")
     if fwd_pe is not None and fwd_pe < 0.05:  # normalized: very expensive
         flags.append(RiskFlag(
@@ -45,9 +46,10 @@ def check_valuation_flags(
             message="Forward P/E is extremely elevated — stock is priced for perfection",
         ))
 
-    # PEG ratio signals overvaluation
+    # PEG ratio signals overvaluation. Feature is normalized/inverted:
+    # raw PEG > 2.0 maps below 0.4 with the current (0.5, 3.0) scale.
     peg = features.get("peg_ratio")
-    if peg is not None and peg < 0.1:  # normalized: PEG > 2.7
+    if peg is not None and peg < 0.4:  # normalized: PEG > ~2.0
         flags.append(RiskFlag(
             level="major",
             rule="high_peg",
@@ -276,8 +278,10 @@ def check_quality_flags(
     fwd_rev = features.get("fwd_revenue_signal")
     fwd_margin = features.get("fwd_margin_signal")
     if fwd_rev is not None and fwd_rev < 0.2 and fwd_margin is not None and fwd_margin < 0.2:
+        fwd_confidence = features.get("fwd_confidence")
+        level = "critical" if fwd_confidence is not None and fwd_confidence >= 0.75 else "major"
         flags.append(RiskFlag(
-            level="critical",
+            level=level,
             rule="deteriorating_outlook",
             category="quality",
             message="Forward outlook is deteriorating on both revenue and margins",

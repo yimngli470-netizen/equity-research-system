@@ -35,6 +35,23 @@ def _linear_normalize(
     return round(score, 4)
 
 
+def _normalize_valuation_multiple(
+    value: float | None,
+    low: float,
+    high: float,
+) -> float | None:
+    """Normalize inverse valuation multiples where non-positive values are bad.
+
+    A negative or zero P/E/PEG usually means negative forward earnings/growth or
+    an unavailable estimate. It should not be scored as "cheap".
+    """
+    if value is None:
+        return None
+    if value <= 0:
+        return 0.0
+    return _linear_normalize(value, low, high, invert=True)
+
+
 # ── Normalization configs ──
 # (low_bound, high_bound, invert)
 # low_bound = value that maps to 0.0 (or 1.0 if inverted)
@@ -158,6 +175,11 @@ def normalize_features(
     result: dict[str, float | None] = {}
 
     for name, value in raw_features.items():
+        if category == "valuation" and name in {"forward_pe", "trailing_pe", "peg_ratio"}:
+            low, high, _invert = norms[name]
+            result[name] = _normalize_valuation_multiple(value, low, high)
+            continue
+
         if name in norms:
             low, high, invert = norms[name]
             result[name] = _linear_normalize(value, low, high, invert)

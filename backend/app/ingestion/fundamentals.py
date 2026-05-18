@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import math
-from datetime import date
+from datetime import date, datetime
 
 import yfinance as yf
 from sqlalchemy.dialects.postgresql import insert
@@ -46,14 +46,20 @@ async def ingest_financials(db: AsyncSession, ticker: str) -> int:
     stock = yf.Ticker(ticker)
 
     def _fetch():
-        return stock.quarterly_income_stmt, stock.quarterly_cashflow, stock.quarterly_balance_sheet
+        return (
+            stock.quarterly_income_stmt,
+            stock.quarterly_cashflow,
+            stock.quarterly_balance_sheet,
+            stock.info,
+        )
 
-    income, cashflow, balance = await asyncio.to_thread(_fetch)
+    income, cashflow, balance, info = await asyncio.to_thread(_fetch)
 
     if income.empty:
         logger.warning("No income statement data for %s", ticker)
         return 0
 
+    fiscal_year_end_month = _fiscal_year_end_month(info)
     rows = []
     for col in income.columns:
         period_end = col.date() if hasattr(col, "date") else col
@@ -61,7 +67,7 @@ async def ingest_financials(db: AsyncSession, ticker: str) -> int:
         rows.append(
             {
                 "ticker": ticker,
-                "period": _quarter_label(period_end),
+                "period": _quarter_label(period_end, fiscal_year_end_month),
                 "period_end_date": period_end,
                 # Income statement
                 "revenue": _get(income, "Total Revenue", col),
@@ -160,7 +166,28 @@ async def ingest_valuation(db: AsyncSession, ticker: str) -> bool:
     return True
 
 
-def _quarter_label(d: date) -> str:
-    """Convert a date to a fiscal quarter label like 'Q1 2026'."""
-    q = (d.month - 1) // 3 + 1
-    return f"Q{q} {d.year}"
+def _fiscal_year_end_month(info: dict | None) -> int | None:
+    """Infer fiscal year-end month from yfinance metadata."""
+    if not info:
+        return None
+    for key in ("lastFiscalYearEnd", "nextFiscalYearEnd"):
+        ts = info.get(key)
+        if ts:
+            try:
+                return datetime.utcfromtimestamp(int(ts)).date().month
+            except (TypeError, ValueError, OSError):
+                continue
+    return None
+
+
+def _quarter_label(d: date, fiscal_year_end_month: int | None = None) -> str:
+    """Convert a period-end date to a fiscal quarter label like 'Q2 2026'."""
+    if fiscal_year_end_month is None:
+        q = (d.month - 1) // 3 + 1
+        return f"Q{q} {d.year}"
+
+    fiscal_start_month = fiscal_year_end_month % 12 + 1
+    month_offset = (d.month - fiscal_start_month) % 12
+    q = month_offset // 3 + 1
+    fiscal_year = d.year if d.month <= fiscal_year_end_month else d.year + 1
+    return f"Q{q} {fiscal_year}"
