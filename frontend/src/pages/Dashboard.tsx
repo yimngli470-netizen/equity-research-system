@@ -1,113 +1,166 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import type { Stock, StockScore } from '../api/client';
 import { api } from '../api/client';
-import ScoreCard from '../components/ScoreCard';
+import type { Stock } from '../api/client';
+import DashboardHeader from '../components/dashboard/DashboardHeader';
+import WatchlistToolbar, { type Layout, type SortBy } from '../components/dashboard/WatchlistToolbar';
+import WatchlistTable from '../components/dashboard/WatchlistTable';
+import WatchlistGrid from '../components/dashboard/WatchlistGrid';
+import type { WatchlistRow } from '../components/dashboard/rows';
+import { fmtRelativeTime } from '../components/primitives/format';
+
+const LAYOUT_KEY = 'watchlist-layout';
+const SORT_KEY = 'watchlist-sort';
+
+function loadLayout(): Layout {
+  const v = localStorage.getItem(LAYOUT_KEY);
+  return v === 'grid' ? 'grid' : 'table';
+}
+function loadSort(): SortBy {
+  const v = localStorage.getItem(SORT_KEY);
+  if (v === 'ticker' || v === 'change' || v === 'flags' || v === 'score') return v;
+  return 'score';
+}
 
 export default function Dashboard() {
   const [stocks, setStocks] = useState<Stock[]>([]);
-  const [scores, setScores] = useState<Record<string, StockScore | null>>({});
+  const [rows, setRows] = useState<WatchlistRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Add stock form
-  const [ticker, setTicker] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortByRaw] = useState<SortBy>(() => loadSort());
+  const [layout, setLayoutRaw] = useState<Layout>(() => loadLayout());
+
+  const setLayout = (v: Layout) => {
+    setLayoutRaw(v);
+    localStorage.setItem(LAYOUT_KEY, v);
+  };
+  const setSortBy = (v: SortBy) => {
+    setSortByRaw(v);
+    localStorage.setItem(SORT_KEY, v);
+  };
 
   useEffect(() => {
-    loadStocks();
+    loadAll();
   }, []);
 
-  async function loadStocks() {
+  async function loadAll() {
     try {
       setLoading(true);
       const data = await api.stocks.list();
       setStocks(data);
 
-      // Fetch latest scores for each stock
-      const scoreMap: Record<string, StockScore | null> = {};
-      await Promise.all(
-        data.map(async (s) => {
-          try {
-            scoreMap[s.ticker] = await api.scores.latest(s.ticker);
-          } catch {
-            scoreMap[s.ticker] = null;
-          }
-        })
+      // For each stock, fetch latest score + decision in parallel.
+      // N+1 query — acceptable for a personal watchlist of ~10 stocks.
+      const enriched = await Promise.all(
+        data.map(async (s): Promise<WatchlistRow> => {
+          const [score, decision] = await Promise.all([
+            api.scores.latest(s.ticker).catch(() => null),
+            api.decision.latest(s.ticker).catch(() => null),
+          ]);
+          return {
+            ticker: s.ticker,
+            name: s.name,
+            latest_price: s.latest_price,
+            price_change_pct: s.price_change_pct,
+            composite_score: score ? score.composite_score : null,
+            signal: decision ? decision.final_signal : score ? score.signal : null,
+            flag_count: decision ? decision.risk_flags.length : 0,
+            last_run: fmtRelativeTime(decision?.date ?? score?.date ?? null),
+          };
+        }),
       );
-      setScores(scoreMap);
+      setRows(enriched);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load stocks');
+      setError(err instanceof Error ? err.message : 'Failed to load watchlist');
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleAddStock(e: React.FormEvent) {
-    e.preventDefault();
-    if (!ticker.trim()) return;
+  async function handleAdd() {
+    const t = window.prompt('Add ticker:');
+    if (!t) return;
+    const ticker = t.trim().toUpperCase();
+    if (!ticker) return;
     try {
-      setAdding(true);
-      const t = ticker.trim().toUpperCase();
-      await api.stocks.add({ ticker: t, name: t });
-      setTicker('');
-      await loadStocks();
+      await api.stocks.add({ ticker, name: ticker });
+      await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add stock');
-    } finally {
-      setAdding(false);
     }
   }
 
+  const filtered = rows.filter((r) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return r.ticker.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q);
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'score') return (b.composite_score ?? -1) - (a.composite_score ?? -1);
+    if (sortBy === 'ticker') return a.ticker.localeCompare(b.ticker);
+    if (sortBy === 'change')
+      return (b.price_change_pct ?? -Infinity) - (a.price_change_pct ?? -Infinity);
+    if (sortBy === 'flags') return b.flag_count - a.flag_count;
+    return 0;
+  });
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">AI Equity Research Dashboard</h1>
-        <p className="text-gray-500 mt-1">Track, analyze, and score your portfolio</p>
-      </div>
+      <DashboardHeader rows={rows} />
 
-      {/* Add Stock Form */}
-      <form onSubmit={handleAddStock} className="mb-8 flex gap-3 items-end">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Ticker</label>
-          <input
-            type="text"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value)}
-            placeholder="NVDA"
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={adding}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-        >
-          {adding ? 'Adding...' : 'Add Stock'}
-        </button>
-      </form>
+      <WatchlistToolbar
+        query={query}
+        setQuery={setQuery}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        layout={layout}
+        setLayout={setLayout}
+        onAdd={handleAdd}
+      />
 
-      {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-          {error}
-          <button onClick={() => setError(null)} className="ml-3 underline text-sm">Dismiss</button>
+        <div
+          style={{
+            background: 'var(--color-neg-bg)',
+            border: '1px solid var(--color-rule)',
+            color: 'var(--color-neg-fg)',
+            padding: '10px 14px',
+            borderRadius: 6,
+            fontSize: 12.5,
+            marginBottom: 16,
+          }}
+        >
+          {error}{' '}
+          <button
+            onClick={() => setError(null)}
+            style={{
+              marginLeft: 8,
+              textDecoration: 'underline',
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+            }}
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Stock Grid */}
       {loading ? (
-        <div className="text-gray-500">Loading stocks...</div>
-      ) : stocks.length === 0 ? (
-        <div className="text-gray-400 py-12">No stocks in your watchlist. Add one above to get started.</div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {stocks.map((stock) => (
-            <Link key={stock.ticker} to={`/stock/${stock.ticker}`} className="no-underline">
-              <ScoreCard stock={stock} score={scores[stock.ticker]} />
-            </Link>
-          ))}
+        <div style={{ color: 'var(--color-ink-3)', fontSize: 13, padding: '40px 0' }}>
+          Loading watchlist…
         </div>
+      ) : stocks.length === 0 ? (
+        <div style={{ color: 'var(--color-ink-3)', fontSize: 13, padding: '40px 0' }}>
+          No stocks in your watchlist. Click "+ Add ticker" to get started.
+        </div>
+      ) : layout === 'table' ? (
+        <WatchlistTable rows={sorted} />
+      ) : (
+        <WatchlistGrid rows={sorted} />
       )}
     </div>
   );

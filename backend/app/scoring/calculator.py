@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,7 +137,15 @@ async def calculate_score(
     # Step 6: Signal
     signal = score_to_signal(composite, t)
 
-    # Step 7: Save features to quant_features table
+    # Step 7: Save features to quant_features table. Replace today's feature
+    # set so values that become None/unknown do not leave stale rows behind.
+    await db.execute(
+        delete(QuantFeature).where(
+            QuantFeature.ticker == ticker,
+            QuantFeature.date == today,
+        )
+    )
+
     all_features: list[tuple[str, str, float | None]] = []
     for name, val in norm_growth.items():
         all_features.append(("growth", name, val))

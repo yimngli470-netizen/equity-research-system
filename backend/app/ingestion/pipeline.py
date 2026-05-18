@@ -98,24 +98,34 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
 
         # FMP data (gated behind API key)
         if settings.fmp_api_key:
+            from app.ingestion.fmp_client import FMPAccessError
             from app.ingestion.analyst_estimates import ingest_analyst_estimates
             from app.ingestion.earnings_surprises import ingest_earnings_surprises
             from app.ingestion.transcripts import ingest_transcripts
 
             try:
                 result.transcripts = await ingest_transcripts(db, ticker)
+            except FMPAccessError as e:
+                logger.warning("Transcript ingestion unavailable for %s: %s", ticker, e)
+                result.errors.append(f"transcripts: {e}")
             except Exception as e:
                 logger.exception("Transcript ingestion failed for %s", ticker)
                 result.errors.append(f"transcripts: {e}")
 
             try:
                 result.earnings_surprises = await ingest_earnings_surprises(db, ticker)
+            except FMPAccessError as e:
+                logger.warning("Earnings surprise ingestion unavailable for %s: %s", ticker, e)
+                result.errors.append(f"earnings_surprises: {e}")
             except Exception as e:
                 logger.exception("Earnings surprise ingestion failed for %s", ticker)
                 result.errors.append(f"earnings_surprises: {e}")
 
             try:
                 result.analyst_estimates = await ingest_analyst_estimates(db, ticker)
+            except FMPAccessError as e:
+                logger.warning("Analyst estimate ingestion unavailable for %s: %s", ticker, e)
+                result.errors.append(f"analyst_estimates: {e}")
             except Exception as e:
                 logger.exception("Analyst estimates ingestion failed for %s", ticker)
                 result.errors.append(f"analyst_estimates: {e}")

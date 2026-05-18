@@ -1,6 +1,7 @@
 """Earnings Analyst Agent — deep dive into quarterly results and trends."""
 
 import logging
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from app.agents.base import BaseAgent
 from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.earnings import EarningsEvent
+from app.models.estimate import AnalystEstimate
 from app.models.transcript import EarningsTranscript
 
 logger = logging.getLogger(__name__)
@@ -31,9 +33,11 @@ class EarningsAgent(BaseAgent):
             .limit(1)
         )
         transcript = result.scalar_one_or_none()
+        has_transcript_context = False
         if transcript and transcript.summary:
             block = format_summary_for_agent(transcript.summary, focus="earnings")
             if block:
+                has_transcript_context = True
                 context += (
                     f"\n\n--- EARNINGS CALL (Q{transcript.quarter} {transcript.year}) ---\n"
                     f"{block}"
@@ -45,6 +49,12 @@ class EarningsAgent(BaseAgent):
             logger.warning(
                 "[earnings] %s Q%d %d transcript has no summary — skipping transcript context",
                 ticker, transcript.quarter, transcript.year,
+            )
+        if not has_transcript_context:
+            context += (
+                "\n\n--- EARNINGS CALL / MANAGEMENT GUIDANCE ---\n"
+                "No earnings call transcript, structured guidance, or management commentary is available in the database. "
+                "Do not infer next-quarter guidance from historical financials alone; mark forward outlook fields as unknown unless another provided data block supports them."
             )
 
         # Add beat/miss history (last 4 quarters)
@@ -66,6 +76,37 @@ class EarningsAgent(BaseAgent):
                         beat += f" ({e.eps_surprise_pct:+.1%})"
                 lines.append(f"  {e.report_date}: EPS actual={e.eps_actual}, est={e.eps_estimate} → {beat}")
             context += "\n\n" + "\n".join(lines)
+        else:
+            context += (
+                "\n\n--- EARNINGS SURPRISE HISTORY ---\n"
+                "No EPS/revenue beat-miss history is available in the database. Set beat_miss_history to null."
+            )
+
+        result = await db.execute(
+            select(AnalystEstimate)
+            .where(AnalystEstimate.ticker == ticker)
+            .where(AnalystEstimate.period_end_date >= date.today())
+            .order_by(AnalystEstimate.period_end_date.asc())
+            .limit(4)
+        )
+        estimates = result.scalars().all()
+        if estimates:
+            lines = ["--- ANALYST CONSENSUS ESTIMATES ---"]
+            for e in estimates:
+                parts = [f"  {e.period_end_date}:"]
+                if e.eps_consensus is not None:
+                    parts.append(f"EPS consensus=${e.eps_consensus:.2f}")
+                if e.revenue_consensus is not None:
+                    parts.append(f"Revenue consensus=${e.revenue_consensus / 1e9:.2f}B")
+                if e.number_of_analysts:
+                    parts.append(f"({e.number_of_analysts} analysts)")
+                lines.append(" ".join(parts))
+            context += "\n\n" + "\n".join(lines)
+        else:
+            context += (
+                "\n\n--- ANALYST CONSENSUS ESTIMATES ---\n"
+                "No forward analyst estimates are available in the database. Do not infer consensus or next-quarter direction from valuation multiples."
+            )
 
         return context
 
@@ -77,10 +118,11 @@ Focus on:
 2. TREND ANALYSIS — Are growth rates improving or deteriorating? Are margins expanding sustainably?
 3. EARNINGS QUALITY — Is growth driven by real demand or one-time items? Is FCF tracking net income?
 4. RISKS — What could go wrong? Margin pressure, growth deceleration, competitive threats evident in the numbers.
-5. FORWARD OUTLOOK — Based on trends and management guidance, what should we expect next quarter?
+5. FORWARD OUTLOOK — Based on explicit management guidance, transcript commentary, or analyst consensus estimates, what should we expect next quarter?
 6. TRANSCRIPT ANALYSIS — If transcript data is provided, analyze management tone, segment-level detail, one-time items mentioned, key analyst concerns from Q&A, and forward guidance specifics.
 
 IMPORTANT: Use ONLY the numbers and facts provided in the data. Do not fabricate or estimate numbers not present in the input. When citing transcript content, stay faithful to what management actually said.
+IMPORTANT: If transcript/guidance/consensus data is missing, honestly mark forward-looking fields as "unknown" instead of guessing. Do not classify revenue_direction as "decelerating" or margin_direction as "compressing" solely because current growth or margins are unusually high, cyclical, or may eventually normalize. Use decelerating/compressing only when the provided guidance, consensus, or transcript explicitly supports that direction.
 
 You must respond with valid JSON only, no other text. Use this exact schema:
 {
@@ -108,9 +150,11 @@ You must respond with valid JSON only, no other text. Use this exact schema:
     }
   ],
   "forward_outlook": {
-    "revenue_direction": "accelerating | stable | decelerating",
-    "margin_direction": "expanding | stable | compressing",
+    "revenue_direction": "accelerating | stable | decelerating | unknown",
+    "margin_direction": "expanding | stable | compressing | unknown",
     "confidence": "high | moderate | low",
+    "evidence_source": "management_guidance | analyst_consensus | transcript | financial_trend_only | unavailable",
+    "missing_data": ["string — important missing data sources, if any"],
     "detail": "string"
   },
   "transcript_analysis": {
@@ -131,7 +175,8 @@ You must respond with valid JSON only, no other text. Use this exact schema:
 }
 
 If no transcript data is available, set transcript_analysis fields to null.
-If no beat/miss history is available, set beat_miss_history fields to null."""
+If no beat/miss history is available, set beat_miss_history fields to null.
+If no transcript/guidance/consensus estimate data is available, set forward_outlook revenue_direction and margin_direction to "unknown", confidence to "low", evidence_source to "unavailable", and list the missing sources in missing_data."""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:
         return f"""Analyze the following financial data for {ticker}. Provide a deep earnings analysis covering key drivers, trends, quality, risks, and forward outlook. If earnings call transcript excerpts are included, analyze management commentary, segment details, and analyst concerns.

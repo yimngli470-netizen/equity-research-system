@@ -1,1 +1,59 @@
 @import "tailwindcss";
+
+@theme {
+  /* Fonts */
+  --font-ui: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+
+  /* Light theme (default) */
+  --color-bg: oklch(98.5% 0.003 80);
+  --color-surface: oklch(99.5% 0.002 80);
+  --color-surface-2: oklch(96.5% 0.004 80);
+  --color-ink: oklch(20% 0.01 80);
+  --color-ink-2: oklch(45% 0.008 80);
+  --color-ink-3: oklch(62% 0.005 80);
+  --color-rule: oklch(91% 0.005 80);
+  --color-rule-soft: oklch(94.5% 0.004 80);
+
+  /* Signal palette — muted, never saturated */
+  --color-pos-fg: oklch(48% 0.10 155);
+  --color-pos-bg: oklch(94% 0.04 155);
+  --color-pos-bg-soft: oklch(96% 0.025 155);
+  --color-warn-fg: oklch(58% 0.13 60);
+  --color-warn-bg: oklch(95% 0.04 60);
+  --color-watch-fg: oklch(60% 0.10 85);
+  --color-watch-bg: oklch(96% 0.035 85);
+  --color-neg-fg: oklch(50% 0.14 25);
+  --color-neg-bg: oklch(94% 0.04 25);
+  --color-neut-fg: oklch(45% 0.005 80);
+  --color-neut-bg: oklch(94% 0.005 80);
+}
+
+/* Dark mode (tied to a `dark` class on <html>) */
+.dark {
+  --color-bg: oklch(16% 0.008 80);
+  --color-surface: oklch(20% 0.008 80);
+  --color-surface-2: oklch(24% 0.008 80);
+  --color-ink: oklch(96% 0.005 80);
+  --color-ink-2: oklch(74% 0.005 80);
+  --color-ink-3: oklch(56% 0.005 80);
+  --color-rule: oklch(28% 0.008 80);
+  --color-rule-soft: oklch(25% 0.008 80);
+  --color-pos-fg: oklch(72% 0.13 155);
+  --color-pos-bg: oklch(28% 0.06 155);
+  --color-warn-fg: oklch(76% 0.14 60);
+  --color-warn-bg: oklch(28% 0.06 60);
+  --color-watch-fg: oklch(78% 0.12 85);
+  --color-watch-bg: oklch(28% 0.05 85);
+  --color-neg-fg: oklch(70% 0.16 25);
+  --color-neg-bg: oklch(28% 0.07 25);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
