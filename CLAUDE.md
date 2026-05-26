@@ -52,11 +52,18 @@ backend/
       fundamentals.py        #   Quarterly financials + valuation snapshots via yfinance
       news.py                #   News articles from yfinance (STORY type only)
       fmp_client.py          #   FMP API client (250 calls/day free tier, rate-limited)
-      transcripts.py         #   Earnings call transcripts from FMP (split prepared remarks + Q&A)
+      transcripts.py         #   Orchestrator: FMP → IR scraper fallback chain, calendar-gated
       earnings_surprises.py  #   EPS beat/miss history from FMP → earnings_events table
       analyst_estimates.py   #   Consensus estimates from FMP → analyst_estimates table
       scheduler.py           #   APScheduler daily cron at 21:30 UTC
       computed_metrics.py    #   Derived growth rates, margins, momentum (on-the-fly, not stored)
+      ir/                    #   IR-site transcript scraper (tier-3 fallback when FMP misses) — planned
+        sources.yaml         #     Per-ticker IR config: URL + discovery strategy + artifact_type
+        registry.py          #     Load/get/update IRSource; persists repaired strategies back to YAML
+        fetcher.py           #     fetch_transcript_from_ir(ticker, year, quarter) main entry
+        discovery.py         #     Programmatic link discovery (link_regex | css_selector | url_template)
+        extract.py           #     Text extraction dispatcher (pdfplumber | beautifulsoup | python-pptx)
+        repair.py            #     LLM-driven discovery fallback when programmatic strategy breaks
     agents/                  # Layer 2: AI research agents
       base.py                #   BaseAgent ABC: cache check → Claude API call → save JSONB
       news_agent.py          #   Sonnet 4, daily refresh, news sentiment + impact scoring
@@ -129,9 +136,9 @@ Each agent has a `max_age_days` setting. When triggered:
 | Agent | Model | Refresh | Purpose | Data Sources |
 |-------|-------|---------|---------|-------------|
 | News | Sonnet 4 | Daily | Factual news impact scoring | yfinance news |
-| Earnings | Opus 4 | Monthly | Quarterly deep-dive + transcript analysis | yfinance financials + FMP transcripts + FMP surprises |
-| Industry | Opus 4 | Weekly | Cycle position, competitive landscape | yfinance + FMP transcript competitive excerpts |
-| Valuation | Opus 4 | Weekly | DCF, multiples, consensus comparison | yfinance + FMP estimates + FMP transcript guidance |
+| Earnings | Opus 4 | Monthly | Quarterly deep-dive + transcript analysis | yfinance financials + transcript (FMP → IR fallback) + FMP surprises |
+| Industry | Opus 4 | Weekly | Cycle position, competitive landscape | yfinance + transcript competitive excerpts (FMP → IR fallback) |
+| Valuation | Opus 4 | Weekly | DCF, multiples, consensus comparison | yfinance + FMP estimates + transcript guidance (FMP → IR fallback) |
 | Validation | Sonnet 4 | Every run | Cross-check agent claims vs hard DB data | All agent reports + DB financials/valuation/estimates |
 
 ### Refresh Strategy
@@ -141,6 +148,58 @@ The system has two trigger paths with deliberately different cache semantics:
 - **Daily scheduler (`ingestion/scheduler.py`, 21:30 UTC)** — runs ingestion for all active stocks. Agent/scoring/decision wiring is **not yet hooked up** ("What's Not Yet Built" item). When wired, it should run **cache-aware** (no `force`) so news refreshes daily but Opus agents only re-run when their windows lapse.
 
 **Known staleness gotcha:** time-based caching alone can return a stale earnings report for up to 30 days after a new quarterly release (the cache window is exactly long enough to span an entire quarter). Mitigation by design: the user clicks the button after earnings. We rejected event-aware cache invalidation as overkill — the button's existence makes it unnecessary.
+
+### Transcript Fallback Chain (planned, not yet built)
+FMP free-tier coverage is sparse outside the largest names. The earnings/industry/valuation agents are transcript-hungry, so missing transcripts silently degrade analysis quality. The fallback chain is built into `ingestion/transcripts.py`:
+
+```
+For each (ticker, year, quarter) we don't yet have a transcript for:
+  1. CALENDAR GATE — skip unless today is within [earnings_date, earnings_date + 7d]
+     from earnings_events (sourced via FMP earnings calendar). Avoids pointless scrapes
+     between earnings cycles, since transcripts only ship once per quarter.
+  2. TIER 1: FMP — call fmp_client.get_earnings_transcript(ticker, year, quarter)
+  3. TIER 2: IR scraper — call ir.fetcher.fetch_transcript_from_ir(ticker, year, quarter)
+     a. Look up the ticker in ir/sources.yaml. Skip if no entry (no fallback configured).
+     b. Apply the configured discovery strategy on the IR landing page to find the
+        latest transcript/release URL.
+     c. If discovery returns nothing → call ir.repair.repair_discovery() (Sonnet 4),
+        which finds the link AND emits a replacement strategy. Persist the new strategy
+        back to sources.yaml via registry.update_strategy() so the next run doesn't pay
+        the LLM cost again.
+     d. Fetch the document, dispatch to ir.extract by content-type (PDF/HTML/PPTX).
+     e. Return IRFetchResult with content + source_url + artifact_type + has_qa.
+  4. STORE — upsert into earnings_transcripts with source ∈ {fmp, ir_pdf, ir_html, ir_pptx},
+     source_url, and has_qa. Then run transcript_summarizer (existing Sonnet pass).
+  5. GIVE UP — if after 7d the transcript still isn't available anywhere, log a warning
+     and wait for the next earnings date. Don't retry indefinitely.
+```
+
+**Schema additions to `earnings_transcripts`** (Alembic migration required when implementing):
+- `source: str` — `"fmp" | "ir_pdf" | "ir_html" | "ir_pptx"`. Drives agent confidence weighting.
+- `source_url: str | None` — original document URL for audit.
+- `has_qa: bool` — true for full transcripts, false for press releases / slide decks. The earnings agent uses this to skip Q&A-tone features when absent.
+
+**`ir/sources.yaml` schema** (one entry per ticker that needs fallback):
+```yaml
+AAPL:
+  ir_url: https://investor.apple.com/investor-relations/default.aspx
+  strategy: { type: link_regex, pattern: "(?i)Q\\d.*Transcript.*\\.pdf" }
+  artifact_type: press_release   # honest labeling: Apple doesn't post transcripts
+  notes: "Apple IR posts press release + 10-Q link only; no call transcript."
+MSFT:
+  ir_url: https://www.microsoft.com/en-us/investor/earnings/FY-{year}-Q{quarter}/...
+  strategy: { type: url_template, pattern: "..." }
+  artifact_type: transcript
+```
+
+Strategy types supported by `ir.discovery`:
+- `link_regex` — find an `<a href>` whose text or URL matches a regex
+- `css_selector` — CSS selector returning the transcript link
+- `url_template` — direct URL with `{year}` / `{quarter}` interpolation (no scraping needed)
+
+**Design rationale (why programmatic with LLM repair, not LLM-driven navigation):** per-scrape Claude calls × small watchlist × multi-weekly runs adds avoidable cost; LLMs hallucinate URLs in ways that are hard to debug; YAML configs are 5-minute fixes when IR sites redesign (1-2x/yr per ticker). LLM is the repair tool, not the runtime.
+
+**Dependencies to add when implementing:** `pdfplumber`, `beautifulsoup4`, `python-pptx`, `pyyaml`. `httpx` is already a dep.
 
 ### Scoring System
 **60+ features** across 9 extraction categories, mapped to **7 scoring categories** (+ validation meta-category):
@@ -258,10 +317,13 @@ GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 | Source | Cost | Data | Tables |
 |--------|------|------|--------|
 | **yfinance** | Free | Prices, financials, valuation multiples, news | daily_prices, financials, valuations, documents |
-| **FMP** | Free tier (250 calls/day) | Earnings transcripts, EPS surprises, analyst estimates | earnings_transcripts, earnings_events, analyst_estimates |
-| **Claude API** | Per-token | AI analysis via 5 agents (news, earnings, industry, valuation, validation) | analysis_reports |
+| **FMP** | Free tier (250 calls/day) | Earnings transcripts (tier 1), EPS surprises, analyst estimates, earnings calendar | earnings_transcripts, earnings_events, analyst_estimates |
+| **IR site scraper (planned)** | Free | Earnings transcripts / press releases / slides — tier-3 fallback when FMP has no coverage | earnings_transcripts (with `source` field) |
+| **Claude API** | Per-token | AI analysis via 5 agents (news, earnings, industry, valuation, validation) + IR scraper repair fallback | analysis_reports |
 
 FMP integration is gated behind `FMP_API_KEY` env var. If not set, FMP ingestion steps are silently skipped and agents fall back to yfinance-only context.
+
+The IR scraper has no API key dependency but does require `backend/app/ingestion/ir/sources.yaml` to be populated for each ticker that needs fallback coverage. See **Transcript Fallback Chain** below.
 
 ## What's Not Yet Built
 - Interactive DCF calculator (frontend)
@@ -269,4 +331,5 @@ FMP integration is gated behind `FMP_API_KEY` env var. If not set, FMP ingestion
 - Settings page (manage watchlist, adjust weights)
 - Scheduler wiring: auto-run agents + scoring + decision after daily ingestion
 - Document embeddings (pgvector) not yet active
-- SEC EDGAR transcripts and insider trades ingestion deferred
+- **IR transcript scraper (tier-3 fallback)** — designed in **Transcript Fallback Chain** above. Module layout staked out in `ingestion/ir/`; schema additions to `earnings_transcripts` pending Alembic migration. SEC EDGAR was considered and rejected (it doesn't host call transcripts, only 8-K press releases / 10-Q filings).
+- Insider trades ingestion deferred

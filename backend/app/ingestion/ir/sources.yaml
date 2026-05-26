@@ -1,0 +1,53 @@
+# Per-ticker IR config for the transcript fallback scraper.
+#
+# Schema (one entry per ticker):
+#   <TICKER>:
+#     ir_url: <landing page that lists per-quarter artifacts>
+#     strategy:
+#       type: link_regex | css_selector | url_template
+#       pattern: <regex / selector / URL template; may reference {year} {quarter} {q} {yr}>
+#     artifact_type: transcript | prepared_remarks | press_release | slides
+#     notes: <free-form description of what's actually posted here>
+#
+# Placeholders interpolated into ir_url and strategy.pattern:
+#   {year}, {yr}      → fiscal year (e.g. 2026)
+#   {quarter}, {q}    → fiscal quarter (1-4)
+#
+# Notes:
+#  - link_regex matches against either the link href or its visible text
+#  - All regexes are compiled with re.IGNORECASE
+#  - If discovery returns nothing, repair.py calls Claude to find the link AND
+#    proposes a replacement pattern that gets written back here automatically.
+
+AMD:
+  ir_url: https://ir.amd.com/financial-information/quarterly-results
+  strategy:
+    type: link_regex
+    pattern: "AMD_{q}Q_{year}_Earnings\\.pdf"
+  artifact_type: transcript
+  notes: |
+    AMD posts full earnings call transcripts as PDFs on the CloudFront CDN
+    (d1io3yog0oux5.cloudfront.net). The IR quarterly-results page links to them
+    directly. URL pattern observed: AMD_{Q}Q_{YEAR}_Earnings.pdf (e.g.
+    AMD_1Q_2026_Earnings.pdf). Note: AMD uses calendar quarter, not fiscal —
+    Q1 2026 = quarter ending March 2026.
+
+MU:
+  ir_url: https://investors.micron.com/quarterly-results
+  strategy:
+    type: link_regex
+    pattern: "reports-results-{ordinal}-quarter-fiscal-{year}"
+  artifact_type: press_release
+  notes: |
+    Micron's /quarterly-results page lists one /news-releases/news-release-details/
+    link per fiscal quarter. URL slug format:
+      micron-technology-inc-reports-results-{ordinal}-quarter-fiscal-{year}
+    where {ordinal} is the spelled-out quarter (first/second/third/fourth) —
+    use the {ordinal} placeholder added to discovery._interpolate. MU uses
+    fiscal year (FY2026 = Sep 2025 to Aug 2026); the orchestrator already
+    derives fiscal year/quarter via _fiscal_period_from_end_date().
+
+    Artifact is the press release HTML — quarterly results commentary +
+    forward guidance from management. Not the full call transcript and not
+    prepared remarks (Micron does not appear to publish either publicly).
+    has_qa will be False; earnings-agent Q&A features should degrade gracefully.

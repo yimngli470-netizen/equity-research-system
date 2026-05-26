@@ -1,4 +1,4 @@
-import type { NormalizedAgent, TileTone } from './agentView';
+import type { CallHighlights, KeyMetric, NormalizedAgent, TileTone } from './agentView';
 
 const TONE_COLOR: Record<TileTone, string> = {
   pos: 'var(--color-pos-fg)',
@@ -71,6 +71,192 @@ function EvidenceNote({ note }: { note: NonNullable<NormalizedAgent['evidence_no
           Missing: {note.missing_data.join(', ')}
         </div>
       )}
+    </div>
+  );
+}
+
+function SubheadStyle() {
+  return {
+    fontSize: 10,
+    letterSpacing: '.08em',
+    textTransform: 'uppercase' as const,
+    color: 'var(--color-ink-3)',
+    fontWeight: 600,
+    marginBottom: 6,
+  };
+}
+
+function CallHighlightsBlock({ h }: { h: CallHighlights }) {
+  const listStyle = { margin: '0 0 12px 18px', padding: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-ink-2)' };
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        padding: '12px 14px',
+        background: 'var(--color-surface-2)',
+        borderRadius: 6,
+        borderLeft: '2px solid var(--color-rule)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <span style={SubheadStyle()}>Earnings call highlights</span>
+        {h.management_tone && (
+          <span
+            style={{
+              fontSize: 11,
+              padding: '2px 8px',
+              borderRadius: 10,
+              background: 'var(--color-surface-3)',
+              color: 'var(--color-ink-2)',
+              textTransform: 'capitalize',
+            }}
+          >
+            tone: {h.management_tone}
+          </span>
+        )}
+      </div>
+
+      {h.forward_guidance_detail && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={SubheadStyle()}>Forward guidance</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-ink)' }}>
+            {h.forward_guidance_detail}
+          </div>
+        </div>
+      )}
+
+      {h.segment_highlights.length > 0 && (
+        <>
+          <div style={SubheadStyle()}>Segment highlights</div>
+          <ul style={listStyle}>
+            {h.segment_highlights.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {h.key_themes.length > 0 && (
+        <>
+          <div style={SubheadStyle()}>Themes</div>
+          <ul style={listStyle}>
+            {h.key_themes.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {h.one_time_items.length > 0 && (
+        <>
+          <div style={SubheadStyle()}>One-time items</div>
+          <ul style={listStyle}>
+            {h.one_time_items.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {h.analyst_concerns.length > 0 && (
+        <>
+          <div style={SubheadStyle()}>Analyst concerns (Q&A)</div>
+          <ul style={listStyle}>
+            {h.analyst_concerns.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+const VS_TARGET_TONE: Record<KeyMetric['vs_target'], TileTone | undefined> = {
+  beat: 'pos',
+  miss: 'neg',
+  in_line: undefined,
+  unknown: 'muted',
+};
+
+const TREND_GLYPH: Record<KeyMetric['trend'], string> = {
+  up: '↑',
+  down: '↓',
+  flat: '→',
+  unknown: '·',
+};
+
+function KeyMetricsBlock({ metrics }: { metrics: KeyMetric[] }) {
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ ...SubheadStyle(), marginBottom: 8 }}>Key metrics to watch</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {metrics.map((m, i) => {
+          const tone = VS_TARGET_TONE[m.vs_target];
+          const toneColor =
+            tone === 'pos'
+              ? 'var(--color-pos-fg)'
+              : tone === 'neg'
+                ? 'var(--color-neg-fg)'
+                : tone === 'muted'
+                  ? 'var(--color-ink-3)'
+                  : 'var(--color-ink)';
+          return (
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 110px 70px 80px',
+                gap: 12,
+                alignItems: 'baseline',
+                padding: '8px 0',
+                borderTop: i ? '1px solid var(--color-rule-soft)' : '1px solid var(--color-rule-soft)',
+                fontSize: 12.5,
+              }}
+            >
+              <div>
+                <div style={{ color: 'var(--color-ink)' }}>{m.name}</div>
+                {m.detail && (
+                  <div style={{ fontSize: 11.5, color: 'var(--color-ink-3)', marginTop: 2 }}>{m.detail}</div>
+                )}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontVariantNumeric: 'tabular-nums',
+                  color: toneColor,
+                  textAlign: 'right',
+                }}
+              >
+                {m.value}
+              </div>
+              <div
+                style={{
+                  textAlign: 'center',
+                  color: toneColor,
+                  fontSize: 11,
+                  textTransform: 'uppercase',
+                  letterSpacing: '.06em',
+                }}
+              >
+                <span style={{ marginRight: 4 }}>{TREND_GLYPH[m.trend]}</span>
+                {m.vs_target.replace('_', ' ')}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: 'var(--color-ink-3)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '.06em',
+                  textAlign: 'right',
+                }}
+              >
+                {m.source}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -164,6 +350,10 @@ export default function AgentBody({ agent }: Props) {
               ))}
             </div>
           )}
+          {agent.key_metrics && agent.key_metrics.length > 0 && (
+            <KeyMetricsBlock metrics={agent.key_metrics} />
+          )}
+          {agent.call_highlights && <CallHighlightsBlock h={agent.call_highlights} />}
         </>
       )}
 

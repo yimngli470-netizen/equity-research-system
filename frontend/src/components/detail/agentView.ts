@@ -17,6 +17,27 @@ export interface EvidenceNote {
   missing_data: string[];         // e.g. ["earnings transcript", "forward guidance"]
 }
 
+// Transcript-derived content from the earnings call summary, surfaced in the UI.
+// Empty arrays / null fields are filtered out at render time.
+export interface CallHighlights {
+  management_tone: string | null;
+  forward_guidance_detail: string | null;
+  segment_highlights: string[];
+  key_themes: string[];
+  one_time_items: string[];
+  analyst_concerns: string[];
+}
+
+// One row in the earnings agent's per-ticker key-metrics report.
+export interface KeyMetric {
+  name: string;
+  value: string;
+  vs_target: 'beat' | 'miss' | 'in_line' | 'unknown';
+  trend: 'up' | 'down' | 'flat' | 'unknown';
+  source: 'transcript' | 'financials' | 'estimate' | 'unknown';
+  detail: string;
+}
+
 export interface NormalizedAgent {
   agent_type: string;
   model: string;
@@ -29,6 +50,8 @@ export interface NormalizedAgent {
   news_items?: { date: string; headline: string; impact: string; tone: 'pos' | 'neg' | 'neut' }[];
   earnings_tiles?: Tile[];
   evidence_note?: EvidenceNote | null;  // earnings agent: surfaces "unknown"/missing-data signals
+  call_highlights?: CallHighlights | null;  // earnings agent: transcript-derived sub-block
+  key_metrics?: KeyMetric[];                // earnings agent: per-ticker watched metrics
   industry_meta?: { cycle: string | null; moat: number | null };
   industry_competitors?: { name: string; threat: string; note: string }[];
   valuation_tiles?: Tile[];
@@ -185,6 +208,55 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
     } else {
       base.evidence_note = null;
     }
+
+    // Call highlights — earnings call content the agent extracted. All fields
+    // are optional; render only what's present.
+    const ta = (r.transcript_analysis as Record<string, unknown>) || {};
+    const toStrList = (v: unknown): string[] =>
+      Array.isArray(v) ? (v as unknown[]).map(asString).filter(Boolean) : [];
+    const highlights: CallHighlights = {
+      management_tone: typeof ta.management_tone === 'string' ? ta.management_tone : null,
+      forward_guidance_detail:
+        typeof ta.forward_guidance_detail === 'string' && ta.forward_guidance_detail.trim()
+          ? ta.forward_guidance_detail
+          : null,
+      segment_highlights: toStrList(ta.segment_highlights),
+      key_themes: toStrList(ta.key_themes_from_call),
+      one_time_items: toStrList(ta.one_time_items),
+      analyst_concerns: toStrList(ta.analyst_concerns),
+    };
+    const hasAnyHighlight =
+      highlights.management_tone ||
+      highlights.forward_guidance_detail ||
+      highlights.segment_highlights.length ||
+      highlights.key_themes.length ||
+      highlights.one_time_items.length ||
+      highlights.analyst_concerns.length;
+    base.call_highlights = hasAnyHighlight ? highlights : null;
+
+    // Per-ticker key metrics — what the user actually wants to watch for this name.
+    const kmRaw = Array.isArray(r.key_metrics) ? (r.key_metrics as Record<string, unknown>[]) : [];
+    const allowedVsTarget = new Set(['beat', 'miss', 'in_line', 'unknown']);
+    const allowedTrend = new Set(['up', 'down', 'flat', 'unknown']);
+    const allowedSource = new Set(['transcript', 'financials', 'estimate', 'unknown']);
+    base.key_metrics = kmRaw
+      .map((row): KeyMetric | null => {
+        const name = asString(row.name);
+        const value = asString(row.value);
+        if (!name) return null;
+        const vsRaw = asString(row.vs_target).toLowerCase();
+        const trRaw = asString(row.trend).toLowerCase();
+        const srcRaw = asString(row.source).toLowerCase();
+        return {
+          name,
+          value: value || '—',
+          vs_target: (allowedVsTarget.has(vsRaw) ? vsRaw : 'unknown') as KeyMetric['vs_target'],
+          trend: (allowedTrend.has(trRaw) ? trRaw : 'unknown') as KeyMetric['trend'],
+          source: (allowedSource.has(srcRaw) ? srcRaw : 'unknown') as KeyMetric['source'],
+          detail: asString(row.detail),
+        };
+      })
+      .filter((m): m is KeyMetric => m !== null);
   }
 
   if (agent_type === 'industry') {

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -23,10 +23,15 @@ class EarningsTranscript(Base):
     prepared_remarks: Mapped[str | None] = mapped_column(Text)
     qa_section: Mapped[str | None] = mapped_column(Text)
     speakers: Mapped[dict | None] = mapped_column(JSONB)
-    # LLM-generated structured summary of the transcript. Computed once on
-    # ingestion (transcripts are immutable). Consumed by earnings/industry/valuation
-    # agents instead of keyword-filtered raw text.
     summary: Mapped[dict | None] = mapped_column(JSONB)
+    # Provenance: "fmp" | "ir_pdf" | "ir_html" | "ir_pptx". Drives agent
+    # confidence weighting — full FMP transcripts are richest, IR press releases
+    # have no Q&A.
+    source: Mapped[str] = mapped_column(String(20), server_default="fmp")
+    source_url: Mapped[str | None] = mapped_column(Text)
+    # False for press releases / slide decks that lack Q&A. Lets the earnings
+    # agent skip Q&A-tone features when absent instead of inferring from silence.
+    has_qa: Mapped[bool] = mapped_column(Boolean, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

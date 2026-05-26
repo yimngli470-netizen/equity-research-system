@@ -11,6 +11,7 @@ from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.earnings import EarningsEvent
 from app.models.estimate import AnalystEstimate
+from app.models.key_metric import TickerKeyMetric
 from app.models.transcript import EarningsTranscript
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,36 @@ class EarningsAgent(BaseAgent):
                 "No forward analyst estimates are available in the database. Do not infer consensus or next-quarter direction from valuation multiples."
             )
 
+        # Per-ticker key metrics — the user has configured 4-6 KPIs that matter
+        # specifically for this company. The agent must report on each one in
+        # its key_metrics output array, drawing values from whichever data block
+        # above contains the answer (transcript, financials, or estimates).
+        result = await db.execute(
+            select(TickerKeyMetric)
+            .where(TickerKeyMetric.ticker == ticker)
+            .order_by(TickerKeyMetric.priority.asc(), TickerKeyMetric.metric_name.asc())
+        )
+        key_metrics = result.scalars().all()
+        if key_metrics:
+            lines = [
+                "--- KEY METRICS TO REPORT ON ---",
+                (
+                    "For each metric below, populate one row in the key_metrics array "
+                    "of your output. Pull the value from the transcript / financials / "
+                    "estimates blocks above. If the data above does not contain the value, "
+                    "set value=\"not disclosed\" and source=\"unknown\". Use the threshold "
+                    "to decide vs_target. Preserve the order shown."
+                ),
+            ]
+            for km in key_metrics:
+                row = f"  [P{km.priority}] {km.metric_name} — {km.definition}"
+                if km.target_or_threshold:
+                    row += f" | target: {km.target_or_threshold}"
+                if km.why_it_matters:
+                    row += f"\n      why: {km.why_it_matters}"
+                lines.append(row)
+            context += "\n\n" + "\n".join(lines)
+
         return context
 
     def get_system_prompt(self) -> str:
@@ -120,6 +151,7 @@ Focus on:
 4. RISKS — What could go wrong? Margin pressure, growth deceleration, competitive threats evident in the numbers.
 5. FORWARD OUTLOOK — Based on explicit management guidance, transcript commentary, or analyst consensus estimates, what should we expect next quarter?
 6. TRANSCRIPT ANALYSIS — If transcript data is provided, analyze management tone, segment-level detail, one-time items mentioned, key analyst concerns from Q&A, and forward guidance specifics.
+7. KEY METRICS — If a "KEY METRICS TO REPORT ON" block is provided, you MUST populate one row in the key_metrics output array for each metric listed there, in the same order. Pull values from the transcript / financials / estimates data blocks. If a value isn't disclosed in any provided block, set value="not disclosed" and source="unknown" — do NOT fabricate, infer from unrelated data, or skip the metric.
 
 IMPORTANT: Use ONLY the numbers and facts provided in the data. Do not fabricate or estimate numbers not present in the input. When citing transcript content, stay faithful to what management actually said.
 IMPORTANT: If transcript/guidance/consensus data is missing, honestly mark forward-looking fields as "unknown" instead of guessing. Do not classify revenue_direction as "decelerating" or margin_direction as "compressing" solely because current growth or margins are unusually high, cyclical, or may eventually normalize. Use decelerating/compressing only when the provided guidance, consensus, or transcript explicitly supports that direction.
@@ -170,12 +202,23 @@ You must respond with valid JSON only, no other text. Use this exact schema:
     "avg_surprise_pct": number,
     "trend": "improving | stable | deteriorating"
   },
+  "key_metrics": [
+    {
+      "name": "string — copy verbatim from KEY METRICS TO REPORT ON block",
+      "value": "string — actual value with unit (e.g. '+39%', '$5.4B', 'not disclosed')",
+      "vs_target": "beat | miss | in_line | unknown",
+      "trend": "up | down | flat | unknown",
+      "source": "transcript | financials | estimate | unknown",
+      "detail": "string — one short sentence on the read"
+    }
+  ],
   "earnings_quality_score": 0.0-1.0,
   "summary": "string — 3-4 sentence comprehensive assessment"
 }
 
 If no transcript data is available, set transcript_analysis fields to null.
 If no beat/miss history is available, set beat_miss_history fields to null.
+If no KEY METRICS TO REPORT ON block is provided, set key_metrics to an empty array [].
 If no transcript/guidance/consensus estimate data is available, set forward_outlook revenue_direction and margin_direction to "unknown", confidence to "low", evidence_source to "unavailable", and list the missing sources in missing_data."""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:

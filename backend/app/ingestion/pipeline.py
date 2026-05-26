@@ -96,21 +96,20 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("News ingestion failed for %s", ticker)
             result.errors.append(f"news: {e}")
 
-        # FMP data (gated behind API key)
+        # Transcripts run unconditionally — orchestrator falls back to IR scraper
+        # when FMP is unavailable or doesn't cover the ticker.
+        from app.ingestion.transcripts import ingest_transcripts
+        try:
+            result.transcripts = await ingest_transcripts(db, ticker)
+        except Exception as e:
+            logger.exception("Transcript ingestion failed for %s", ticker)
+            result.errors.append(f"transcripts: {e}")
+
+        # Other FMP-only data (gated behind API key)
         if settings.fmp_api_key:
             from app.ingestion.fmp_client import FMPAccessError
             from app.ingestion.analyst_estimates import ingest_analyst_estimates
             from app.ingestion.earnings_surprises import ingest_earnings_surprises
-            from app.ingestion.transcripts import ingest_transcripts
-
-            try:
-                result.transcripts = await ingest_transcripts(db, ticker)
-            except FMPAccessError as e:
-                logger.warning("Transcript ingestion unavailable for %s: %s", ticker, e)
-                result.errors.append(f"transcripts: {e}")
-            except Exception as e:
-                logger.exception("Transcript ingestion failed for %s", ticker)
-                result.errors.append(f"transcripts: {e}")
 
             try:
                 result.earnings_surprises = await ingest_earnings_surprises(db, ticker)

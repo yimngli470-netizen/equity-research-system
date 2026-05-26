@@ -80,6 +80,9 @@ _RE_CURRENT_PRICE = re.compile(
     re.IGNORECASE,
 )
 
+# "Q1 2026" / "Q4 2025" — for parsing latest_quarter field
+_RE_QUARTER_LABEL = re.compile(r"\bQ([1-4])\s*(\d{4})\b", re.IGNORECASE)
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Core validator
@@ -145,6 +148,8 @@ class DeterministicValidator:
                 continue  # never validate the validator's own claims
             if not isinstance(report, dict) or "error" in report:
                 continue
+            # Report-level structured checks (not just string-walking)
+            self._check_latest_quarter_freshness(report, agent)
             for path, text in self._walk_strings(report):
                 self._check_multiples(text, agent)
                 self._check_quarterly_revenue(text, agent)
@@ -213,6 +218,62 @@ class DeterministicValidator:
                 # in addition to relative.
                 absolute_tolerance=0.05,
             )
+
+    def _check_latest_quarter_freshness(self, report: dict, agent: str) -> None:
+        """Flag when the earnings agent anchored on a quarter older than the
+        freshest financial period in the DB.
+
+        Root cause we've seen: the earnings agent uses the latest *transcript*
+        to pick its focal quarter. When the transcript ingester lags behind
+        yfinance financials, the agent writes a stale report (e.g. analyzes
+        Q4 even though Q1 financials are sitting in the DB). The semantic
+        validator can't catch this because everything the agent says about Q4
+        is internally consistent.
+        """
+        if agent != "earnings":
+            return
+        if not self.financials_by_period:
+            return
+
+        claimed_str = report.get("latest_quarter")
+        if not isinstance(claimed_str, str):
+            return
+        m = _RE_QUARTER_LABEL.search(claimed_str)
+        if not m:
+            return
+        claimed_q, claimed_y = int(m.group(1)), int(m.group(2))
+        claimed_idx = claimed_y * 4 + (claimed_q - 1)
+
+        # Latest period key in DB looks like "2026Q1" — lexical max works here
+        # because year comes first, but parse explicitly to be safe.
+        latest_key = max(self.financials_by_period.keys())
+        km = re.match(r"(\d{4})Q([1-4])", latest_key)
+        if not km:
+            return
+        actual_y, actual_q = int(km.group(1)), int(km.group(2))
+        actual_idx = actual_y * 4 + (actual_q - 1)
+
+        if claimed_idx >= actual_idx:
+            # Up to date (or ahead — agent claiming a future quarter is a
+            # separate hallucination class we don't handle here).
+            return
+
+        stale = actual_idx - claimed_idx
+        self.checks.append(DeterministicCheck(
+            agent=agent,
+            claim=f"latest_quarter = {claimed_str.strip()}",
+            field="latest_quarter",
+            expected_value=None,
+            actual_value=None,
+            tolerance="0 quarters",
+            verdict="CONTRADICTED",
+            detail=(
+                f"Agent analyzed {claimed_str.strip()} but DB has financials through "
+                f"Q{actual_q} {actual_y} ({stale} quarter(s) newer). Likely cause: "
+                f"the earnings transcript for the newer quarter wasn't ingested "
+                f"when this report ran. Re-run with force=true after transcript ingestion."
+            ),
+        ))
 
     def _check_current_price(self, text: str, agent: str) -> None:
         if not self.latest_price:
