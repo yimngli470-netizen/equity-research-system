@@ -10,6 +10,7 @@ from app.models.valuation import Valuation
 from app.models.decision import StockDecision
 from app.models.transcript import EarningsTranscript
 from app.models.estimate import AnalystEstimate
+from app.models.key_metric import TickerKeyMetric
 
 __all__ = [
     "Stock",
@@ -26,4 +27,5 @@ __all__ = [
     "StockDecision",
     "EarningsTranscript",
     "AnalystEstimate",
+    "TickerKeyMetric",
 ]
