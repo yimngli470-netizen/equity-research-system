@@ -16,7 +16,7 @@ import asyncio
 from datetime import date, datetime, timedelta
 
 import yfinance as yf
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -233,14 +233,42 @@ async def _store(
     await db.execute(stmt)
 
 
+async def _resummarize_existing(
+    db: AsyncSession, row_id: int, ticker: str, year: int, quarter: int, full_text: str,
+) -> bool:
+    """Re-run the summarizer on a stored transcript whose summary column is NULL.
+
+    Heals rows that landed with summary=NULL because the original summarizer call
+    failed (transient Anthropic error, JSON parse failure, rate limit). Without
+    this the orchestrator would skip the row forever on subsequent runs.
+    """
+    new_summary = await summarize_transcript(ticker, year, quarter, full_text)
+    if not new_summary:
+        logger.warning(
+            "Re-summarize attempt for %s Q%d %d returned no output — leaving summary NULL",
+            ticker, quarter, year,
+        )
+        return False
+    await db.execute(
+        update(EarningsTranscript)
+        .where(EarningsTranscript.id == row_id)
+        .values(summary=new_summary)
+    )
+    logger.info("Healed missing summary for %s Q%d %d", ticker, quarter, year)
+    return True
+
+
 async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
     """Fetch recent transcripts with FMP → IR fallback, gated by earnings calendar.
 
-    Walks the 2 most recent quarter-end dates from financials. For each quarter
-    not yet in the DB:
-      - skip if outside the calendar window (no point fetching too early or too late)
-      - try FMP, then IR scraper
-      - on success: split / summarize / store with provenance
+    Walks the 2 most recent quarter-end dates from financials. For each quarter:
+      - if a row exists with a non-null summary: skip
+      - if a row exists with summary=NULL: re-run the summarizer on the stored
+        full_text (no re-download) so a single bad summarizer call doesn't leave
+        a permanently broken row
+      - else (no row): gate by calendar window, try FMP → IR, store with summary
+
+    Returns the count of rows that were either newly stored or healed.
     """
     result = await db.execute(
         select(Financial.period_end_date)
@@ -255,19 +283,31 @@ async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
         return 0
 
     fiscal_year_end_month = await _get_fiscal_year_end_month(ticker)
-    stored = 0
+    touched = 0
 
     for period_end in quarters:
         year, quarter = _fiscal_period_from_end_date(period_end, fiscal_year_end_month)
 
         existing = await db.execute(
-            select(EarningsTranscript.id).where(
+            select(
+                EarningsTranscript.id,
+                EarningsTranscript.summary,
+                EarningsTranscript.full_text,
+            ).where(
                 EarningsTranscript.ticker == ticker,
                 EarningsTranscript.year == year,
                 EarningsTranscript.quarter == quarter,
             )
         )
-        if existing.scalar_one_or_none() is not None:
+        row = existing.first()
+        if row is not None:
+            row_id, existing_summary, existing_full_text = row
+            if existing_summary is None and existing_full_text:
+                healed = await _resummarize_existing(
+                    db, row_id, ticker, year, quarter, existing_full_text
+                )
+                if healed:
+                    touched += 1
             continue
 
         if not _within_gate(period_end):
@@ -289,13 +329,13 @@ async def ingest_transcripts(db: AsyncSession, ticker: str) -> int:
             continue
 
         await _store(db, ticker, year, quarter, period_end, fetched)
-        stored += 1
+        touched += 1
         logger.info(
             "Stored transcript for %s Q%d %d (source=%s, has_qa=%s)",
             ticker, quarter, year, fetched["source"], fetched["has_qa"],
         )
 
-    if stored:
+    if touched:
         await db.commit()
 
-    return stored
+    return touched

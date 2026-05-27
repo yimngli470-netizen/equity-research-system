@@ -12,6 +12,7 @@ To add a new ticker, append to KEY_METRICS below and re-run.
 import asyncio
 import logging
 
+from sqlalchemy import delete, not_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -325,38 +326,58 @@ KEY_METRICS: dict[str, list[dict]] = {
     ],
     "INTU": [
         {
-            "metric_name": "Small Business & Self-Employed revenue YoY",
-            "definition": "SBSE segment revenue YoY (QuickBooks, Mailchimp, payments, payroll).",
-            "why_it_matters": "Largest segment and growth engine. Reflects SMB health + QBO platform expansion.",
-            "target_or_threshold": "Mid-teens YoY",
+            "metric_name": "QBO Online Accounting revenue YoY",
+            "definition": "QuickBooks Online Accounting revenue YoY (the core SMB accounting subscription line, ex Mailchimp / payments / payroll).",
+            "why_it_matters": "The entire bull case. QBO Accounting is the gateway product that anchors the rest of the platform; deceleration here means new-logo SMB adoption is slowing or share is being lost.",
+            "target_or_threshold": ">20% YoY",
+            "warning_threshold": "Growth below 15% YoY — bull case under threat",
             "priority": 1,
         },
         {
-            "metric_name": "Consumer Group revenue (TurboTax)",
-            "definition": "Consumer segment revenue, especially during Q2/Q3 (tax season).",
-            "why_it_matters": "Tax season makes or breaks the year. Watch share vs free filers and pricing/mix.",
-            "target_or_threshold": "Up YoY during tax season",
+            "metric_name": "QBO Enterprise Suite (mid-market) traction",
+            "definition": "Adoption + new-logo commentary on Intuit Enterprise Suite (ESS), the mid-market push: revenue ramp, customer count, AOV uplift, channel commentary.",
+            "why_it_matters": "ESS is the offset to long-run TurboTax decay and the path to addressing $100B+ mid-market TAM. Stalling here means the next-decade growth story is in trouble.",
+            "target_or_threshold": "Concrete ramp commentary: customer count growth, ARR uplift vs base QBO, new-logo wins",
+            "warning_threshold": "No new ESS mentions, or commentary turns vague / defers concrete data — traction is stalling",
             "priority": 1,
         },
         {
-            "metric_name": "Credit Karma revenue YoY",
-            "definition": "Credit Karma segment revenue, sensitive to lending environment.",
-            "why_it_matters": "Cyclical exposure to consumer lending. Recovery in CC/auto loans helps; recession hurts.",
-            "target_or_threshold": "Returning to growth = bullish",
+            "metric_name": "Online Services revenue YoY (payments + payroll)",
+            "definition": "QuickBooks Online Services revenue YoY — payments processing + payroll attach. Reported as part of Online Ecosystem.",
+            "why_it_matters": "Moat-extension products. Their growth proves QBO customers are using more than the base accounting SKU; deceleration says the cross-sell engine is breaking.",
+            "target_or_threshold": ">15% YoY",
+            "warning_threshold": "Growth below 10% YoY — moat-extension engine failing",
+            "priority": 1,
+        },
+        {
+            "metric_name": "Lacerte / ProSeries (accountant ecosystem) revenue",
+            "definition": "Revenue from professional tax software for accountants (Lacerte + ProSeries). Reported within ProTax.",
+            "why_it_matters": "Accountants are Intuit's distribution channel into the SMB long tail. If they churn off Lacerte/ProSeries, the implicit referrals to QBO + the SMB lock-in slowly crack.",
+            "target_or_threshold": "Flat to slightly up YoY",
+            "warning_threshold": "Any YoY decline — distribution channel risk",
+            "priority": 2,
+        },
+        {
+            "metric_name": "Credit Karma revenue YoY (4Q trailing)",
+            "definition": "Credit Karma segment revenue, smoothed on a 4-quarter trailing basis so a single weak lending quarter doesn't dominate the read.",
+            "why_it_matters": "Credit Karma is the cyclical lever — when lending recovers it's a tailwind; when it stalls it drags the consolidated growth rate.",
+            "target_or_threshold": ">15% YoY (trailing 4Q)",
+            "warning_threshold": "Growth below 10% YoY on trailing 4Q basis",
             "priority": 2,
         },
         {
             "metric_name": "GenAI / Intuit Assist commentary",
             "definition": "Management commentary on GenAI adoption, monetization mechanism, and platform usage.",
-            "why_it_matters": "AI is both a moat (incumbent data advantage) and a threat (vertical AI agents). Watch concrete metrics.",
+            "why_it_matters": "AI is both a moat (incumbent data advantage) and a threat (vertical AI agents). Watch concrete metrics over generic mentions.",
             "target_or_threshold": "Concrete adoption + monetization data > generic mentions",
-            "priority": 2,
+            "priority": 3,
         },
         {
-            "metric_name": "Operating margin",
-            "definition": "Non-GAAP operating margin, full company.",
+            "metric_name": "Non-GAAP operating margin",
+            "definition": "Non-GAAP operating margin, full company. Prefer the figure management quotes on the call; fall back to computing it from the financials block if not stated.",
             "why_it_matters": "INTU is a high-quality compounder — margin expansion is the long-term re-rate driver.",
             "target_or_threshold": "Expanding YoY",
+            "warning_threshold": "Margin contracting YoY",
             "priority": 3,
         },
     ],
@@ -397,7 +418,13 @@ async def _seed(db: AsyncSession) -> None:
     rows = []
     for ticker, metrics in KEY_METRICS.items():
         for m in metrics:
-            rows.append({"ticker": ticker, **m})
+            # Normalize so every row has the same column set — bulk insert
+            # requires homogeneous keys, and warning_threshold is optional.
+            rows.append({
+                "ticker": ticker,
+                "warning_threshold": m.get("warning_threshold"),
+                **m,
+            })
 
     if not rows:
         logger.info("No key metrics to seed")
@@ -410,10 +437,26 @@ async def _seed(db: AsyncSession) -> None:
             "definition": stmt.excluded.definition,
             "why_it_matters": stmt.excluded.why_it_matters,
             "target_or_threshold": stmt.excluded.target_or_threshold,
+            "warning_threshold": stmt.excluded.warning_threshold,
             "priority": stmt.excluded.priority,
         },
     )
     await db.execute(stmt)
+
+    # Reconcile: drop rows for tickers in this seed whose metric_name isn't in
+    # the spec anymore. Scoped per ticker so we never delete metrics for tickers
+    # not mentioned here. This makes renames (and removals) safe.
+    for ticker, metrics in KEY_METRICS.items():
+        kept_names = [m["metric_name"] for m in metrics]
+        del_result = await db.execute(
+            delete(TickerKeyMetric).where(
+                TickerKeyMetric.ticker == ticker,
+                not_(TickerKeyMetric.metric_name.in_(kept_names)),
+            )
+        )
+        if del_result.rowcount:
+            logger.info("Reconcile: removed %d stale metric(s) for %s", del_result.rowcount, ticker)
+
     await db.commit()
 
     per_ticker = {t: len(m) for t, m in KEY_METRICS.items()}

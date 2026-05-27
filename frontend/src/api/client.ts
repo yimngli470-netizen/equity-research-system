@@ -89,6 +89,18 @@ export interface IngestionResult {
   errors: string[];
 }
 
+export interface AnalysisRunResult {
+  ticker: string;
+  ingestion: IngestionResult | null;
+  results: {
+    agent_type: string;
+    success: boolean;
+    cached: boolean;
+    error?: string | null;
+  }[];
+  all_succeeded: boolean;
+}
+
 export interface ValuationResponse {
   ticker: string;
   date: string;
@@ -134,11 +146,19 @@ export const api = {
       const params = agentType ? `?agent_type=${agentType}` : '';
       return request<AnalysisReport[]>(`/stocks/${ticker}/analysis${params}`);
     },
-    run: (ticker: string, force = false) =>
-      request<{ ticker: string; results: { agent_type: string; success: boolean; cached: boolean; error?: string | null }[]; all_succeeded: boolean }>(
-        '/analysis/run',
-        { method: 'POST', body: JSON.stringify({ ticker, force }) }
-      ),
+    run: (
+      ticker: string,
+      options: { force?: boolean; ingestFirst?: boolean; agentTypes?: string[] } = {},
+    ) =>
+      request<AnalysisRunResult>('/analysis/run', {
+        method: 'POST',
+        body: JSON.stringify({
+          ticker,
+          force: options.force ?? false,
+          ingest_first: options.ingestFirst ?? true,
+          agent_types: options.agentTypes,
+        }),
+      }),
   },
   scoring: {
     run: (ticker: string, weights?: Record<string, number>) =>

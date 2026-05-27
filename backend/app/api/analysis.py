@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.agents.orchestrator import AGENTS, run_all_agents
+from app.ingestion.pipeline import ingest_ticker
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
@@ -10,6 +11,19 @@ class AnalysisRequest(BaseModel):
     ticker: str
     agent_types: list[str] | None = None  # None = all agents
     force: bool = False  # skip cache
+    ingest_first: bool = True  # refresh market/fundamental/news data before agents
+
+
+class IngestionRunResponse(BaseModel):
+    ticker: str
+    prices: int
+    financials: int
+    valuation: bool
+    news: int
+    transcripts: int = 0
+    earnings_surprises: int = 0
+    analyst_estimates: int = 0
+    errors: list[str]
 
 
 class AgentResultResponse(BaseModel):
@@ -22,6 +36,7 @@ class AgentResultResponse(BaseModel):
 
 class AnalysisRunResponse(BaseModel):
     ticker: str
+    ingestion: IngestionRunResponse | None = None
     results: list[AgentResultResponse]
     all_succeeded: bool
 
@@ -32,14 +47,32 @@ async def run_analysis(request: AnalysisRequest):
 
     Pass specific agent_types or leave empty to run all.
     Set force=true to skip cache and re-run.
+    By default, refreshes the ticker's data before running agents.
     """
+    ticker = request.ticker.upper()
+    ingestion = None
+    if request.ingest_first:
+        r = await ingest_ticker(ticker)
+        ingestion = IngestionRunResponse(
+            ticker=r.ticker,
+            prices=r.prices,
+            financials=r.financials,
+            valuation=r.valuation,
+            news=r.news,
+            transcripts=r.transcripts,
+            earnings_surprises=r.earnings_surprises,
+            analyst_estimates=r.analyst_estimates,
+            errors=r.errors,
+        )
+
     result = await run_all_agents(
-        ticker=request.ticker.upper(),
+        ticker=ticker,
         agent_types=request.agent_types,
         force=request.force,
     )
     return AnalysisRunResponse(
         ticker=result.ticker,
+        ingestion=ingestion,
         results=[
             AgentResultResponse(
                 agent_type=r.agent_type,

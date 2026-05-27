@@ -29,10 +29,12 @@ export interface CallHighlights {
 }
 
 // One row in the earnings agent's per-ticker key-metrics report.
+// 'close' = within ~5% of the warning threshold; 'warning' = past it.
+// Metrics without a warning_threshold defined will only emit beat/in_line/miss/unknown.
 export interface KeyMetric {
   name: string;
   value: string;
-  vs_target: 'beat' | 'miss' | 'in_line' | 'unknown';
+  vs_target: 'beat' | 'in_line' | 'close' | 'warning' | 'miss' | 'unknown';
   trend: 'up' | 'down' | 'flat' | 'unknown';
   source: 'transcript' | 'financials' | 'estimate' | 'unknown';
   detail: string;
@@ -236,7 +238,7 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
 
     // Per-ticker key metrics — what the user actually wants to watch for this name.
     const kmRaw = Array.isArray(r.key_metrics) ? (r.key_metrics as Record<string, unknown>[]) : [];
-    const allowedVsTarget = new Set(['beat', 'miss', 'in_line', 'unknown']);
+    const allowedVsTarget = new Set(['beat', 'in_line', 'close', 'warning', 'miss', 'unknown']);
     const allowedTrend = new Set(['up', 'down', 'flat', 'unknown']);
     const allowedSource = new Set(['transcript', 'financials', 'estimate', 'unknown']);
     base.key_metrics = kmRaw
