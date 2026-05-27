@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type {
@@ -18,6 +18,7 @@ import RiskFlagsPanel from '../components/detail/RiskFlagsPanel';
 import ScoreBreakdownPanel from '../components/detail/ScoreBreakdownPanel';
 import SectionHeader from '../components/primitives/SectionHeader';
 import { normalizeAgent } from '../components/detail/agentView';
+import { runPipeline, usePipelineState } from '../state/pipelineTracker';
 
 const AGENT_LAYOUT_KEY = 'agent-layout';
 const AGENT_ORDER = ['news', 'earnings', 'industry', 'valuation', 'validation'];
@@ -40,9 +41,9 @@ export default function StockDetail() {
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [running, setRunning] = useState(false);
-  const [pipelineMsg, setPipelineMsg] = useState<string | null>(null);
+  const { running, message: pipelineMsg } = usePipelineState(ticker);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
+  const prevRunningRef = useRef(running);
 
   const [agentLayout, setAgentLayoutRaw] = useState<AgentLayout>(() => loadAgentLayout());
   const setAgentLayout = (v: AgentLayout) => {
@@ -53,7 +54,22 @@ export default function StockDetail() {
   useEffect(() => {
     if (!ticker) return;
     loadAll();
+    prevRunningRef.current = running;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker]);
+
+  // Refetch when a backgrounded pipeline run finishes (running: true → false).
+  // This handles the case where the user clicks Run, navigates away, and comes
+  // back after the run already completed — they should see fresh numbers.
+  useEffect(() => {
+    if (!ticker) return;
+    if (prevRunningRef.current && !running) {
+      loadAll();
+      setDataRefreshKey((v) => v + 1);
+    }
+    prevRunningRef.current = running;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, ticker]);
 
   async function loadAll() {
     setLoading(true);
@@ -77,73 +93,12 @@ export default function StockDetail() {
     }
   }
 
-  async function handleRunPipeline() {
+  function handleRunPipeline() {
     if (!ticker) return;
-    try {
-      setRunning(true);
-      setPipelineMsg('Refreshing market data…');
-
-      const ingestionResults = await api.ingestion.run([ticker]);
-      const ingestion = ingestionResults.find((r) => r.ticker === ticker) ?? ingestionResults[0];
-      const ingestionSummary = ingestion
-        ? `${ingestion.prices} prices · ${ingestion.financials} financials · ${ingestion.news} news`
-        : 'no ingestion result';
-      setDataRefreshKey((v) => v + 1);
-
-      setPipelineMsg(`Data refreshed (${ingestionSummary}). Running agents…`);
-
-      const agentResult = await api.analysis.run(ticker, true);
-      const agentSummary = agentResult.results
-        .map((r) => `${r.agent_type}=${r.success ? 'ok' : 'failed'}`)
-        .join(' · ');
-      const agentFailures = agentResult.results.filter((r) => !r.success);
-      if (agentFailures.length > 0) {
-        const detail = agentFailures
-          .map((r) => `${r.agent_type}${r.error ? `: ${r.error}` : ''}`)
-          .join(' · ');
-        throw new Error(`Agent refresh failed (${detail})`);
-      }
-      setPipelineMsg(`Agents done (${agentSummary}). Calculating score…`);
-
-      const scoreResult = await api.scoring.run(ticker);
-      setScore({
-        ticker: scoreResult.ticker,
-        date: scoreResult.date,
-        growth_score: scoreResult.growth_score,
-        profitability_score: scoreResult.profitability_score,
-        valuation_score: scoreResult.valuation_score,
-        momentum_score: scoreResult.momentum_score,
-        sentiment_score: scoreResult.sentiment_score,
-        risk_score: scoreResult.risk_score,
-        event_score: scoreResult.event_score,
-        composite_score: scoreResult.composite_score,
-        signal: scoreResult.signal,
-      });
-
-      const decisionResult = await api.decision.run(ticker);
-      setDecision(decisionResult);
-
-      const reportsData = await api.analysis.list(ticker).catch(() => []);
-      setReports(reportsData);
-      const [stockData, valuationData] = await Promise.all([
-        api.stocks.get(ticker).catch(() => null),
-        api.stocks.valuation(ticker).catch(() => null),
-      ]);
-      if (stockData) setStock(stockData);
-      setValuation(valuationData);
-
-      setPipelineMsg(
-        `Pipeline complete · ${scoreResult.feature_count} features · score ${scoreResult.composite_score.toFixed(
-          3,
-        )} · ${decisionResult.final_signal} (${decisionResult.confidence}, ${
-          decisionResult.risk_flags.length
-        } flag${decisionResult.risk_flags.length !== 1 ? 's' : ''})`,
-      );
-    } catch (err) {
-      setPipelineMsg(err instanceof Error ? err.message : 'Pipeline failed');
-    } finally {
-      setRunning(false);
-    }
+    // Fire-and-forget: the module-level tracker drives state. The
+    // running→false transition handler above will refetch when it completes,
+    // even if the user navigates away and returns.
+    void runPipeline(ticker);
   }
 
   async function handleRemove() {

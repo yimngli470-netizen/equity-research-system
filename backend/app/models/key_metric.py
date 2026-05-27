@@ -33,6 +33,11 @@ class TickerKeyMetric(Base):
     # The agent uses this to decide beat/miss/in_line — null means "report value
     # only, no judgment".
     target_or_threshold: Mapped[str | None] = mapped_column(String(200))
+    # Optional warning trip condition (e.g. "below 15%", "any decline",
+    # "stalling commentary"). Distinct from target_or_threshold: target is the
+    # bull case, warning is the bear-case red line that flips vs_target to
+    # "warning" / "close". Null means the metric has no warning concept.
+    warning_threshold: Mapped[str | None] = mapped_column(String(300))
     # 1 = most important. The agent orders its output by this.
     priority: Mapped[int] = mapped_column(Integer, server_default="3")
     created_at: Mapped[datetime] = mapped_column(

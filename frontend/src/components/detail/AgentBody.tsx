@@ -7,6 +7,190 @@ const TONE_COLOR: Record<TileTone, string> = {
   muted: 'var(--color-ink-3)',
 };
 
+// ─── Emphasis helpers ───────────────────────────────────────────────────────
+// Strict numeric regex: only match if there's a $ prefix, signed digit, or
+// unit suffix (%, bps, B/M/K, x). Reject anything preceded by a letter/digit
+// so "Q1", "Q2 '27", "H200", "FY26", "RTX 50", "2H26", "mid-70s" stay clean.
+const NUMERIC_RX =
+  /(?<![A-Za-z0-9])(?:\$[\d,]+(?:\.\d+)?[BMK]?|[+\-−][\d,]+(?:\.\d+)?(?:%|bps|[BMK]|x)?|[\d,]+(?:\.\d+)?(?:%|bps|[BMK]|x)(?!\w))(?:\s+(?:YoY|QoQ|YTD))?/g;
+
+function emphasizeNumbers(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  NUMERIC_RX.lastIndex = 0;
+  while ((m = NUMERIC_RX.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(
+      <mark
+        key={'m' + i++}
+        style={{
+          background: 'var(--color-surface-2)',
+          color: 'var(--color-ink)',
+          padding: '0 4px',
+          borderRadius: 3,
+          fontFamily: 'var(--font-mono)',
+          fontVariantNumeric: 'tabular-nums',
+          fontSize: '.95em',
+          fontWeight: 500,
+        }}
+      >
+        {m[0]}
+      </mark>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : [text];
+}
+
+// Split "Label: rest…" so the lede can be bolded.
+function withLede(text: string): { lede: string | null; rest: string } {
+  const idx = text.indexOf(':');
+  if (idx > 0 && idx < 40 && idx < text.length - 2) {
+    return { lede: text.slice(0, idx), rest: text.slice(idx + 1).trim() };
+  }
+  return { lede: null, rest: text };
+}
+
+function RichBullet({ text, accent }: { text: string; accent: string }) {
+  const { lede, rest } = withLede(text);
+  return (
+    <li
+      style={{
+        paddingLeft: 0,
+        marginBottom: 6,
+        position: 'relative',
+        lineHeight: 1.55,
+        listStyle: 'none',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          left: -14,
+          top: 8,
+          width: 4,
+          height: 4,
+          borderRadius: 1,
+          background: accent,
+        }}
+      />
+      {lede && (
+        <span style={{ fontWeight: 600, color: 'var(--color-ink)', marginRight: 6 }}>{lede}</span>
+      )}
+      <span style={{ color: 'var(--color-ink-2)' }}>{emphasizeNumbers(rest)}</span>
+    </li>
+  );
+}
+
+function CallHighlightCard({
+  kicker,
+  accent,
+  bullets,
+}: {
+  kicker: string;
+  accent: string;
+  bullets: string[];
+}) {
+  if (!bullets || bullets.length === 0) return null;
+  return (
+    <div
+      style={{
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-rule)',
+        borderRadius: 6,
+        padding: '14px 18px 14px 28px',
+        borderLeft: `2px solid ${accent}`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '.1em',
+          textTransform: 'uppercase',
+          color: accent,
+          marginBottom: 10,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {kicker}
+      </div>
+      <ul style={{ margin: 0, padding: 0, fontSize: 12.5, color: 'var(--color-ink-2)' }}>
+        {bullets.map((b, i) => (
+          <RichBullet key={i} text={b} accent={accent} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ForwardGuidanceCallout({ text, tone }: { text: string; tone: string | null }) {
+  if (!text) return null;
+  return (
+    <div
+      style={{
+        background: 'var(--color-pos-bg-soft)',
+        border: '1px solid var(--color-rule)',
+        borderLeft: '3px solid var(--color-pos-fg)',
+        borderRadius: 6,
+        padding: '16px 20px',
+        marginBottom: 18,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 8,
+          gap: 12,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '.1em',
+            textTransform: 'uppercase',
+            color: 'var(--color-pos-fg)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Forward guidance
+        </span>
+        {tone && (
+          <span
+            style={{
+              fontSize: 10.5,
+              color: 'var(--color-ink-3)',
+              textTransform: 'capitalize',
+              letterSpacing: '.02em',
+            }}
+          >
+            Tone: {tone.toLowerCase()}
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 13.5,
+          lineHeight: 1.65,
+          color: 'var(--color-ink)',
+          fontFamily: 'var(--font-serif)',
+          textWrap: 'pretty' as const,
+        }}
+      >
+        {emphasizeNumbers(text)}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tile / Stat ────────────────────────────────────────────────────────────
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: TileTone }) {
   return (
     <div style={{ padding: 12, background: 'var(--color-surface-2)', borderRadius: 6 }}>
@@ -29,7 +213,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: Til
           fontVariantNumeric: 'tabular-nums',
           color: tone ? TONE_COLOR[tone] : 'var(--color-ink)',
           fontStyle: tone === 'muted' ? 'italic' : undefined,
-          textTransform: tone || /[a-z]/.test(value[0] || '') ? undefined : 'none',
         }}
       >
         {value}
@@ -37,6 +220,8 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: Til
     </div>
   );
 }
+
+// ─── Evidence note ──────────────────────────────────────────────────────────
 
 function EvidenceNote({ note }: { note: NonNullable<NormalizedAgent['evidence_note']> }) {
   if (!note) return null;
@@ -47,7 +232,10 @@ function EvidenceNote({ note }: { note: NonNullable<NormalizedAgent['evidence_no
     financial_trend_only: 'historical financials only — no transcript or guidance available',
     unavailable: 'no forward-looking sources available',
   };
-  const label = (note.evidence_source && sourceLabel[note.evidence_source]) || note.evidence_source || 'unavailable';
+  const label =
+    (note.evidence_source && sourceLabel[note.evidence_source]) ||
+    note.evidence_source ||
+    'unavailable';
   return (
     <div
       style={{
@@ -61,7 +249,16 @@ function EvidenceNote({ note }: { note: NonNullable<NormalizedAgent['evidence_no
       }}
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
-        <span style={{ color: 'var(--color-watch-fg)', fontWeight: 600, fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase' }}>
+        <span
+          style={{
+            color: 'var(--color-watch-fg)',
+            fontWeight: 600,
+            fontSize: 10,
+            letterSpacing: '.08em',
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+          }}
+        >
           Forward outlook
         </span>
         <span>Source: {label}</span>
@@ -75,107 +272,19 @@ function EvidenceNote({ note }: { note: NonNullable<NormalizedAgent['evidence_no
   );
 }
 
-function SubheadStyle() {
-  return {
-    fontSize: 10,
-    letterSpacing: '.08em',
-    textTransform: 'uppercase' as const,
-    color: 'var(--color-ink-3)',
-    fontWeight: 600,
-    marginBottom: 6,
-  };
-}
+// ─── Key metrics table (enhanced with number emphasis in detail line) ──────
 
-function CallHighlightsBlock({ h }: { h: CallHighlights }) {
-  const listStyle = { margin: '0 0 12px 18px', padding: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-ink-2)' };
-  return (
-    <div
-      style={{
-        marginTop: 14,
-        padding: '12px 14px',
-        background: 'var(--color-surface-2)',
-        borderRadius: 6,
-        borderLeft: '2px solid var(--color-rule)',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-        <span style={SubheadStyle()}>Earnings call highlights</span>
-        {h.management_tone && (
-          <span
-            style={{
-              fontSize: 11,
-              padding: '2px 8px',
-              borderRadius: 10,
-              background: 'var(--color-surface-3)',
-              color: 'var(--color-ink-2)',
-              textTransform: 'capitalize',
-            }}
-          >
-            tone: {h.management_tone}
-          </span>
-        )}
-      </div>
-
-      {h.forward_guidance_detail && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={SubheadStyle()}>Forward guidance</div>
-          <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-ink)' }}>
-            {h.forward_guidance_detail}
-          </div>
-        </div>
-      )}
-
-      {h.segment_highlights.length > 0 && (
-        <>
-          <div style={SubheadStyle()}>Segment highlights</div>
-          <ul style={listStyle}>
-            {h.segment_highlights.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {h.key_themes.length > 0 && (
-        <>
-          <div style={SubheadStyle()}>Themes</div>
-          <ul style={listStyle}>
-            {h.key_themes.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {h.one_time_items.length > 0 && (
-        <>
-          <div style={SubheadStyle()}>One-time items</div>
-          <ul style={listStyle}>
-            {h.one_time_items.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {h.analyst_concerns.length > 0 && (
-        <>
-          <div style={SubheadStyle()}>Analyst concerns (Q&A)</div>
-          <ul style={listStyle}>
-            {h.analyst_concerns.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
-}
-
+// Color coding:
+//   beat / in_line → green (target met or exceeded)
+//   close          → yellow (within ~5% of a warning threshold)
+//   warning / miss → red (warning tripped, or significantly below target)
+//   unknown        → gray
 const VS_TARGET_TONE: Record<KeyMetric['vs_target'], TileTone | undefined> = {
   beat: 'pos',
+  in_line: 'pos',
+  close: 'warn',
+  warning: 'neg',
   miss: 'neg',
-  in_line: undefined,
   unknown: 'muted',
 };
 
@@ -188,44 +297,63 @@ const TREND_GLYPH: Record<KeyMetric['trend'], string> = {
 
 function KeyMetricsBlock({ metrics }: { metrics: KeyMetric[] }) {
   return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ ...SubheadStyle(), marginBottom: 8 }}>Key metrics to watch</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div style={{ marginBottom: 18 }}>
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '.1em',
+          textTransform: 'uppercase',
+          color: 'var(--color-ink-3)',
+          marginBottom: 10,
+        }}
+      >
+        Key metrics to watch
+      </div>
+      <div style={{ border: '1px solid var(--color-rule)', borderRadius: 6, overflow: 'hidden' }}>
         {metrics.map((m, i) => {
           const tone = VS_TARGET_TONE[m.vs_target];
-          const toneColor =
+          const vsColor =
             tone === 'pos'
               ? 'var(--color-pos-fg)'
               : tone === 'neg'
                 ? 'var(--color-neg-fg)'
-                : tone === 'muted'
-                  ? 'var(--color-ink-3)'
-                  : 'var(--color-ink)';
+                : tone === 'warn'
+                  ? 'var(--color-warn-fg)'
+                  : tone === 'muted'
+                    ? 'var(--color-ink-3)'
+                    : 'var(--color-ink)';
           return (
             <div
               key={i}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 110px 70px 80px',
-                gap: 12,
+                gridTemplateColumns: '1fr 120px 90px 80px',
+                gap: 16,
                 alignItems: 'baseline',
-                padding: '8px 0',
-                borderTop: i ? '1px solid var(--color-rule-soft)' : '1px solid var(--color-rule-soft)',
+                padding: '12px 16px',
+                borderTop: i ? '1px solid var(--color-rule-soft)' : 'none',
                 fontSize: 12.5,
               }}
             >
               <div>
-                <div style={{ color: 'var(--color-ink)' }}>{m.name}</div>
+                <div style={{ color: 'var(--color-ink)', fontWeight: 500, marginBottom: 2 }}>
+                  {m.name}
+                </div>
                 {m.detail && (
-                  <div style={{ fontSize: 11.5, color: 'var(--color-ink-3)', marginTop: 2 }}>{m.detail}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--color-ink-3)', lineHeight: 1.5 }}>
+                    {emphasizeNumbers(m.detail)}
+                  </div>
                 )}
               </div>
               <div
                 style={{
                   fontFamily: 'var(--font-mono)',
                   fontVariantNumeric: 'tabular-nums',
-                  color: toneColor,
+                  color: vsColor,
                   textAlign: 'right',
+                  fontSize: 13.5,
+                  fontWeight: 500,
                 }}
               >
                 {m.value}
@@ -233,10 +361,11 @@ function KeyMetricsBlock({ metrics }: { metrics: KeyMetric[] }) {
               <div
                 style={{
                   textAlign: 'center',
-                  color: toneColor,
-                  fontSize: 11,
+                  color: vsColor,
+                  fontSize: 10.5,
                   textTransform: 'uppercase',
                   letterSpacing: '.06em',
+                  fontWeight: 600,
                 }}
               >
                 <span style={{ marginRight: 4 }}>{TREND_GLYPH[m.trend]}</span>
@@ -260,6 +389,82 @@ function KeyMetricsBlock({ metrics }: { metrics: KeyMetric[] }) {
     </div>
   );
 }
+
+// ─── Earnings call highlights — sectioned grid ──────────────────────────────
+
+function CallHighlightsBlock({ h }: { h: CallHighlights }) {
+  const hasAny =
+    h.segment_highlights.length ||
+    h.key_themes.length ||
+    h.one_time_items.length ||
+    h.analyst_concerns.length;
+  if (!hasAny) return null;
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 10,
+          borderTop: '1px solid var(--color-rule-soft)',
+          paddingTop: 16,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '.1em',
+            textTransform: 'uppercase',
+            color: 'var(--color-ink-3)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Earnings call
+        </span>
+        {h.management_tone && (
+          <span
+            style={{
+              fontSize: 10.5,
+              color: 'var(--color-ink-3)',
+              textTransform: 'capitalize',
+            }}
+          >
+            Tone: {h.management_tone.toLowerCase()}
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: 10,
+        }}
+      >
+        <CallHighlightCard
+          kicker="Segment highlights"
+          accent="var(--color-pos-fg)"
+          bullets={h.segment_highlights}
+        />
+        <CallHighlightCard kicker="Themes" accent="var(--color-ink-2)" bullets={h.key_themes} />
+        <CallHighlightCard
+          kicker="One-time items"
+          accent="var(--color-watch-fg)"
+          bullets={h.one_time_items}
+        />
+        <CallHighlightCard
+          kicker="Analyst Q&A"
+          accent="var(--color-warn-fg)"
+          bullets={h.analyst_concerns}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Main ───────────────────────────────────────────────────────────────────
 
 interface Props {
   agent: NormalizedAgent;
@@ -337,12 +542,15 @@ export default function AgentBody({ agent }: Props) {
       {agent.agent_type === 'earnings' && (
         <>
           {agent.evidence_note && <EvidenceNote note={agent.evidence_note} />}
+
+          {/* Tile strip — at-a-glance trend/quality metrics */}
           {agent.earnings_tiles && agent.earnings_tiles.length > 0 && (
             <div
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                 gap: 12,
+                marginBottom: 18,
               }}
             >
               {agent.earnings_tiles.map((t, i) => (
@@ -350,9 +558,21 @@ export default function AgentBody({ agent }: Props) {
               ))}
             </div>
           )}
+
+          {/* Featured forward guidance callout (most important forward text) */}
+          {agent.call_highlights?.forward_guidance_detail && (
+            <ForwardGuidanceCallout
+              text={agent.call_highlights.forward_guidance_detail}
+              tone={agent.call_highlights.management_tone}
+            />
+          )}
+
+          {/* Per-ticker key metrics with number emphasis in detail lines */}
           {agent.key_metrics && agent.key_metrics.length > 0 && (
             <KeyMetricsBlock metrics={agent.key_metrics} />
           )}
+
+          {/* Sectioned highlight cards: segments / themes / one-time / Q&A */}
           {agent.call_highlights && <CallHighlightsBlock h={agent.call_highlights} />}
         </>
       )}
@@ -401,19 +621,21 @@ export default function AgentBody({ agent }: Props) {
         </div>
       )}
 
-      {agent.agent_type === 'valuation' && agent.valuation_tiles && agent.valuation_tiles.length > 0 && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: 12,
-          }}
-        >
-          {agent.valuation_tiles.map((t, i) => (
-            <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
-          ))}
-        </div>
-      )}
+      {agent.agent_type === 'valuation' &&
+        agent.valuation_tiles &&
+        agent.valuation_tiles.length > 0 && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: 12,
+            }}
+          >
+            {agent.valuation_tiles.map((t, i) => (
+              <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
+            ))}
+          </div>
+        )}
 
       {agent.agent_type === 'validation' && agent.validation_tiles && (
         <div

@@ -32,6 +32,119 @@ AMD:
     AMD_1Q_2026_Earnings.pdf). Note: AMD uses calendar quarter, not fiscal —
     Q1 2026 = quarter ending March 2026.
 
+AAPL:
+  ir_url: https://www.apple.com/investor/earnings-call/
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: press_release
+  notes: |
+    Apple posts quarterly earnings call links and results materials on its IR
+    earnings-call page. Official full text transcripts are not consistently
+    published there, so the fallback should capture the nearest official
+    earnings-call/results artifact and degrade gracefully if it is audio-only.
+
+APPL:
+  ir_url: https://www.apple.com/investor/earnings-call/
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: press_release
+  notes: |
+    Alias for the inactive APPL typo row in the local DB; same IR source as AAPL.
+
+AMZN:
+  ir_url: https://www.aboutamazon.com/news/company-news
+  strategy:
+    type: link_regex
+    pattern: "amazon-earnings-q{q}-{year}-report"
+  artifact_type: press_release
+  notes: |
+    Amazon's IR investor page (ir.aboutamazon.com) renders the quarterly list
+    client-side via JS, so httpx sees no transcript links. The corporate news
+    page (aboutamazon.com/news/company-news) is server-rendered and posts each
+    quarter's earnings release at a stable URL slug:
+      /news/company-news/amazon-earnings-q{Q}-{YEAR}-report
+    Artifact is the press release (net sales, op income, FCF, segment results,
+    next-quarter guidance) — no full call transcript / no Q&A.
+
+AVGO:
+  ir_url: https://investors.broadcom.com/financial-information/quarterly-results
+  strategy:
+    type: link_regex
+    pattern: "(reports|announces).*(Q{q}|{q}Q|{ordinal}-quarter).*{year}.*(financial-results|financial results|earnings|results)"
+  artifact_type: press_release
+  notes: |
+    Broadcom's investors.broadcom.com subdomain refuses connections from
+    datacenter IPs (TCP RST / read timeout on every request, including the
+    landing page and direct news-release URLs). Cannot be scraped without a
+    residential-IP proxy or browser automation that can pass the WAF.
+    AVGO transcripts must come from FMP. Strategy is retained for future
+    use if/when the firewall behavior changes.
+
+BROADCOM:
+  ir_url: https://investors.broadcom.com/financial-information/quarterly-results
+  strategy:
+    type: link_regex
+    pattern: "(reports|announces).*(Q{q}|{q}Q|{ordinal}-quarter).*{year}.*(financial-results|financial results|earnings|results)"
+  artifact_type: press_release
+  notes: |
+    Alias entry for the inactive BROADCOM row in the local DB; same IR source
+    as AVGO.
+
+GOOG:
+  ir_url: https://abc.xyz/investor/
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: transcript
+  notes: |
+    Alphabet uses the abc.xyz investor site for both GOOG and GOOGL. The
+    broad pattern targets official earnings/transcript artifacts as they are
+    added to the investor page.
+
+GOOGL:
+  ir_url: https://abc.xyz/investor/
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: transcript
+  notes: |
+    Same Alphabet IR source as GOOG; active DB ticker is GOOGL.
+
+INTU:
+  ir_url: https://investors.intuit.com/
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}\\s*FY|Q{q}FY|Q{q}\\+FY).*(transcript|earnings(\\+|\\s)*script)"
+  artifact_type: transcript
+  notes: |
+    Intuit's official IR homepage exposes the latest quarterly results card
+    with a Transcript link to PDFs named like Q3FY26 Earnings Script.pdf. Match
+    the fiscal-quarter token instead of hardcoded dates so new quarters can be
+    discovered automatically.
+
+META:
+  ir_url: https://investor.atmeta.com/investor-events/default.aspx
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: transcript
+  notes: |
+    Meta's investor-events page is the official landing page for quarterly
+    earnings calls and transcript/webcast artifacts.
+
+MRVL:
+  ir_url: https://investor.marvell.com/financial-information/financial-results
+  strategy:
+    type: link_regex
+    pattern: "reports-(Q{q}|{q}Q|{ordinal}-quarter).*(fiscal-year-|and-fiscal-year-){year}.*financial-results"
+  artifact_type: press_release
+  notes: |
+    Marvell's financial-results page lists fiscal-quarter earnings artifacts.
+    Marvell appears to publish release/slides/audio rather than full text Q&A,
+    so this stores the official earnings release as management commentary.
+
 MU:
   ir_url: https://investors.micron.com/quarterly-results
   strategy:
@@ -51,3 +164,41 @@ MU:
     forward guidance from management. Not the full call transcript and not
     prepared remarks (Micron does not appear to publish either publicly).
     has_qa will be False; earnings-agent Q&A features should degrade gracefully.
+
+NVDA:
+  ir_url: https://investor.nvidia.com/financial-info/quarterly-results/
+  strategy:
+    type: link_regex
+    pattern: "(NVDA|NVIDIA).*Q{q}.*{year}.*Earnings.*Call|Q{q}.*{year}.*Earnings.*Call.*(NVDA|NVIDIA)"
+  artifact_type: transcript
+  notes: |
+    NVIDIA's investor quarterly-results page links corrected earnings-call
+    transcript PDFs. In this environment the page can be Cloudflare-challenged,
+    so FMP remains the primary reliable transcript source for NVDA until the
+    official IR page can be fetched by the scraper.
+
+TSLA:
+  ir_url: https://ir.tesla.com/#quarterly-disclosure
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(update|deck|earnings|results|call|transcript)"
+  artifact_type: slides
+  notes: |
+    Tesla's official IR quarterly-disclosure page generally posts shareholder
+    decks/updates rather than full text call transcripts. The scraper captures
+    the official quarterly artifact when no transcript is available.
+
+UBER:
+  ir_url: https://investor.uber.com/financials/default.aspx
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: press_release
+  notes: |
+    Uber's IR site (Q4 Inc-hosted) renders the quarterly artifact list entirely
+    via JavaScript — the static HTML returned by httpx is a single SPA shell
+    with only a "/financials/default.aspx#quarterly" anchor and no transcript
+    links. Until we add a headless-browser fetcher (e.g. Playwright), this
+    entry cannot succeed; UBER transcripts must come from FMP.
+    URL updated to /financials/default.aspx because /financials/quarterly-results/
+    now 404s. The strategy is retained so a future headless renderer can use it.

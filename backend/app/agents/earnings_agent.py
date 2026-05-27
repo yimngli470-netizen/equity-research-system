@@ -126,14 +126,25 @@ class EarningsAgent(BaseAgent):
                     "For each metric below, populate one row in the key_metrics array "
                     "of your output. Pull the value from the transcript / financials / "
                     "estimates blocks above. If the data above does not contain the value, "
-                    "set value=\"not disclosed\" and source=\"unknown\". Use the threshold "
-                    "to decide vs_target. Preserve the order shown."
+                    "set value=\"not disclosed\" and source=\"unknown\". Preserve the order shown. "
+                    "Use the target and warning lines together to decide vs_target:\n"
+                    "  - beat: comfortably exceeds target\n"
+                    "  - in_line: at or near target, well clear of any warning line\n"
+                    "  - close: within ~5% of the warning trip condition (e.g., target >15% YoY, "
+                    "warning <15%, actual = 16% → close)\n"
+                    "  - warning: at or past the warning trip condition (data has crossed the bear-case red line)\n"
+                    "  - miss: significantly below target with no warning defined, OR substantially past the warning\n"
+                    "  - unknown: value not disclosed in any provided block\n"
+                    "Only emit 'close' or 'warning' for metrics where a warning line is given below; "
+                    "for metrics without one, use beat/in_line/miss/unknown."
                 ),
             ]
             for km in key_metrics:
                 row = f"  [P{km.priority}] {km.metric_name} — {km.definition}"
                 if km.target_or_threshold:
-                    row += f" | target: {km.target_or_threshold}"
+                    row += f"\n      target: {km.target_or_threshold}"
+                if km.warning_threshold:
+                    row += f"\n      warning: {km.warning_threshold}"
                 if km.why_it_matters:
                     row += f"\n      why: {km.why_it_matters}"
                 lines.append(row)
@@ -206,10 +217,10 @@ You must respond with valid JSON only, no other text. Use this exact schema:
     {
       "name": "string — copy verbatim from KEY METRICS TO REPORT ON block",
       "value": "string — actual value with unit (e.g. '+39%', '$5.4B', 'not disclosed')",
-      "vs_target": "beat | miss | in_line | unknown",
+      "vs_target": "beat | in_line | close | warning | miss | unknown",
       "trend": "up | down | flat | unknown",
       "source": "transcript | financials | estimate | unknown",
-      "detail": "string — one short sentence on the read"
+      "detail": "string — one short sentence on the read; if vs_target is 'close' or 'warning', explicitly state which warning line the value approaches or breaches"
     }
   ],
   "earnings_quality_score": 0.0-1.0,
