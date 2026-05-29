@@ -23,6 +23,15 @@ class AnalystEstimate(Base):
     revenue_high: Mapped[float | None] = mapped_column(Float)
     revenue_low: Mapped[float | None] = mapped_column(Float)
     number_of_analysts: Mapped[int | None] = mapped_column(Integer)
+
+    # Provenance + staleness (roadmap 0.4). Consensus lags reality (esp. cyclicals) and can
+    # sit un-revised for months — so we down-weight it, and treat it as STALE when our copy is
+    # old or analysts haven't revised recently. `revisions_30d` = count of analyst up+down
+    # revisions in the last 30 days; 0 ⇒ nobody is actively maintaining this estimate.
+    source: Mapped[str | None] = mapped_column(String(20))        # "yfinance" | "fmp"
+    as_of: Mapped[date | None] = mapped_column(Date, index=True)  # date we fetched it
+    revisions_30d: Mapped[int | None] = mapped_column(Integer)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
