@@ -1,9 +1,11 @@
-"""Per-ticker onboarding/bootstrap status (roadmap: auto-bootstrap new stocks).
+"""DEVELOPER-ONLY debug table — auto-bootstrap status for new stocks. NOT a product table.
 
 When a new ticker is added, the app auto-generates its KPI definitions (LLM) and tries to
-auto-discover its IR source. This table is the DEVELOPER-FACING record of how that went —
-queryable so you can see which tickers need manual attention and why (bad URL vs IP block),
-and decide to fix the URL or run the scraper from a residential IP.
+auto-discover its IR source. This records how that went so the DEVELOPER can see which tickers
+need manual attention and why (bad URL vs IP block), and decide to fix the URL or run the
+scraper from a residential IP. The same info is logged at WARNING level (`docker compose logs`);
+this table is just the durable copy (Docker logs are lost on `docker compose down`). One
+upsert row per ticker — it does not grow over time. Safe to drop if a real log sink is added.
 """
 
 from datetime import datetime
@@ -15,9 +17,10 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 
-class TickerOnboarding(Base):
-    __tablename__ = "ticker_onboarding"
-    __table_args__ = (UniqueConstraint("ticker", name="uq_onboarding_ticker"),)
+class DevTickerBootstrapStatus(Base):
+    # Prefixed "dev_" to make clear this is a developer/debug table, not a product table.
+    __tablename__ = "dev_ticker_bootstrap_status"
+    __table_args__ = (UniqueConstraint("ticker", name="uq_dev_bootstrap_ticker"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(10), index=True)

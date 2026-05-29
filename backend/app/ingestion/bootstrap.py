@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.ingestion.ir import registry
 from app.models.key_metric import TickerKeyMetric
-from app.models.onboarding import TickerOnboarding
+from app.models.onboarding import DevTickerBootstrapStatus
 from app.models.stock import Stock
 
 logger = logging.getLogger(__name__)
@@ -247,16 +247,22 @@ async def bootstrap_ticker(db: AsyncSession, ticker: str, force: bool = False) -
         res.warnings.append(f"{ticker}: IR source auto-discovery — {res.message}")
 
     # Developer-facing record
-    stmt = insert(TickerOnboarding).values(
+    stmt = insert(DevTickerBootstrapStatus).values(
         ticker=ticker, kpi_status=res.kpi_status, kpi_count=res.kpi_count,
         ir_status=res.ir_status, ir_url=res.ir_url, ir_artifact_type=res.ir_artifact_type,
         message=res.message,
     ).on_conflict_do_update(
-        constraint="uq_onboarding_ticker",
+        constraint="uq_dev_bootstrap_ticker",
         set_={"kpi_status": res.kpi_status, "kpi_count": res.kpi_count, "ir_status": res.ir_status,
               "ir_url": res.ir_url, "ir_artifact_type": res.ir_artifact_type, "message": res.message},
     )
     await db.execute(stmt)
     await db.commit()
     logger.info("[bootstrap] %s: kpi=%s(%d) ir=%s", ticker, res.kpi_status, res.kpi_count, res.ir_status)
+    # Also log failures at WARNING so they surface in `docker compose logs backend`
+    # (the dev_ticker_bootstrap_status table is the durable copy, since Docker logs are
+    # lost on `docker compose down`).
+    if res.ir_status in ("unreachable", "not_found", "failed") or res.kpi_status == "failed":
+        logger.warning("[bootstrap] %s needs attention — kpi=%s ir=%s :: %s",
+                       ticker, res.kpi_status, res.ir_status, res.message)
     return res

@@ -134,8 +134,9 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > distinguishes **not_found (404/DNS → bad URL, NOT written, manual-fix warning)** from
 > **unreachable (timeout/403 → likely IP block, written anyway so it works from the user's
 > residential IP)**. Failures surface as **user-facing warnings** (pipeline → UI amber banner in
-> StockDetail) AND a **developer-facing queryable record** in new table `ticker_onboarding`
-> (migration `f7c0a4e35d19`: kpi/ir status, url tried, actionable message). So adding a ticker +
+> StockDetail) AND, for the developer, a **WARNING log line** (`docker compose logs backend`)
+> plus a durable copy in the dev-only table **`dev_ticker_bootstrap_status`** (kpi/ir status, url
+> tried, actionable message — one upsert row per ticker, safe to drop). So adding a ticker +
 > clicking Run Full Pipeline now auto-fills financials/prices/consensus/KPI-defs with zero manual
 > setup; IR config self-heals where reachable and tells the dev exactly what to fix where not.
 > Note: the "Run full pipeline" button already runs ingestion→agents→scoring→decision, and the
