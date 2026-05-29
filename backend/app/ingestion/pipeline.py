@@ -8,6 +8,8 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session
+from app.ingestion.edgar import ingest_financials_edgar
+from app.ingestion.estimates_yf import ingest_estimates_yf
 from app.ingestion.fundamentals import ingest_financials, ingest_valuation
 from app.ingestion.news import ingest_news
 from app.ingestion.prices import ingest_prices
@@ -73,14 +75,18 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("Price ingestion failed for %s", ticker)
             result.errors.append(f"prices: {e}")
 
-        # Quarterly financials — yfinance for the daily path (free, no FMP budget).
-        # FMP financials are available on demand via /api/ingestion/backfill (saves the
-        # 250-call/day budget for transcripts, which are FMP's unique value-add).
+        # Quarterly financials — EDGAR (authoritative filed XBRL, full history) is the
+        # source of truth; yfinance is the fallback if EDGAR is unavailable (no CIK,
+        # network, etc.). Both free. See ANALYST_ROADMAP.md 0.1-0.3.
         try:
-            result.financials = await ingest_financials(db, ticker)
+            result.financials = await ingest_financials_edgar(db, ticker)
         except Exception as e:
-            logger.exception("Financials ingestion failed for %s", ticker)
-            result.errors.append(f"financials: {e}")
+            logger.warning("EDGAR financials failed for %s (%s); falling back to yfinance", ticker, e)
+            try:
+                result.financials = await ingest_financials(db, ticker)
+            except Exception as e2:
+                logger.exception("Financials ingestion failed for %s", ticker)
+                result.errors.append(f"financials: {e2}")
 
         # Valuation snapshot
         try:
@@ -88,6 +94,14 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
         except Exception as e:
             logger.exception("Valuation ingestion failed for %s", ticker)
             result.errors.append(f"valuation: {e}")
+
+        # Analyst consensus — yfinance (free), replaces the FMP path. Treated as a
+        # low-weight, staleness-aware divergence check (roadmap 0.4).
+        try:
+            result.analyst_estimates = await ingest_estimates_yf(db, ticker)
+        except Exception as e:
+            logger.exception("Estimate ingestion failed for %s", ticker)
+            result.errors.append(f"estimates: {e}")
 
         # News
         try:
@@ -105,10 +119,10 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("Transcript ingestion failed for %s", ticker)
             result.errors.append(f"transcripts: {e}")
 
-        # Other FMP-only data (gated behind API key)
+        # Other FMP-only data (gated behind API key). Analyst estimates now come from
+        # yfinance above; FMP is retained only for earnings surprises (its unique value-add).
         if settings.fmp_api_key:
             from app.ingestion.fmp_client import FMPAccessError
-            from app.ingestion.analyst_estimates import ingest_analyst_estimates
             from app.ingestion.earnings_surprises import ingest_earnings_surprises
 
             try:
@@ -119,15 +133,6 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             except Exception as e:
                 logger.exception("Earnings surprise ingestion failed for %s", ticker)
                 result.errors.append(f"earnings_surprises: {e}")
-
-            try:
-                result.analyst_estimates = await ingest_analyst_estimates(db, ticker)
-            except FMPAccessError as e:
-                logger.warning("Analyst estimate ingestion unavailable for %s: %s", ticker, e)
-                result.errors.append(f"analyst_estimates: {e}")
-            except Exception as e:
-                logger.exception("Analyst estimates ingestion failed for %s", ticker)
-                result.errors.append(f"analyst_estimates: {e}")
 
     return result
 
