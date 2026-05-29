@@ -42,3 +42,11 @@ class Valuation(Base):
     market_cap: Mapped[float | None] = mapped_column(Float)
     enterprise_value: Mapped[float | None] = mapped_column(Float)
     shares_outstanding: Mapped[float | None] = mapped_column(Float)
+
+    # Analyst PRICE TARGETS (roadmap 0.4). Distinct from forward EPS/revenue consensus:
+    # price targets are frequently way off, so they are a LOW-WEIGHT divergence anchor only.
+    target_mean_price: Mapped[float | None] = mapped_column(Float)
+    target_median_price: Mapped[float | None] = mapped_column(Float)
+    target_high_price: Mapped[float | None] = mapped_column(Float)
+    target_low_price: Mapped[float | None] = mapped_column(Float)
+    num_price_target_analysts: Mapped[int | None] = mapped_column(BigInteger)

@@ -88,13 +88,16 @@ Source-of-truth split (all free):
 
 Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = acceptance criteria.
 
-> **Progress (2026-05-29):** Items **0.1, 0.2, 0.3, 0.4 DONE.** 0.4: consensus now comes from
-> **yfinance** (`ingestion/estimates_yf.py`), not FMP; migration `c3f5a1e8b740` added
-> `source`/`as_of`/`revisions_30d` to `analyst_estimates`. Per user guidance it is a
-> **low-weight divergence check**: the valuation agent is told never to defer to it, and when
-> STALE (our copy >30d old OR zero analyst revisions in 30d) it is dropped → `consensus_comparison`
-> null → excluded from scoring (zero weight). Follow-up: apply the same low-weight framing to the
-> earnings agent's forward_outlook; optionally ingest the consensus price target as a divergence anchor.
+> **Progress (2026-05-29):** Items **0.1, 0.2, 0.3, 0.4 DONE.** 0.4: consensus from **yfinance**
+> (`ingestion/estimates_yf.py`), not FMP; migration `c3f5a1e8b740` added `source`/`as_of`/
+> `revisions_30d` to `analyst_estimates`. **Two distinct things, weighted differently (per user):**
+> (1) **Forward EPS/revenue consensus = NORMAL weight** — a meaningful reference; the agent compares
+> and takes divergences seriously. Discounted only when STALE (copy >3 months old, or no analyst
+> revisions recently) → `consensus_comparison` null → excluded from scoring.
+> (2) **Analyst PRICE TARGET = LOW weight** — frequently far off; stored on `valuations` (migration
+> `d4a8b2f60e51`: target mean/median/high/low + n analysts from yfinance .info), fed to the agent as
+> a loose divergence anchor only ("never adopt as your target"). MU: mean $674 / median $550 /
+> low $249 / high $1625. Follow-up: same framing for the earnings agent's forward_outlook.
 >
 > Items **0.1, 0.2, 0.3 DONE.** `ingestion/edgar.py` is wired into
 > `pipeline.py` as the source of truth for `financials` (yfinance = fallback only); migration

@@ -11,6 +11,7 @@ from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.estimate import AnalystEstimate
 from app.models.transcript import EarningsTranscript
+from app.models.valuation import Valuation
 
 logger = logging.getLogger(__name__)
 
@@ -34,22 +35,23 @@ class ValuationAgent(BaseAgent):
         )
         estimates = result.scalars().all()
         if estimates:
-            # Staleness: our copy older than 30d, or analysts haven't revised in 30d.
+            # Forward EPS/revenue consensus is a meaningful reference (normal weight). It is
+            # only discounted when genuinely stale: our copy >3 months old, or no analyst
+            # revisions in the last ~3 months.
             ages = [(date.today() - e.as_of).days for e in estimates if e.as_of]
             copy_age = min(ages) if ages else None
             revs = [e.revisions_30d for e in estimates if e.revisions_30d is not None]
             no_recent_revisions = bool(revs) and max(revs) == 0
-            stale = (copy_age is not None and copy_age > 30) or no_recent_revisions
+            stale = (copy_age is not None and copy_age > 90) or no_recent_revisions
 
-            header = "--- ANALYST CONSENSUS ESTIMATES (LOW-WEIGHT divergence check only) ---"
-            lines = [header]
+            lines = ["--- ANALYST CONSENSUS ESTIMATES (forward EPS/revenue — a meaningful reference) ---"]
             if stale:
                 why = []
-                if copy_age is not None and copy_age > 30:
-                    why.append(f"our copy is {copy_age} days old")
+                if copy_age is not None and copy_age > 90:
+                    why.append(f"our copy is {copy_age} days old (>3 months)")
                 if no_recent_revisions:
                     why.append("no analyst revisions in the last 30 days")
-                lines.append(f"  ⚠ STALE ({'; '.join(why)}) — DO NOT weight this; treat as absent.")
+                lines.append(f"  ⚠ STALE ({'; '.join(why)}) — discount heavily; treat as absent.")
             for e in estimates:
                 parts = [f"  {e.period_end_date}:"]
                 if e.eps_consensus is not None:
@@ -62,6 +64,22 @@ class ValuationAgent(BaseAgent):
                     parts.append(f"[revisions last 30d: {e.revisions_30d}]")
                 lines.append(" ".join(parts))
             context += "\n\n" + "\n".join(lines)
+
+        # Analyst PRICE TARGET — LOW weight (frequently way off); a loose divergence anchor only.
+        val = (await db.execute(
+            select(Valuation).where(Valuation.ticker == ticker)
+            .order_by(Valuation.date.desc()).limit(1)
+        )).scalar_one_or_none()
+        if val and val.target_mean_price:
+            age = (date.today() - val.date).days if val.date else None
+            stale_pt = " ⚠ STALE (>3 months old)" if age is not None and age > 90 else ""
+            n = f", {val.num_price_target_analysts} analysts" if val.num_price_target_analysts else ""
+            context += (
+                "\n\n--- ANALYST PRICE TARGET (LOW-WEIGHT — these are frequently far off; "
+                "use only as a loose divergence check, never as your target)" + stale_pt + " ---\n"
+                f"  mean=${val.target_mean_price:.0f} median=${val.target_median_price or 0:.0f} "
+                f"low=${val.target_low_price or 0:.0f} high=${val.target_high_price or 0:.0f}{n}"
+            )
 
         # Add guidance excerpts from most recent transcript
         result = await db.execute(
@@ -142,13 +160,15 @@ You must respond with valid JSON only, no other text. Use this exact schema:
   "summary": "string — 3-4 sentence valuation assessment"
 }
 
-CONSENSUS POLICY (important): Analyst consensus lags reality and is frequently wrong,
-especially for cyclical/commodity businesses where estimates trail the cycle. Use it ONLY
-as a weak divergence check — never as your anchor, target, or a reason to change your own
-view. Your own analysis should dominate. Flag a large divergence (e.g. your fair value far
-above/below consensus) and explain it, but do not defer to consensus. If the consensus block
-is marked STALE (our copy >30 days old, or no analyst revisions in 30 days), do NOT weight it
-at all and set consensus_comparison to null.
+CONSENSUS POLICY (important — two different things, weighted differently):
+1. FORWARD EPS/REVENUE CONSENSUS is a meaningful reference. Compare your estimates against
+   it and take material divergences seriously (they may indicate you've missed something).
+   It does NOT lag as badly as price targets. Only discount it if the block is marked STALE
+   (our copy >3 months old, or no analyst revisions recently) — then set consensus_comparison
+   to null.
+2. ANALYST PRICE TARGETS are LOW weight — they are frequently far off and herd around the
+   current price. Use them only as a loose divergence check; never adopt them as your target
+   or let them move your fair value. Your own DCF/multiples work sets the target.
 
 If no analyst estimates are available, set consensus_comparison to null.
 If no transcript/guidance data is available, set guidance_assessment to null."""

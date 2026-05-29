@@ -152,6 +152,12 @@ async def ingest_valuation(db: AsyncSession, ticker: str) -> bool:
         "market_cap": _safe(info.get("marketCap")),
         "enterprise_value": _safe(info.get("enterpriseValue")),
         "shares_outstanding": _safe(info.get("sharesOutstanding")),
+        # Analyst price targets (low-weight divergence anchor — often way off)
+        "target_mean_price": _safe(info.get("targetMeanPrice")),
+        "target_median_price": _safe(info.get("targetMedianPrice")),
+        "target_high_price": _safe(info.get("targetHighPrice")),
+        "target_low_price": _safe(info.get("targetLowPrice")),
+        "num_price_target_analysts": _safe(info.get("numberOfAnalystOpinions")),
     }
 
     stmt = insert(Valuation).values([row])
