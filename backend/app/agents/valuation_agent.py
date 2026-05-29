@@ -34,16 +34,32 @@ class ValuationAgent(BaseAgent):
         )
         estimates = result.scalars().all()
         if estimates:
-            lines = ["--- ANALYST CONSENSUS ESTIMATES ---"]
+            # Staleness: our copy older than 30d, or analysts haven't revised in 30d.
+            ages = [(date.today() - e.as_of).days for e in estimates if e.as_of]
+            copy_age = min(ages) if ages else None
+            revs = [e.revisions_30d for e in estimates if e.revisions_30d is not None]
+            no_recent_revisions = bool(revs) and max(revs) == 0
+            stale = (copy_age is not None and copy_age > 30) or no_recent_revisions
+
+            header = "--- ANALYST CONSENSUS ESTIMATES (LOW-WEIGHT divergence check only) ---"
+            lines = [header]
+            if stale:
+                why = []
+                if copy_age is not None and copy_age > 30:
+                    why.append(f"our copy is {copy_age} days old")
+                if no_recent_revisions:
+                    why.append("no analyst revisions in the last 30 days")
+                lines.append(f"  ⚠ STALE ({'; '.join(why)}) — DO NOT weight this; treat as absent.")
             for e in estimates:
                 parts = [f"  {e.period_end_date}:"]
                 if e.eps_consensus is not None:
                     parts.append(f"EPS consensus=${e.eps_consensus:.2f} (low=${e.eps_low:.2f}, high=${e.eps_high:.2f})")
                 if e.revenue_consensus is not None:
-                    rev_b = e.revenue_consensus / 1e9
-                    parts.append(f"Rev consensus=${rev_b:.2f}B")
+                    parts.append(f"Rev consensus=${e.revenue_consensus / 1e9:.2f}B")
                 if e.number_of_analysts:
                     parts.append(f"({e.number_of_analysts} analysts)")
+                if e.revisions_30d is not None:
+                    parts.append(f"[revisions last 30d: {e.revisions_30d}]")
                 lines.append(" ".join(parts))
             context += "\n\n" + "\n".join(lines)
 
@@ -125,6 +141,14 @@ You must respond with valid JSON only, no other text. Use this exact schema:
   },
   "summary": "string — 3-4 sentence valuation assessment"
 }
+
+CONSENSUS POLICY (important): Analyst consensus lags reality and is frequently wrong,
+especially for cyclical/commodity businesses where estimates trail the cycle. Use it ONLY
+as a weak divergence check — never as your anchor, target, or a reason to change your own
+view. Your own analysis should dominate. Flag a large divergence (e.g. your fair value far
+above/below consensus) and explain it, but do not defer to consensus. If the consensus block
+is marked STALE (our copy >30 days old, or no analyst revisions in 30 days), do NOT weight it
+at all and set consensus_comparison to null.
 
 If no analyst estimates are available, set consensus_comparison to null.
 If no transcript/guidance data is available, set guidance_assessment to null."""
