@@ -33,6 +33,11 @@ class Financial(Base):
     total_equity: Mapped[float | None] = mapped_column(Float)
     shares_outstanding: Mapped[float | None] = mapped_column(Float)
 
+    # Provenance (roadmap 0.3) — where this row came from, for auditability.
+    source: Mapped[str | None] = mapped_column(String(20))       # "edgar" | "yfinance"
+    source_url: Mapped[str | None] = mapped_column(String(300))  # filing / API URL
+    as_of: Mapped[date | None] = mapped_column(Date)             # date captured/verified
+
 
 class Segment(Base):
     __tablename__ = "segments"

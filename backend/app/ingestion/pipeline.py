@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session
+from app.ingestion.edgar import ingest_financials_edgar
 from app.ingestion.fundamentals import ingest_financials, ingest_valuation
 from app.ingestion.news import ingest_news
 from app.ingestion.prices import ingest_prices
@@ -73,14 +74,18 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("Price ingestion failed for %s", ticker)
             result.errors.append(f"prices: {e}")
 
-        # Quarterly financials — yfinance for the daily path (free, no FMP budget).
-        # FMP financials are available on demand via /api/ingestion/backfill (saves the
-        # 250-call/day budget for transcripts, which are FMP's unique value-add).
+        # Quarterly financials — EDGAR (authoritative filed XBRL, full history) is the
+        # source of truth; yfinance is the fallback if EDGAR is unavailable (no CIK,
+        # network, etc.). Both free. See ANALYST_ROADMAP.md 0.1-0.3.
         try:
-            result.financials = await ingest_financials(db, ticker)
+            result.financials = await ingest_financials_edgar(db, ticker)
         except Exception as e:
-            logger.exception("Financials ingestion failed for %s", ticker)
-            result.errors.append(f"financials: {e}")
+            logger.warning("EDGAR financials failed for %s (%s); falling back to yfinance", ticker, e)
+            try:
+                result.financials = await ingest_financials(db, ticker)
+            except Exception as e2:
+                logger.exception("Financials ingestion failed for %s", ticker)
+                result.errors.append(f"financials: {e2}")
 
         # Valuation snapshot
         try:
