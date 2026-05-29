@@ -87,6 +87,7 @@ export interface IngestionResult {
   earnings_surprises: number;
   analyst_estimates: number;
   errors: string[];
+  warnings: string[];
 }
 
 export interface AnalysisRunResult {

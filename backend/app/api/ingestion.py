@@ -16,6 +16,7 @@ class IngestionResultResponse(BaseModel):
     earnings_surprises: int = 0
     analyst_estimates: int = 0
     errors: list[str]
+    warnings: list[str] = []
 
 
 class IngestionRequest(BaseModel):
@@ -41,6 +42,7 @@ async def trigger_ingestion(request: IngestionRequest | None = None):
             earnings_surprises=r.earnings_surprises,
             analyst_estimates=r.analyst_estimates,
             errors=r.errors,
+            warnings=r.warnings,
         )
         for r in results
     ]

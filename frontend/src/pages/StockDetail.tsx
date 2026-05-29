@@ -41,7 +41,7 @@ export default function StockDetail() {
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { running, message: pipelineMsg } = usePipelineState(ticker);
+  const { running, message: pipelineMsg, warnings: pipelineWarnings } = usePipelineState(ticker);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
   const prevRunningRef = useRef(running);
 
@@ -157,6 +157,27 @@ export default function StockDetail() {
           }}
         >
           {pipelineMsg}
+        </div>
+      )}
+
+      {pipelineWarnings && pipelineWarnings.length > 0 && (
+        <div
+          style={{
+            background: 'rgba(180, 120, 20, 0.10)',
+            border: '1px solid rgba(180, 120, 20, 0.45)',
+            borderRadius: 6,
+            padding: '10px 14px',
+            marginBottom: 18,
+            fontSize: 12,
+            color: 'var(--color-ink-2)',
+          }}
+        >
+          <strong>⚠ Data coverage warnings</strong>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            {pipelineWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
 

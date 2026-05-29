@@ -4,6 +4,7 @@ import { api } from '../api/client';
 export interface PipelineState {
   running: boolean;
   message: string | null;
+  warnings?: string[];
 }
 
 const EMPTY: PipelineState = { running: false, message: null };
@@ -57,9 +58,11 @@ export function runPipeline(ticker: string): Promise<void> {
       const ingestionSummary = ingestion
         ? `${ingestion.prices} prices · ${ingestion.financials} financials · ${ingestion.news} news`
         : 'no ingestion result';
+      const warnings = ingestion?.warnings ?? [];
       setState(ticker, {
         running: true,
         message: `Data refreshed (${ingestionSummary}). Running agents…`,
+        warnings,
       });
 
       const agentResult = await api.analysis.run(ticker, { force: true, ingestFirst: false });
@@ -74,6 +77,7 @@ export function runPipeline(ticker: string): Promise<void> {
       setState(ticker, {
         running: true,
         message: `Agents done (${agentSummary}). Calculating score…`,
+        warnings,
       });
 
       const scoreResult = await api.scoring.run(ticker);
@@ -83,6 +87,7 @@ export function runPipeline(ticker: string): Promise<void> {
       setState(ticker, {
         running: false,
         message: `Pipeline complete · ${scoreResult.feature_count} features · score ${scoreResult.composite_score.toFixed(3)} · ${decisionResult.final_signal} (${decisionResult.confidence}, ${flagCount} flag${flagCount !== 1 ? 's' : ''})`,
+        warnings,
       });
     } catch (err) {
       setState(ticker, {

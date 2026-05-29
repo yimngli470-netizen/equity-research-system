@@ -29,6 +29,7 @@ class IngestionResult:
     earnings_surprises: int = 0
     analyst_estimates: int = 0
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)  # non-fatal, user-facing (e.g. IR auto-discovery)
 
 
 async def _update_stock_info(ticker: str) -> None:
@@ -68,6 +69,17 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
     await _update_stock_info(ticker)
 
     async with async_session() as db:
+        # Auto-bootstrap a new ticker (idempotent; no cost once configured): generate its
+        # KPI definitions + auto-discover its IR source. Surfaces warnings to the UI when IR
+        # discovery can't be confirmed; full detail recorded in ticker_onboarding.
+        try:
+            from app.ingestion.bootstrap import bootstrap_ticker
+            boot = await bootstrap_ticker(db, ticker)
+            result.warnings.extend(boot.warnings)
+        except Exception as e:
+            logger.exception("Bootstrap failed for %s", ticker)
+            result.warnings.append(f"bootstrap: {e}")
+
         # Prices
         try:
             result.prices = await ingest_prices(db, ticker)

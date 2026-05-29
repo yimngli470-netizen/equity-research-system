@@ -65,6 +65,33 @@ def get_source(ticker: str) -> IRSource | None:
         return _cache.get(ticker.upper())
 
 
+def add_source(source: IRSource, overwrite: bool = False) -> bool:
+    """Write a NEW IR source entry to sources.yaml (used by auto-discovery bootstrap).
+
+    Returns True if written, False if an entry already exists and overwrite=False.
+    """
+    global _cache
+    with _lock:
+        raw = {}
+        if _REGISTRY_PATH.exists():
+            with open(_REGISTRY_PATH) as f:
+                raw = yaml.safe_load(f) or {}
+        key = source.ticker.upper()
+        if key in raw and not overwrite:
+            return False
+        raw[key] = {
+            "ir_url": source.ir_url,
+            "strategy": source.strategy.to_dict(),
+            "artifact_type": source.artifact_type,
+            "notes": source.notes or "",
+        }
+        with open(_REGISTRY_PATH, "w") as f:
+            yaml.safe_dump(raw, f, sort_keys=False)
+        _cache = None
+        logger.info("Added IR source for %s: %s", key, source.ir_url)
+        return True
+
+
 def update_strategy(ticker: str, new_strategy: DiscoveryStrategy) -> None:
     """Persist a repaired discovery strategy back to sources.yaml.
 

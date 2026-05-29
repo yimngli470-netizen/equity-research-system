@@ -126,6 +126,21 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > closable for free from this datacenter environment. Reachable press-release tickers (AMZN, MRVL,
 > UBER, AAPL) could be upgraded to richer artifacts as per-site follow-ups.
 >
+> **AUTO-BOOTSTRAP NEW STOCKS DONE (2026-05-29).** `ingestion/bootstrap.py::bootstrap_ticker`
+> runs in the pipeline (idempotent; ~0.02s no-cost skip once configured): (1) LLM-generates
+> business-aware **KPI definitions** → `ticker_key_metrics` (IP-independent; verified on ORCL —
+> produced Cloud/OCI growth, RPO, cloud GM, license-support decline); (2) **auto-discovers the IR
+> source** — LLM proposes ir_url+artifact+pattern, validated by a reachability check that
+> distinguishes **not_found (404/DNS → bad URL, NOT written, manual-fix warning)** from
+> **unreachable (timeout/403 → likely IP block, written anyway so it works from the user's
+> residential IP)**. Failures surface as **user-facing warnings** (pipeline → UI amber banner in
+> StockDetail) AND a **developer-facing queryable record** in new table `ticker_onboarding`
+> (migration `f7c0a4e35d19`: kpi/ir status, url tried, actionable message). So adding a ticker +
+> clicking Run Full Pipeline now auto-fills financials/prices/consensus/KPI-defs with zero manual
+> setup; IR config self-heals where reachable and tells the dev exactly what to fix where not.
+> Note: the "Run full pipeline" button already runs ingestion→agents→scoring→decision, and the
+> IR fetch works from a residential IP (only this datacenter sandbox is blocked for MU/TSLA).
+>
 > Items **0.1, 0.2, 0.3 DONE.** `ingestion/edgar.py` is wired into
 > `pipeline.py` as the source of truth for `financials` (yfinance = fallback only); migration
 > `b1d4e7a90c22` added `source`/`source_url`/`as_of` provenance. All 13 real watchlist tickers

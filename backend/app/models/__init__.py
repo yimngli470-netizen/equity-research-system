@@ -11,6 +11,7 @@ from app.models.decision import StockDecision
 from app.models.transcript import EarningsTranscript
 from app.models.estimate import AnalystEstimate
 from app.models.key_metric import TickerKeyMetric, TickerKpiValue
+from app.models.onboarding import TickerOnboarding
 
 __all__ = [
     "Stock",
@@ -29,4 +30,5 @@ __all__ = [
     "AnalystEstimate",
     "TickerKeyMetric",
     "TickerKpiValue",
+    "TickerOnboarding",
 ]
