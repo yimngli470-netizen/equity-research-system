@@ -99,6 +99,18 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > a loose divergence anchor only ("never adopt as your target"). MU: mean $674 / median $550 /
 > low $249 / high $1625. Follow-up: same framing for the earnings agent's forward_outlook.
 >
+> Item **0.5 (KPI value extraction) DONE** (segment-row persistence deferred). New table
+> `ticker_kpi_values` (migration `e6b3c9d21f08`) + `ingestion/kpi_extractor.py`: a Sonnet pass
+> pulls each defined KPI's value from the transcript with a **verbatim evidence quote + source**,
+> "not disclosed" when genuinely absent (honest, verified). Idempotent per (ticker, period).
+> Wired into the pipeline after transcripts; the earnings agent now reads these pre-extracted,
+> source-verified values ("use verbatim, do NOT re-derive") instead of guessing — fixes the
+> unverifiable-claims problem. **Finding:** on MU only Capex filled ($5.0B, quoted); HBM rev /
+> DRAM-NAND ASP / inventory days = "not disclosed" because our stored source is the `ir_html`
+> press release (has_qa=false), not the full call transcript/slides. So the remaining gap is
+> **IR source coverage** (need transcript Q&A + slides), not extraction. Follow-ups: persist
+> segments as rows (string→float parse); enrich MU/other IR sources to full transcript/slides.
+>
 > Items **0.1, 0.2, 0.3 DONE.** `ingestion/edgar.py` is wired into
 > `pipeline.py` as the source of truth for `financials` (yfinance = fallback only); migration
 > `b1d4e7a90c22` added `source`/`source_url`/`as_of` provenance. All 13 real watchlist tickers

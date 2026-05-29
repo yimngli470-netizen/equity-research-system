@@ -119,6 +119,16 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("Transcript ingestion failed for %s", ticker)
             result.errors.append(f"transcripts: {e}")
 
+        # Per-ticker KPI value extraction (roadmap 0.5) — pull defined-KPI values from the
+        # transcript with evidence + provenance. Idempotent per (ticker, period): the LLM
+        # call only fires once per new quarter.
+        try:
+            from app.ingestion.kpi_extractor import extract_kpis
+            await extract_kpis(db, ticker)
+        except Exception as e:
+            logger.exception("KPI extraction failed for %s", ticker)
+            result.errors.append(f"kpi_extraction: {e}")
+
         # Other FMP-only data (gated behind API key). Analyst estimates now come from
         # yfinance above; FMP is retained only for earnings surprises (its unique value-add).
         if settings.fmp_api_key:

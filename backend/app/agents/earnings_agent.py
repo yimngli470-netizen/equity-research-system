@@ -11,7 +11,7 @@ from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
 from app.models.earnings import EarningsEvent
 from app.models.estimate import AnalystEstimate
-from app.models.key_metric import TickerKeyMetric
+from app.models.key_metric import TickerKeyMetric, TickerKpiValue
 from app.models.transcript import EarningsTranscript
 
 logger = logging.getLogger(__name__)
@@ -149,6 +149,28 @@ class EarningsAgent(BaseAgent):
                     row += f"\n      why: {km.why_it_matters}"
                 lines.append(row)
             context += "\n\n" + "\n".join(lines)
+
+            # Pre-extracted, source-verified KPI values (roadmap 0.5). These were pulled
+            # from the transcript/IR text with a verbatim evidence quote — prefer them over
+            # re-deriving (avoids unverifiable claims). "not disclosed" here is authoritative.
+            kpi_vals = (await db.execute(
+                select(TickerKpiValue).where(TickerKpiValue.ticker == ticker)
+                .order_by(TickerKpiValue.period_end_date.desc())
+            )).scalars().all()
+            if kpi_vals:
+                latest_period = kpi_vals[0].period_end_date
+                vlines = [
+                    "--- PRE-EXTRACTED KEY METRIC VALUES (verified against source — use these "
+                    "verbatim and cite their source; do NOT re-derive or override them) ---"
+                ]
+                for k in (v for v in kpi_vals if v.period_end_date == latest_period):
+                    vlines.append(
+                        f"  {k.metric_name}: {k.value} "
+                        f"(vs_target={k.vs_target}, trend={k.trend}, source={k.source})"
+                    )
+                    if k.evidence_quote:
+                        vlines.append(f"      evidence: \"{k.evidence_quote[:200]}\"")
+                context += "\n\n" + "\n".join(vlines)
 
         return context
 
