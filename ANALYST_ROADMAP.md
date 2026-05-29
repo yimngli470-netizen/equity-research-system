@@ -111,6 +111,21 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > **IR source coverage** (need transcript Q&A + slides), not extraction. Follow-ups: persist
 > segments as rows (string→float parse); enrich MU/other IR sources to full transcript/slides.
 >
+> **IR SOURCE COVERAGE (0.5 follow-up, 2026-05-29) — pipeline PROVEN, MU is network-blocked.**
+> Reachability probe from this environment: 9/11 IR landing pages reachable (AMD, AAPL, AMZN,
+> GOOGL, INTU, META, MRVL, NVDA, UBER = HTTP 200); **MU = ReadTimeout, TSLA = 403** (datacenter-IP
+> /WAF block — general egress works, so it's site-specific, same class as AVGO). **Proof on AMD**
+> (reachable, `artifact_type=transcript`): fetched the full Q&A call PDF via the existing IR
+> fetcher (`ir_pdf`, has_qa=true, 54.7k chars) → KPI extractor filled **4/5 KPIs** with real
+> sourced values (Data Center rev +57%, GM 55%, server share gains, embedded wins; only MI3xx/4xx
+> "not disclosed"). So the rich-source→KPI pipeline works end-to-end where the network allows; MU's
+> gap (only capex fills) is purely the IP block, NOT the code. MU/TSLA notes in `sources.yaml`
+> corrected (MU's "doesn't publish prepared remarks" claim was unverified & likely wrong).
+> **Path for blocked tickers (MU, TSLA, AVGO):** run the scraper from a residential IP / the user's
+> own machine / a headless browser, then retarget MU artifact_type → slides|prepared_remarks. Not
+> closable for free from this datacenter environment. Reachable press-release tickers (AMZN, MRVL,
+> UBER, AAPL) could be upgraded to richer artifacts as per-site follow-ups.
+>
 > Items **0.1, 0.2, 0.3 DONE.** `ingestion/edgar.py` is wired into
 > `pipeline.py` as the source of truth for `financials` (yfinance = fallback only); migration
 > `b1d4e7a90c22` added `source`/`source_url`/`as_of` provenance. All 13 real watchlist tickers

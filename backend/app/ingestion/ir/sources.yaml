@@ -161,9 +161,20 @@ MU:
     derives fiscal year/quarter via _fiscal_period_from_end_date().
 
     Artifact is the press release HTML — quarterly results commentary +
-    forward guidance from management. Not the full call transcript and not
-    prepared remarks (Micron does not appear to publish either publicly).
-    has_qa will be False; earnings-agent Q&A features should degrade gracefully.
+    forward guidance from management. has_qa is False, so the per-ticker KPIs
+    (HBM revenue, DRAM/NAND ASP, inventory days) come back "not disclosed" —
+    they live in the call transcript Q&A and the slide deck, NOT the press release.
+
+    NETWORK BLOCK (verified 2026-05-29): investors.micron.com times out
+    (ReadTimeout) from this environment's datacenter IP range — general egress
+    works (SEC/Yahoo/Google reachable), so this is MU-specific IP/WAF blocking,
+    the same class as AVGO. The press release we have was captured when the site
+    was reachable. The earlier claim that "Micron does not publish prepared
+    remarks/slides" is unverified and likely wrong — Micron posts a slide deck +
+    CFO commentary under Events & Presentations that DO contain HBM rev / bit
+    growth / ASP / inventory. TODO when reachable (residential IP / headless /
+    run from user's machine): retarget artifact_type to slides|prepared_remarks
+    and add the deck discovery pattern, then KPIs will fill.
 
 NVDA:
   ir_url: https://investor.nvidia.com/financial-info/quarterly-results/
@@ -187,6 +198,9 @@ TSLA:
     Tesla's official IR quarterly-disclosure page generally posts shareholder
     decks/updates rather than full text call transcripts. The scraper captures
     the official quarterly artifact when no transcript is available.
+    NETWORK BLOCK (verified 2026-05-29): ir.tesla.com returns HTTP 403 from this
+    environment's datacenter IP (WAF). Not fetchable here without a residential
+    IP / headless browser.
 
 UBER:
   ir_url: https://investor.uber.com/financials/default.aspx
