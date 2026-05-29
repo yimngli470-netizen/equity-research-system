@@ -1,7 +1,9 @@
 # AI-Augmented Equity Research System
 
 ## What This Is
-A 6-layer AI-augmented equity research platform for personal stock analysis. Tracks a portfolio of stocks, runs AI-powered research agents, quantifies everything into composite scores, and generates buy/hold/sell signals. Full design in `PROJECT_PLAN.md`, progress in `PROGRESS.md`.
+A 6-layer AI-augmented equity research platform for personal stock analysis. Tracks a portfolio of stocks, runs AI-powered research agents, quantifies everything into composite scores, and generates buy/hold/sell signals.
+
+**`ANALYST_ROADMAP.md` is the current source of truth** for direction and recent work — the long-term goal is an *auditable AI research analyst*, and the dated progress log there records what's been built (EDGAR financials spine, yfinance consensus, per-ticker KPI extraction, auto-bootstrap of new stocks, etc.). This file documents the standing architecture.
 
 ## Tech Stack
 - **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic, APScheduler
@@ -25,20 +27,24 @@ docker compose down           # Stop all services
 ```
 backend/
   app/
-    main.py                  # FastAPI app, CORS, 4 routers (stocks, ingestion, analysis, scoring)
+    main.py                  # FastAPI app, CORS, 5 routers (stocks, ingestion, analysis, scoring, decision)
     config.py                # Pydantic Settings (env vars: DATABASE_URL, ANTHROPIC_API_KEY, etc.)
     database.py              # Async SQLAlchemy engine, session factory, DeclarativeBase, get_db
-    models/                  # SQLAlchemy ORM models (11 tables)
+    models/                  # SQLAlchemy ORM models
       stock.py               #   Stock (ticker PK, name, sector, industry, active)
       price.py               #   DailyPrice (ticker, date, OHLCV)
-      financial.py           #   Financial (quarterly income/cashflow/balance), Segment
-      valuation.py           #   Valuation (point-in-time: forward_pe, peg, margins, market_cap)
+      financial.py           #   Financial (quarterly; EDGAR-sourced + provenance), Segment
+      valuation.py           #   Valuation (multiples, margins, market_cap, analyst price targets)
       document.py            #   Document (news articles, embedding Vector(1536))
       analysis.py            #   AnalysisReport (ticker, agent_type, run_date, report JSONB)
       score.py               #   QuantFeature (per-feature scores), StockScore (composite + signal)
       decision.py            #   StockDecision (raw/final signal, confidence, risk_flags JSONB, reasoning)
       earnings.py            #   EarningsEvent (beat/miss, guidance)
-      insider.py             #   InsiderTrade
+      estimate.py            #   AnalystEstimate (forward EPS/rev consensus + as_of/revisions_30d)
+      transcript.py          #   EarningsTranscript (text, summary JSONB, source, has_qa)
+      key_metric.py          #   TickerKeyMetric (per-ticker KPI defs), TickerKpiValue (extracted values)
+      onboarding.py          #   DevTickerBootstrapStatus (dev-only: auto-bootstrap status)
+      insider.py             #   InsiderTrade (model only — ingestion deferred, unused)
     schemas/stock.py         # Pydantic response models with from_attributes = True
     api/
       stocks.py              #   GET/POST /api/stocks/, prices, financials, valuation, scores, analysis
@@ -46,18 +52,21 @@ backend/
       analysis.py            #   POST /api/analysis/run, GET /api/analysis/agents
       scoring.py             #   POST /api/scoring/run, GET /api/scoring/weights, GET /api/scoring/features/{ticker}
       decision.py            #   POST /api/decision/run, GET /api/decision/{ticker}/latest
-    ingestion/               # Layer 1: data collection
-      pipeline.py            #   run_full_ingestion() orchestrator
+    ingestion/               # Layer 1: data collection (all sources free)
+      pipeline.py            #   run_full_ingestion() orchestrator (bootstrap → prices → financials → …)
+      bootstrap.py           #   Auto-onboard new tickers: LLM KPI defs + IR source discovery
+      edgar.py               #   SEC EDGAR XBRL — SOURCE OF TRUTH for financials (full history)
       prices.py              #   Daily prices via yfinance (upsert)
-      fundamentals.py        #   Quarterly financials + valuation snapshots via yfinance
+      fundamentals.py        #   yfinance: valuation snapshot + price targets; financials FALLBACK
+      estimates_yf.py        #   Forward EPS/revenue consensus from yfinance → analyst_estimates
       news.py                #   News articles from yfinance (STORY type only)
-      fmp_client.py          #   FMP API client (250 calls/day free tier, rate-limited)
+      kpi_extractor.py       #   LLM: extract per-ticker KPI values from transcript → ticker_kpi_values
+      fmp_client.py          #   FMP API client (free tier; only earnings_surprises uses it now)
       transcripts.py         #   Orchestrator: FMP → IR scraper fallback chain, calendar-gated
       earnings_surprises.py  #   EPS beat/miss history from FMP → earnings_events table
-      analyst_estimates.py   #   Consensus estimates from FMP → analyst_estimates table
-      scheduler.py           #   APScheduler daily cron at 21:30 UTC
+      scheduler.py           #   APScheduler daily cron (entrypoint, run as module)
       computed_metrics.py    #   Derived growth rates, margins, momentum (on-the-fly, not stored)
-      ir/                    #   IR-site transcript scraper (tier-3 fallback when FMP misses) — planned
+      ir/                    #   IR-site scraper (BUILT): FMP-miss fallback + auto-discovery target
         sources.yaml         #     Per-ticker IR config: URL + discovery strategy + artifact_type
         registry.py          #     Load/get/update IRSource; persists repaired strategies back to YAML
         fetcher.py           #     fetch_transcript_from_ir(ticker, year, quarter) main entry
@@ -100,13 +109,15 @@ frontend/
 ### Pipeline: Ingestion → Agents → Scoring
 ```
 1. POST /api/ingestion/run {ticker}
+   → bootstrap.py: if new ticker, auto-generate KPI defs + auto-discover IR source (idempotent)
    → prices.py: daily OHLCV from yfinance (upsert by ticker+date)
-   → fundamentals.py: quarterly financials + valuation snapshot
+   → edgar.py: quarterly financials from SEC XBRL (source of truth); yfinance fallback if EDGAR fails
+   → fundamentals.py: valuation snapshot + analyst price targets (yfinance .info)
+   → estimates_yf.py: forward EPS/revenue consensus → analyst_estimates table
    → news.py: recent news articles → documents table
-   → (if FMP_API_KEY set):
-     → transcripts.py: earnings call transcripts → earnings_transcripts table
-     → earnings_surprises.py: EPS beat/miss history → earnings_events table
-     → analyst_estimates.py: consensus estimates → analyst_estimates table
+   → transcripts.py: earnings transcript (FMP if key set → IR scraper fallback) → earnings_transcripts
+   → kpi_extractor.py: extract per-ticker KPI values from the transcript → ticker_kpi_values
+   → (if FMP_API_KEY set) earnings_surprises.py: EPS beat/miss history → earnings_events
 
 2. POST /api/analysis/run {ticker}
    → For each agent (news, earnings, industry, valuation):
@@ -144,19 +155,18 @@ Each agent has a `max_age_days` setting. When triggered:
 ### Refresh Strategy
 The system has two trigger paths with deliberately different cache semantics:
 
-- **"Run Full Pipeline" button (frontend, `StockDetail.tsx`)** — passes `force=true` to `/api/analysis/run`. Bypasses the cache for all 5 agents → scoring → decision. This is the user-facing **hard refresh**: use it after earnings releases, news shocks, or any time you want guaranteed-fresh analysis. Cost: ~4 Claude calls (Sonnet news + 3 Opus + Sonnet validation) per click.
+- **"Run Full Pipeline" button (frontend, `state/pipelineTracker.ts`)** — runs the WHOLE chain for the ticker: `/ingestion/run` (incl. bootstrap, EDGAR financials, consensus, transcript fetch, KPI extraction) → `/analysis/run` with `force=true` (5 agents) → `/scoring/run` → `/decision/run`. The user-facing **hard refresh**; use it after earnings/news. Cost: several Claude calls (agents + transcript summarizer + KPI extraction; bootstrap KPI-gen only the first time for a new ticker).
 - **Daily scheduler (`ingestion/scheduler.py`, 21:30 UTC)** — runs ingestion for all active stocks. Agent/scoring/decision wiring is **not yet hooked up** ("What's Not Yet Built" item). When wired, it should run **cache-aware** (no `force`) so news refreshes daily but Opus agents only re-run when their windows lapse.
 
 **Known staleness gotcha:** time-based caching alone can return a stale earnings report for up to 30 days after a new quarterly release (the cache window is exactly long enough to span an entire quarter). Mitigation by design: the user clicks the button after earnings. We rejected event-aware cache invalidation as overkill — the button's existence makes it unnecessary.
 
-### Transcript Fallback Chain (planned, not yet built)
-FMP free-tier coverage is sparse outside the largest names. The earnings/industry/valuation agents are transcript-hungry, so missing transcripts silently degrade analysis quality. The fallback chain is built into `ingestion/transcripts.py`:
+### Transcript Fallback Chain (BUILT)
+FMP free-tier coverage is sparse outside the largest names. The earnings/industry/valuation agents are transcript-hungry, so missing transcripts silently degrade analysis quality. The fallback chain lives in `ingestion/transcripts.py`:
 
 ```
 For each (ticker, year, quarter) we don't yet have a transcript for:
-  1. CALENDAR GATE — skip unless today is within [earnings_date, earnings_date + 7d]
-     from earnings_events (sourced via FMP earnings calendar). Avoids pointless scrapes
-     between earnings cycles, since transcripts only ship once per quarter.
+  1. CALENDAR GATE — skip unless today is within [period_end + 14d, period_end + 120d].
+     Avoids pointless scrapes between earnings cycles (transcripts ship once per quarter).
   2. TIER 1: FMP — call fmp_client.get_earnings_transcript(ticker, year, quarter)
   3. TIER 2: IR scraper — call ir.fetcher.fetch_transcript_from_ir(ticker, year, quarter)
      a. Look up the ticker in ir/sources.yaml. Skip if no entry (no fallback configured).
@@ -199,7 +209,9 @@ Strategy types supported by `ir.discovery`:
 
 **Design rationale (why programmatic with LLM repair, not LLM-driven navigation):** per-scrape Claude calls × small watchlist × multi-weekly runs adds avoidable cost; LLMs hallucinate URLs in ways that are hard to debug; YAML configs are 5-minute fixes when IR sites redesign (1-2x/yr per ticker). LLM is the repair tool, not the runtime.
 
-**Dependencies to add when implementing:** `pdfplumber`, `beautifulsoup4`, `python-pptx`, `pyyaml`. `httpx` is already a dep.
+**Dependencies (installed):** `pdfplumber`, `beautifulsoup4`, `python-pptx`, `pyyaml`, `httpx`.
+
+**IR reachability note:** several IR sites (MU, TSLA, AVGO) block this project's *datacenter* IP (timeout/403). They are reachable from a residential IP, so the scraper works when the app runs on the user's own machine. `bootstrap.py` auto-discovery distinguishes a bad URL (404/DNS → not written) from an IP block (timeout/403 → written anyway, works from residential IP); failures surface as UI warnings + `dev_ticker_bootstrap_status`.
 
 ### Scoring System
 **60+ features** across 9 extraction categories, mapped to **7 scoring categories** (+ validation meta-category):
@@ -300,7 +312,7 @@ GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 ```
 
 ## Database
-- **15 tables** across models/. Key tables: `stocks`, `daily_prices`, `financials`, `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`, `stock_decisions`, `earnings_transcripts`, `analyst_estimates`, `earnings_events`
+- Key tables: `stocks`, `daily_prices`, `financials` (EDGAR + provenance), `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`, `stock_decisions`, `earnings_transcripts`, `analyst_estimates`, `earnings_events`, `segments`, `ticker_key_metrics` (KPI defs), `ticker_kpi_values` (extracted KPI values), `dev_ticker_bootstrap_status` (dev-only debug)
 - Migrations via Alembic: `docker compose exec backend alembic upgrade head`
 - Postgres on host port 5433 (5432 used by local Postgres)
 
@@ -313,23 +325,24 @@ GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
 - Agent reports stored as JSONB for schema flexibility across agent types
 - Upserts use `on_conflict_do_update` on unique constraints for idempotent data ingestion
 
-## Data Sources
-| Source | Cost | Data | Tables |
-|--------|------|------|--------|
-| **yfinance** | Free | Prices, financials, valuation multiples, news | daily_prices, financials, valuations, documents |
-| **FMP** | Free tier (250 calls/day) | Earnings transcripts (tier 1), EPS surprises, analyst estimates, earnings calendar | earnings_transcripts, earnings_events, analyst_estimates |
-| **IR site scraper (planned)** | Free | Earnings transcripts / press releases / slides — tier-3 fallback when FMP has no coverage | earnings_transcripts (with `source` field) |
-| **Claude API** | Per-token | AI analysis via 5 agents (news, earnings, industry, valuation, validation) + IR scraper repair fallback | analysis_reports |
+## Data Sources (all free)
+| Source | Data | Tables |
+|--------|------|--------|
+| **SEC EDGAR XBRL** | **Source of truth for financials** — full filed history (companyfacts), provenance-tagged | financials |
+| **yfinance** | Prices, valuation multiples, analyst price targets, forward EPS/revenue consensus, news | daily_prices, valuations, analyst_estimates, documents; financials fallback |
+| **IR site scraper** | Earnings transcripts / prepared remarks / slides (FMP-miss fallback; auto-discovered for new tickers) | earnings_transcripts (`source`/`source_url`/`has_qa`) |
+| **FMP** | Earnings transcripts (tier 1) + EPS surprises only — estimates moved to yfinance | earnings_transcripts, earnings_events |
+| **Claude API** | 5 analysis agents + transcript summarizer + KPI extraction + bootstrap (KPI gen, IR repair) | analysis_reports, ticker_kpi_values, ticker_key_metrics |
 
-FMP integration is gated behind `FMP_API_KEY` env var. If not set, FMP ingestion steps are silently skipped and agents fall back to yfinance-only context.
+FMP is gated behind `FMP_API_KEY`; if unset, transcripts fall back to the IR scraper and FMP surprises are skipped. Consensus estimates no longer depend on FMP (yfinance).
 
-The IR scraper has no API key dependency but does require `backend/app/ingestion/ir/sources.yaml` to be populated for each ticker that needs fallback coverage. See **Transcript Fallback Chain** below.
+The IR scraper needs a `sources.yaml` entry per ticker; for new tickers `bootstrap.py` auto-discovers one (see **Transcript Fallback Chain**). Note: EDGAR was rejected *for transcripts only* (it doesn't host call transcripts) — but it IS the source of truth for **financials**.
 
-## What's Not Yet Built
-- Interactive DCF calculator (frontend)
-- Stock comparison page
-- Settings page (manage watchlist, adjust weights)
+## What's Not Yet Built / Next
+- **Phase 1 (next): peer-relative normalization + business-model archetypes** — the current normalizer uses fixed absolute bounds (one ruler for MU and Meta); see `ANALYST_ROADMAP.md`.
+- Interactive DCF calculator (frontend); stock comparison page; settings page (watchlist, weights)
 - Scheduler wiring: auto-run agents + scoring + decision after daily ingestion
 - Document embeddings (pgvector) not yet active
-- **IR transcript scraper (tier-3 fallback)** — designed in **Transcript Fallback Chain** above. Module layout staked out in `ingestion/ir/`; schema additions to `earnings_transcripts` pending Alembic migration. SEC EDGAR was considered and rejected (it doesn't host call transcripts, only 8-K press releases / 10-Q filings).
-- Insider trades ingestion deferred
+- Insider trades ingestion deferred (`InsiderTrade` model exists, unused)
+- Segment-row persistence (segments live in transcript summary JSONB, not the `segments` table yet)
+- `total_debt` / `shares_outstanding` not yet mapped from EDGAR (NULL on edgar rows)
