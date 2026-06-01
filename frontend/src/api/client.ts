@@ -20,8 +20,20 @@ export interface Stock {
   industry: string | null;
   added_date: string;
   active: boolean;
+  archetype: string | null;
   latest_price: number | null;
   price_change_pct: number | null;
+}
+
+export interface ScreenRank {
+  ticker: string;
+  archetype: string | null;
+  composite_score: number;
+  signal: string;
+  rank: number;
+  total: number;
+  archetype_rank: number;
+  archetype_total: number;
 }
 
 export interface DailyPrice {
@@ -46,6 +58,8 @@ export interface StockScore {
   event_score: number;
   composite_score: number;
   signal: string;
+  archetype: string | null;
+  weights: Record<string, number> | null;
 }
 
 export interface AnalysisReport {
@@ -185,6 +199,7 @@ export const api = {
         weights: Record<string, number>;
         thresholds: Record<string, number>;
       }>('/scoring/weights'),
+    screen: () => request<ScreenRank[]>('/scoring/screen'),
     features: (ticker: string) =>
       request<{ feature_name: string; feature_value: number; category: string }[]>(
         `/scoring/features/${ticker}`

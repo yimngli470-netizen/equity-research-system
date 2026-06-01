@@ -61,6 +61,7 @@ export default function Dashboard() {
           return {
             ticker: s.ticker,
             name: s.name,
+            archetype: s.archetype,
             latest_price: s.latest_price,
             price_change_pct: s.price_change_pct,
             composite_score: score ? score.composite_score : null,

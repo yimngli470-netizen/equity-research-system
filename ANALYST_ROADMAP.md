@@ -52,7 +52,7 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 | **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | ⬜ **Open** → Phase 2.1/2.5 |
 | **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
 | **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | ⬜ **Open** → Phase 2.6 |
-| **P9** | **Composite-as-oracle framing** — UI + decision flow treat the weighted average as the recommendation (dashboard signal badge) | Medium | ⬜ **Open** → Phase 1.5 |
+| **P9** | **Composite-as-oracle framing** — UI + decision flow treat the weighted average as the recommendation (dashboard signal badge) | Medium | ✅ **Done** (1.5): composite reframed as a peer-rank screen (`/api/scoring/screen` + `ScreenRankBar`), "not a recommendation" copy, real archetype weights shown |
 
 ---
 
@@ -168,8 +168,18 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > peak*, so no reweighting produces caution. **Phase 1 cannot fix MU by construction** — that needs
 > normalized/mid-cycle earnings (2.2), a cycle-position signal that makes peak-momentum a NEGATIVE
 > (ML M3), and un-quarantined skepticism (2.1/2.4). Phase 1 did its structural job (P1+P5); the MU
-> verdict is now a clean, well-understood Phase 2 target. **Next: 1.5 (screen-rank reframe), then
-> Phase 2.**
+> verdict is now a clean, well-understood Phase 2 target.
+
+> **Status (2026-05-31): 1.5 DONE — PHASE 1 COMPLETE.** Composite reframed as a peer-rank SCREEN,
+> not a verdict. Backend: `archetype` on `StockResponse`; `archetype` + actual archetype `weights`
+> on the latest-score response; new `GET /api/scoring/screen` ranks active names by composite within
+> the watchlist and within their archetype. Frontend: archetype chip in the detail header; new
+> `ScreenRankBar` ("#1/8 watchlist · #1/1 vs Cyclical-commodity — a screen, not a recommendation");
+> `ScoreBreakdownPanel` now shows the REAL archetype weights (MU: risk 25% / momentum 5%) with a
+> "peer-relative screen rank, not a recommendation" caption; dashboard shows archetype under each
+> name + "Composite · screen" header. Frontend `tsc` clean; endpoints verified live. **Phase 1
+> (P1 + P5 structural, P9 framing) shipped. Next: Phase 2 (HELD per user) — the layer that actually
+> moves the MU verdict: 2.2 normalized earnings, 2.1 bull/bear/judge, 2.4 validation-as-gate.**
 
 > **Design decision (2026-05-30) — who does what, LLM vs measurement.** Each Phase-1 item is
 > tagged by the *right tool* for the job (full rationale in **§4a Measurement & ML Track**). The

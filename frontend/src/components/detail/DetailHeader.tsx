@@ -12,6 +12,11 @@ interface Props {
   running: boolean;
 }
 
+function archetypeLabel(a: string): string {
+  const s = a.replace(/-/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export default function DetailHeader({ stock, valuation, onRunPipeline, onRemove, running }: Props) {
   const meta: string[] = [];
   if (stock.sector) meta.push(stock.sector);
@@ -58,6 +63,24 @@ export default function DetailHeader({ stock, valuation, onRunPipeline, onRemove
               {stock.ticker}
             </h1>
             <div style={{ fontSize: 16, color: 'var(--color-ink-2)' }}>{stock.name}</div>
+            {stock.archetype && (
+              <span
+                title="Business-model archetype — sets the peer group and scoring weights"
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: '.03em',
+                  color: 'var(--color-ink-2)',
+                  background: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-rule-soft)',
+                  borderRadius: 4,
+                  padding: '2px 8px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {archetypeLabel(stock.archetype)}
+              </span>
+            )}
           </div>
           {meta.length > 0 && (
             <div

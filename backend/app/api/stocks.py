@@ -201,13 +201,27 @@ async def get_scores(ticker: str, limit: int = 30, db: AsyncSession = Depends(ge
 
 @router.get("/{ticker}/scores/latest", response_model=StockScoreResponse | None)
 async def get_latest_score(ticker: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(StockScore)
-        .where(StockScore.ticker == ticker.upper())
-        .order_by(StockScore.date.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    from app.scoring.weights import weights_for_archetype
+
+    row = (
+        await db.execute(
+            select(StockScore)
+            .where(StockScore.ticker == ticker.upper())
+            .order_by(StockScore.date.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+
+    # Attach the archetype + the actual archetype-conditioned weights used (1.4/1.5) so the UI
+    # can present the score as a peer-relative screen rather than a fixed-weight verdict.
+    stock = await db.get(Stock, ticker.upper())
+    archetype = stock.archetype if stock else None
+    resp = StockScoreResponse.model_validate(row)
+    resp.archetype = archetype
+    resp.weights = weights_for_archetype(archetype).as_dict()
+    return resp
 
 
 @router.get("/{ticker}/analysis", response_model=list[AnalysisReportResponse])

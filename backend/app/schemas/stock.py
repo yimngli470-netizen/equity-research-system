@@ -17,6 +17,7 @@ class StockResponse(BaseModel):
     industry: str | None
     added_date: date
     active: bool
+    archetype: str | None = None  # business-model archetype (roadmap 1.1)
 
     model_config = {"from_attributes": True}
 
@@ -94,8 +95,25 @@ class StockScoreResponse(BaseModel):
     event_score: float
     composite_score: float
     signal: str
+    # The composite is a peer-relative SCREEN RANK, not a verdict (roadmap 1.5). These let the UI
+    # show the actual archetype-conditioned weights used (1.4) rather than fixed ones.
+    archetype: str | None = None
+    weights: dict[str, float] | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ScreenRankResponse(BaseModel):
+    """Where a name sorts among its peers by composite — the screen-rank framing (roadmap 1.5)."""
+
+    ticker: str
+    archetype: str | None
+    composite_score: float
+    signal: str
+    rank: int            # 1 = highest composite in the active watchlist
+    total: int
+    archetype_rank: int  # rank within its archetype group
+    archetype_total: int
 
 
 class AnalysisReportResponse(BaseModel):

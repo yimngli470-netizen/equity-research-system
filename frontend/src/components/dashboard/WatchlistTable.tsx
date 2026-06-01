@@ -48,7 +48,7 @@ export default function WatchlistTable({ rows }: Props) {
             <Th align="right">Price</Th>
             <Th align="right">1D</Th>
             <Th width="90px">Trend (90D)</Th>
-            <Th width="180px">Composite</Th>
+            <Th width="180px">Composite · screen</Th>
             <Th align="center" width="100px">
               Signal
             </Th>
@@ -80,18 +80,31 @@ export default function WatchlistTable({ rows }: Props) {
                 }}
               >
                 <td style={{ padding: pad, fontWeight: 600, color: 'var(--color-ink)', fontSize: 13 }}>{s.ticker}</td>
-                <td
-                  style={{
-                    padding: pad,
-                    color: 'var(--color-ink-2)',
-                    fontSize: 12.5,
-                    maxWidth: 240,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {s.name}
+                <td style={{ padding: pad, maxWidth: 240 }}>
+                  <div
+                    style={{
+                      color: 'var(--color-ink-2)',
+                      fontSize: 12.5,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {s.name}
+                  </div>
+                  {s.archetype && (
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--color-ink-3)',
+                        letterSpacing: '.02em',
+                        marginTop: 2,
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {s.archetype.replace(/-/g, ' ')}
+                    </div>
+                  )}
                 </td>
                 <td
                   style={{

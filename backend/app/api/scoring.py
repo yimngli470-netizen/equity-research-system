@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.schemas.stock import ScreenRankResponse
 from app.scoring.calculator import calculate_score
 from app.scoring.weights import DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS
 
@@ -86,6 +87,55 @@ async def get_weights():
             "reduce": DEFAULT_THRESHOLDS.reduce,
         },
     }
+
+
+@router.get("/screen", response_model=list[ScreenRankResponse])
+async def screen(db: AsyncSession = Depends(get_db)):
+    """Rank active names by composite — the screen-rank framing (roadmap 1.5).
+
+    The composite is a peer-relative SCREEN, not a recommendation: this returns where each name
+    sorts within the watchlist and within its business-model archetype.
+    """
+    from sqlalchemy import select
+
+    from app.models.score import StockScore
+    from app.models.stock import Stock
+
+    stocks = (await db.execute(select(Stock).where(Stock.active.is_(True)))).scalars().all()
+
+    rows: list[dict] = []
+    for s in stocks:
+        sc = (
+            await db.execute(
+                select(StockScore).where(StockScore.ticker == s.ticker)
+                .order_by(StockScore.date.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if sc is None:
+            continue
+        rows.append({
+            "ticker": s.ticker, "archetype": s.archetype,
+            "composite_score": sc.composite_score, "signal": sc.signal,
+        })
+
+    # Rank within the whole watchlist (1 = highest composite).
+    rows.sort(key=lambda r: r["composite_score"], reverse=True)
+    total = len(rows)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+        r["total"] = total
+
+    # Rank within each archetype group.
+    from collections import defaultdict
+    groups: dict[str | None, list[dict]] = defaultdict(list)
+    for r in rows:
+        groups[r["archetype"]].append(r)
+    for group in groups.values():
+        for j, r in enumerate(group):  # already in composite-desc order
+            r["archetype_rank"] = j + 1
+            r["archetype_total"] = len(group)
+
+    return [ScreenRankResponse(**r) for r in rows]
 
 
 class FeatureResponse(BaseModel):

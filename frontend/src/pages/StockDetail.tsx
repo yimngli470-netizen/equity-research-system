@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type {
   AnalysisReport,
   Decision,
+  ScreenRank,
   Stock,
   StockScore,
   ValuationResponse,
@@ -16,6 +17,7 @@ import FinancialsTable from '../components/detail/FinancialsTable';
 import PriceChart from '../components/detail/PriceChart';
 import RiskFlagsPanel from '../components/detail/RiskFlagsPanel';
 import ScoreBreakdownPanel from '../components/detail/ScoreBreakdownPanel';
+import ScreenRankBar from '../components/detail/ScreenRankBar';
 import SectionHeader from '../components/primitives/SectionHeader';
 import { normalizeAgent } from '../components/detail/agentView';
 import { runPipeline, usePipelineState } from '../state/pipelineTracker';
@@ -36,6 +38,7 @@ export default function StockDetail() {
 
   const [stock, setStock] = useState<Stock | null>(null);
   const [score, setScore] = useState<StockScore | null>(null);
+  const [screenRank, setScreenRank] = useState<ScreenRank | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [valuation, setValuation] = useState<ValuationResponse | null>(null);
   const [reports, setReports] = useState<AnalysisReport[]>([]);
@@ -74,18 +77,21 @@ export default function StockDetail() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [stockData, scoreData, decisionData, valuationData, reportsData] = await Promise.all([
-        api.stocks.get(ticker),
-        api.scores.latest(ticker).catch(() => null),
-        api.decision.latest(ticker).catch(() => null),
-        api.stocks.valuation(ticker).catch(() => null),
-        api.analysis.list(ticker).catch(() => []),
-      ]);
+      const [stockData, scoreData, decisionData, valuationData, reportsData, screenData] =
+        await Promise.all([
+          api.stocks.get(ticker),
+          api.scores.latest(ticker).catch(() => null),
+          api.decision.latest(ticker).catch(() => null),
+          api.stocks.valuation(ticker).catch(() => null),
+          api.analysis.list(ticker).catch(() => []),
+          api.scoring.screen().catch(() => [] as ScreenRank[]),
+        ]);
       setStock(stockData);
       setScore(scoreData);
       setDecision(decisionData);
       setValuation(valuationData);
       setReports(reportsData);
+      setScreenRank(screenData.find((r) => r.ticker === ticker) ?? null);
     } catch {
       setStock(null);
     } finally {
@@ -184,6 +190,8 @@ export default function StockDetail() {
       <PriceChart ticker={ticker} refreshKey={dataRefreshKey} />
 
       {decision && <DecisionPanel decision={decision} />}
+
+      {screenRank && <ScreenRankBar rank={screenRank} />}
 
       {score && (
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 18, marginBottom: 18 }}>

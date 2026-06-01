@@ -4,6 +4,7 @@
 export interface WatchlistRow {
   ticker: string;
   name: string;
+  archetype: string | null;
   latest_price: number | null;
   price_change_pct: number | null;
   composite_score: number | null;
