@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.measurement.peer_normalize import peer_relative_valuation
 from app.models.score import QuantFeature, StockScore
 from app.quant.ai_features import extract_all_ai_features
 from app.quant.hard_features import extract_all_hard_features
@@ -89,7 +90,11 @@ async def calculate_score(
     # Step 2: Normalize
     norm_growth = normalize_features("growth", hard.get("growth", {}))
     norm_profit = normalize_features("profitability", hard.get("profitability", {}))
-    norm_valuation_hard = normalize_features("valuation", hard.get("valuation", {}))
+    # Valuation is scored PEER-RELATIVE (roadmap 1.3, fixes P1): each multiple becomes the
+    # subject's weighted percentile within its peer set, not a position on a fixed absolute
+    # ruler. Falls back to the absolute norm per-metric when peers are too thin.
+    peer_val = await peer_relative_valuation(db, ticker, hard.get("valuation", {}))
+    norm_valuation_hard = peer_val.normalized
     norm_momentum = normalize_features("momentum", hard.get("momentum", {}))
     norm_sentiment = normalize_features("sentiment", ai.get("sentiment", {}))
     norm_event = normalize_features("event", ai.get("event", {}))

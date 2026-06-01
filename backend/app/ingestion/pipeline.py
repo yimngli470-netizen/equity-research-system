@@ -24,6 +24,7 @@ class IngestionResult:
     prices: int = 0
     financials: int = 0
     valuation: bool = False
+    archetype: str | None = None
     news: int = 0
     transcripts: int = 0
     earnings_surprises: int = 0
@@ -99,6 +100,19 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             except Exception as e2:
                 logger.exception("Financials ingestion failed for %s", ticker)
                 result.errors.append(f"financials: {e2}")
+
+        # Business-model archetype (roadmap 1.1) — grounded-LLM label computed from the EDGAR
+        # financials just ingested. Idempotent: the LLM call only fires once per ticker (or on
+        # force). Conditions peer-relative normalization (1.3) + archetype weights (1.4).
+        try:
+            from app.ingestion.archetype import classify_archetype
+            arch = await classify_archetype(db, ticker)
+            result.archetype = arch.archetype
+            if arch.status == "insufficient_data":
+                result.warnings.append(f"{ticker}: too little financial history to classify archetype.")
+        except Exception as e:
+            logger.exception("Archetype classification failed for %s", ticker)
+            result.errors.append(f"archetype: {e}")
 
         # Valuation snapshot
         try:
@@ -186,9 +200,18 @@ async def run_full_ingestion(tickers: list[str] | None = None) -> list[Ingestion
         r = await ingest_ticker(ticker)
         results.append(r)
         logger.info(
-            "%s: prices=%d, financials=%d, valuation=%s, news=%d, transcripts=%d, surprises=%d, estimates=%d, errors=%d",
-            r.ticker, r.prices, r.financials, r.valuation, r.news,
+            "%s: prices=%d, financials=%d, valuation=%s, archetype=%s, news=%d, transcripts=%d, surprises=%d, estimates=%d, errors=%d",
+            r.ticker, r.prices, r.financials, r.valuation, r.archetype, r.news,
             r.transcripts, r.earnings_surprises, r.analyst_estimates, len(r.errors),
         )
+
+    # Peer-closeness weights (roadmap 1.2) are CROSS-SECTIONAL — they depend on the whole
+    # universe, so recompute once after every ticker is ingested, not per-ticker.
+    try:
+        from app.measurement.peers import recompute_peer_weights
+        async with async_session() as db:
+            await recompute_peer_weights(db)
+    except Exception:
+        logger.exception("Peer-weight recompute failed")
 
     return results

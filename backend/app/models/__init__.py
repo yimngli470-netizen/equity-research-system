@@ -12,6 +12,7 @@ from app.models.transcript import EarningsTranscript
 from app.models.estimate import AnalystEstimate
 from app.models.key_metric import TickerKeyMetric, TickerKpiValue
 from app.models.onboarding import DevTickerBootstrapStatus
+from app.models.peer import PeerWeight
 
 __all__ = [
     "Stock",
@@ -31,4 +32,5 @@ __all__ = [
     "TickerKeyMetric",
     "TickerKpiValue",
     "DevTickerBootstrapStatus",
+    "PeerWeight",
 ]
