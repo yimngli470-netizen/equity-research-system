@@ -123,63 +123,18 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 ### Phase 1 — Normalization & Archetype (resolves P1, P5)
 
-> **Status (2026-05-31): 1.1 DONE.** New `app/measurement/` package (the measurement-layer seam)
-> with `profile.py::compute_quant_profile` — TTM cyclicality/margin/capex stats from the EDGAR
-> spine; `app/ingestion/archetype.py::classify_archetype` feeds those numbers + name/sector to one
-> cached Sonnet pass and writes `stocks.archetype` (+ `archetype_features`, `archetype_rationale`,
-> `archetype_as_of`; migration `b2e7c1a4f309`). Wired into the pipeline after EDGAR financials;
-> idempotent (LLM fires once per ticker unless `force`). **All active names classified, grounded:**
-> MU = cyclical-commodity (52% rev drawdown, 40% growth vol, 32% GM), META/GOOGL = platform (81% GM),
-> AAPL/INTU = mature-compounder, NVDA/AMD/MRVL/TSLA/UBER = secular-grower. The MU-vs-platform
-> separation that P1 needs is now in the data.
-
-> **Status (2026-05-31): 1.2 DONE (2 of 3 signals; embeddings = M1, pending).** `app/measurement/`
-> `peers.py::recompute_peer_weights` + `peer_weights` table (migration `c4f9a2d6b815`). Closeness =
-> measured blend of (a) standardized quant-profile distance + (b) trailing return correlation;
-> (c) 10-K embedding cosine is a wired-but-null hook (ML M1). Deterministic/reproducible; components
-> stored for audit. Cross-sectional, recomputed once at the end of `run_full_ingestion`. **Findings:**
-> GOOG↔GOOGL=0.999 (sanity ✓); MU's nearest = AMD/NVDA/AVGO (semis ✓) but weak (~0.33) & return-driven
-> — MU is a fundamental outlier with no true peer in-watchlist (confirms it's the lone cyclical). **Two
-> gaps M1 fixes:** fundamental sim captures financial *shape*, not *what the business does* (INTU pairs
-> with AAPL, not software); 1yr returns compress tech corr into 0.4–0.55. **Follow-ups:** wire M1
-> embeddings (needs provider — open decision #5); expand universe beyond the 13-name watchlist (ASML/
-> WDC/STX etc.) so cross-sector peers exist.
-
-> **Status (2026-05-31): 1.3 DONE (valuation path) — P1 fix shipped.** `app/measurement/`
-> `peer_normalize.py::peer_relative_valuation`, wired into `scoring/calculator.py`: each valuation
-> multiple is now scored as the subject's **weighted percentile within its top-K peer set** (1.2),
-> not a position on a fixed ruler. Lower-is-better inverted; ≤0 multiples → 0.0; per-metric absolute
-> fallback when < 4 peers carry it (graceful degradation). **Verified:** AAPL valuation 0.53→0.36 —
-> fwd P/E 28.6 reads "moderate" absolutely (0.63) but "expensive vs mega-cap peers" (0.23); the
-> absolute ruler was too generous. MU 0.67→0.74 (slightly UP): vs its actual high-multiple semis,
-> MU's EV/EBITDA/PS aren't expensive — **1.3 makes the comparison fair; it does NOT fix MU's
-> peak-earnings denominator (Phase 2.2) or quarantined skepticism (2.4).** **Follow-up:** extend
-> peer-relative to growth & profitability categories (same "one ruler" issue, lower-stakes).
-
-> **Status (2026-05-31): 1.4 DONE — archetype-conditioned weights (resolves P5 at the scoring
-> layer).** `scoring/weights.py`: 6 `ARCHETYPE_WEIGHTS` profiles over the existing 7 categories +
-> `weights_for_archetype()`; `calculator.py` selects by `stocks.archetype` when the caller doesn't
-> override (API now passes None by default). Profiles are reasoned priors (→ learned via §4a M6
-> later). Cyclical profile deliberately does NOT upweight `event` (a beat at the peak is a warning,
-> not a positive); leans on risk + profitability (margin direction = best cycle proxy we have pre-2.2).
-> **Deltas (default→arch):** INTU +0.059, NVDA +0.038→STRONG_BUY, UBER −0.037, MU −0.031.
-> **CRITICAL HONEST FINDING:** MU stays **0.852 STRONG_BUY** — its categories are growth=1.0,
-> momentum=1.0, event=0.99, prof=0.86, val=0.78, risk=0.69. *Every signal reads bullish at the cycle
-> peak*, so no reweighting produces caution. **Phase 1 cannot fix MU by construction** — that needs
-> normalized/mid-cycle earnings (2.2), a cycle-position signal that makes peak-momentum a NEGATIVE
-> (ML M3), and un-quarantined skepticism (2.1/2.4). Phase 1 did its structural job (P1+P5); the MU
-> verdict is now a clean, well-understood Phase 2 target.
-
-> **Status (2026-05-31): 1.5 DONE — PHASE 1 COMPLETE.** Composite reframed as a peer-rank SCREEN,
-> not a verdict. Backend: `archetype` on `StockResponse`; `archetype` + actual archetype `weights`
-> on the latest-score response; new `GET /api/scoring/screen` ranks active names by composite within
-> the watchlist and within their archetype. Frontend: archetype chip in the detail header; new
-> `ScreenRankBar` ("#1/8 watchlist · #1/1 vs Cyclical-commodity — a screen, not a recommendation");
-> `ScoreBreakdownPanel` now shows the REAL archetype weights (MU: risk 25% / momentum 5%) with a
-> "peer-relative screen rank, not a recommendation" caption; dashboard shows archetype under each
-> name + "Composite · screen" header. Frontend `tsc` clean; endpoints verified live. **Phase 1
-> (P1 + P5 structural, P9 framing) shipped. Next: Phase 2 (HELD per user) — the layer that actually
-> moves the MU verdict: 2.2 normalized earnings, 2.1 bull/bear/judge, 2.4 validation-as-gate.**
+> **Status: PHASE 1 COMPLETE (2026-05-31).** All items 1.1–1.5 shipped (see git history / code for
+> per-item detail). New `app/measurement/` package is the seam: archetype classification (1.1),
+> measured peer-closeness weights (1.2), peer-relative valuation (1.3), archetype-conditioned weight
+> profiles (1.4), composite reframed as a peer-rank screen (1.5). **Resolves P1 + P5 (structural) and
+> P9 (framing).** Residual follow-ups: M1 embeddings for peer weights (open decision #5); extend
+> peer-relative to growth/profitability; expand the peer universe beyond the watchlist.
+>
+> **Key finding that motivates Phase 2:** after all of Phase 1, MU still scores **0.852 STRONG_BUY** —
+> at a cycle peak every category reads bullish (growth/momentum=1.0, event=0.99), so no ruler or
+> weighting produces caution. **Phase 1 cannot fix MU by construction;** that needs normalized/mid-cycle
+> earnings (2.2), a cycle-position signal making peak-momentum a NEGATIVE (ML M3), and un-quarantined
+> skepticism (2.1/2.4).
 
 > **Design decision (2026-05-30) — who does what, LLM vs measurement.** Each Phase-1 item is
 > tagged by the *right tool* for the job (full rationale in **§4a Measurement & ML Track**). The
