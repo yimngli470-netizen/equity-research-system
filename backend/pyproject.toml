@@ -45,7 +45,5 @@ include = ["app*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
-    "unit: pure logic, no DB/network/LLM (fast)",
-    "integration: DB-backed (testcontainers Postgres), LLM mocked",
-    "api: FastAPI endpoint contract tests",
+    "e2e: full backend workflow (ingest → analyze → score) on a test DB with external boundaries mocked",
 ]

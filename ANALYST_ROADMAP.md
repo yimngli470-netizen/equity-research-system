@@ -220,13 +220,15 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 - **Observability & cost** — log every agent's prompt/raw output/tokens (the dry-run harness we built); budget guardrails.
 - **Schema/versioning** — version report schemas; migrations for all new tables.
 - **Backfill** — re-run EDGAR + IR extraction historically so the calibration loop has data to learn from sooner.
-- **Testing & CI — STARTED (2026-05-31).** `backend/tests/` (`unit`/`integration`/`api`); 39 tests
-  green (measurement layer: profile math, peer-closeness blend, weighted-percentile normalization,
-  archetype weight invariants, peer recompute, calculator weight-selection, screen API). DB tiers use
-  **testcontainers** Postgres (CI) or a `TEST_DATABASE_URL` throwaway DB (fast local); LLM mocked
-  everywhere. `.github/workflows/test.yml` runs the suite + frontend `tsc` on push/PR. **Follow-ups
-  as Phase 2 lands:** test the dialectic/regime agents (schemas + evidence-gate) and the calibration
-  loop; raise coverage on the decision engine. Treat tests as the regression net before each phase.
+- **Testing & CI — STARTED (2026-05-31).** A single **end-to-end test**
+  (`backend/tests/test_pipeline_e2e.py`) drives the whole backend workflow: `ingest_ticker` (real
+  EDGAR XBRL parse of a canned payload → 12 quarters + grounded archetype) → `run_all_agents` (5
+  agents, LLM mocked) → `calculate_score` (archetype-weighted composite) → `/api/scoring/screen`.
+  Only external edges faked (SEC HTTP, Anthropic, yfinance/scraper sub-ingests). DB via
+  **testcontainers** (CI) or a `TEST_DATABASE_URL` throwaway DB (fast local). `.github/workflows/
+  test.yml` runs it + frontend `tsc` on push/PR. **Follow-ups as Phase 2 lands:** assert the
+  dialectic/regime agent outputs + evidence-gate in the same e2e; add a decision-engine stage; cover
+  the calibration loop. Treat this as the regression net before each phase.
 
 ---
 

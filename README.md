@@ -18,28 +18,20 @@ same ruler.
 
 ## Tests
 
-`backend/tests/` — 39 tests across three tiers. The **measurement layer** (deterministic scoring
-logic) is the focus; no test hits the network or the real LLM (Anthropic calls are mocked). CI
-(`.github/workflows/test.yml`) runs the suite (testcontainers Postgres) + frontend `tsc` on every
-push/PR. Run locally: see the Testing section in [`CLAUDE.md`](./CLAUDE.md).
+One **end-to-end test** (`backend/tests/test_pipeline_e2e.py`) drives the whole backend workflow in
+a single run, with only external boundaries faked — no network, no real LLM. CI
+(`.github/workflows/test.yml`) runs it on an ephemeral Postgres (testcontainers) + frontend `tsc` on
+every push/PR. Run locally: see the Testing section in [`CLAUDE.md`](./CLAUDE.md).
 
-What's verified:
+The test exercises the real code at every stage and asserts the data flows through:
 
-**Unit — pure logic**
-- Quant-profile math (trailing-twelve-month aggregation, safe division, stats).
-- Peer closeness: fundamental similarity is 1.0 for identical profiles and monotonic in distance;
-  the blend renormalizes and treats anti-correlation as "not close".
-- Peer-relative normalization: cheaper multiple → higher score, ties count half, inversion correct.
-- Archetype weights: every profile sums to 1.0; cyclicals don't reward a peak earnings beat.
+1. **Ingestion** — `ingest_ticker`: the real SEC EDGAR XBRL parser turns a canned `companyfacts`
+   payload into 12 quarterly `financials` rows, and the real grounded archetype classifier labels
+   the stock from those numbers.
+2. **Analysis** — `run_all_agents`: all five research agents run (LLM mocked) and persist reports.
+3. **Scoring** — `calculate_score`: hard features (EDGAR financials + valuation) + AI features
+   (agent reports) → peer-relative valuation → an **archetype-weighted composite** + signal.
+4. **API** — `/api/scoring/screen` returns the freshly-scored name with its rank.
 
-**Integration — DB-backed (Postgres)**
-- Peer recompute over a seeded universe: identical names rank closest, self is excluded.
-- Peer-relative valuation scores against peers, and falls back to the absolute ruler when too few
-  peers carry a metric.
-- The composite picks **archetype-conditioned weights** by the stock's archetype (vs default).
-- Archetype classification writes a label grounded on the measured numbers; unknown labels are
-  rejected, not stored.
-
-**API — endpoint contracts**
-- `/api/scoring/screen` ranks names by composite within the watchlist and within their archetype.
-- `/stocks/{ticker}/scores/latest` returns the archetype and the actual weights used.
+Faked at the edges only: SEC HTTP, the Anthropic API, and the yfinance/scraper sub-ingests
+(prices, valuation, estimates, news, transcripts). Everything that is *our* logic runs for real.

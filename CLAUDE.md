@@ -24,21 +24,20 @@ docker compose down           # Stop all services
 - Postgres exposed on host port 5433 (not 5432, which is used by local Postgres)
 
 ## Testing
-Tests live in `backend/tests/` (`unit/` pure logic · `integration/` DB-backed · `api/` endpoints).
-The measurement layer (archetypes, peer weights, peer-relative normalization, archetype scoring
-weights) is the priority — it's deterministic logic that's easy to break silently. No test hits the
-network or the real Anthropic API (LLM calls are mocked).
+One end-to-end test (`backend/tests/test_pipeline_e2e.py`) drives the full backend workflow —
+`ingest_ticker` → `run_all_agents` → `calculate_score` → the screen API — in a single run. Only the
+external boundaries are faked (SEC EDGAR HTTP, the Anthropic API, the yfinance/scraper sub-ingests);
+everything that's our logic (EDGAR XBRL parsing, archetype grounding, the five agents, AI-feature
+extraction, peer-relative valuation, archetype-weighted composite) runs for real. No network, no LLM.
 
-- **DB strategy:** the DB tiers use an ephemeral Postgres via **testcontainers** by default (what
-  CI uses). For fast local runs, point at a throwaway DB instead:
+- **DB strategy:** an ephemeral Postgres via **testcontainers** by default (what CI uses). For fast
+  local runs, point at a throwaway DB instead:
   ```bash
   docker compose exec db psql -U researcher -d equity_research -c "CREATE DATABASE equity_research_test;"
   docker compose exec -e TEST_DATABASE_URL="postgresql+asyncpg://researcher:changeme_local_dev@db:5432/equity_research_test" \
     backend pytest -q
   ```
-  Unit tests need no DB: `docker compose exec backend pytest tests/unit -q`.
-- **CI:** `.github/workflows/test.yml` runs the full suite (testcontainers) + frontend `tsc` on every push/PR.
-- Run a marker subset: `pytest -m unit` · `-m integration` · `-m api`.
+- **CI:** `.github/workflows/test.yml` runs the test (testcontainers) + frontend `tsc` on every push/PR.
 
 ## Project Structure
 ```
