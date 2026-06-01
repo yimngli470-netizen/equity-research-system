@@ -48,7 +48,7 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 | **P2** | **Systematic over-bullish bias on cyclicals** — skepticism quarantined in the 10%-weight risk bucket + the *excluded* validation channel; scored verdicts anchor on momentum + management guidance. (valuation agent said $1100 "significantly undervalued"; validation reliability 0.38 ignored) | Critical | 🟨 **Dented** — consensus now fed as a normal-weight anchor (mean $674 would flag MU); core fix = Phase 2.1/2.4 |
 | **P3** | **Data starvation & shallowness** — 6 quarters (one empty), segment + cycle KPIs come back "not disclosed", no analyst consensus fed in. | Critical | ✅ **Largely resolved** (Phase 0) — EDGAR 21–67 quarters, consensus fed, KPI extraction proven (AMD 4/5); residual = blocked-ticker IR coverage |
 | **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | 🟨 **Substrate done** (Phase 0: provenance columns + verbatim-quote KPI extraction); **publish-gate still open** → Phase 2.4 |
-| **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | ⬜ **Open** → Phase 1.1 + 2.2 + ML M2/M3 |
+| **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | 🟨 **Scoring layer done** (1.1 archetypes + 1.4 archetype-conditioned weights + 1.3 peer-relative). The "re-rate vs peak?" *reasoning* + cycle-position signal still open → P2.2 + ML M3 |
 | **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | ⬜ **Open** → Phase 2.1/2.5 |
 | **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
 | **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | ⬜ **Open** → Phase 2.6 |
@@ -155,7 +155,21 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > MU's EV/EBITDA/PS aren't expensive — **1.3 makes the comparison fair; it does NOT fix MU's
 > peak-earnings denominator (Phase 2.2) or quarantined skepticism (2.4).** **Follow-up:** extend
 > peer-relative to growth & profitability categories (same "one ruler" issue, lower-stakes).
-> **Next: 1.4 (archetype-conditioned weights), then 1.5 (screen-rank reframe).**
+
+> **Status (2026-05-31): 1.4 DONE — archetype-conditioned weights (resolves P5 at the scoring
+> layer).** `scoring/weights.py`: 6 `ARCHETYPE_WEIGHTS` profiles over the existing 7 categories +
+> `weights_for_archetype()`; `calculator.py` selects by `stocks.archetype` when the caller doesn't
+> override (API now passes None by default). Profiles are reasoned priors (→ learned via §4a M6
+> later). Cyclical profile deliberately does NOT upweight `event` (a beat at the peak is a warning,
+> not a positive); leans on risk + profitability (margin direction = best cycle proxy we have pre-2.2).
+> **Deltas (default→arch):** INTU +0.059, NVDA +0.038→STRONG_BUY, UBER −0.037, MU −0.031.
+> **CRITICAL HONEST FINDING:** MU stays **0.852 STRONG_BUY** — its categories are growth=1.0,
+> momentum=1.0, event=0.99, prof=0.86, val=0.78, risk=0.69. *Every signal reads bullish at the cycle
+> peak*, so no reweighting produces caution. **Phase 1 cannot fix MU by construction** — that needs
+> normalized/mid-cycle earnings (2.2), a cycle-position signal that makes peak-momentum a NEGATIVE
+> (ML M3), and un-quarantined skepticism (2.1/2.4). Phase 1 did its structural job (P1+P5); the MU
+> verdict is now a clean, well-understood Phase 2 target. **Next: 1.5 (screen-rank reframe), then
+> Phase 2.**
 
 > **Design decision (2026-05-30) — who does what, LLM vs measurement.** Each Phase-1 item is
 > tagged by the *right tool* for the job (full rationale in **§4a Measurement & ML Track**). The

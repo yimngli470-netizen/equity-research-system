@@ -18,12 +18,13 @@ from app.models.score import QuantFeature, StockScore
 from app.quant.ai_features import extract_all_ai_features
 from app.quant.hard_features import extract_all_hard_features
 from app.quant.normalizer import normalize_features
+from app.models.stock import Stock
 from app.scoring.weights import (
     DEFAULT_THRESHOLDS,
-    DEFAULT_WEIGHTS,
     ScoringWeights,
     SignalThresholds,
     score_to_signal,
+    weights_for_archetype,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,16 @@ async def calculate_score(
     6. Map to signal
     7. Save features + score to DB
     """
-    w = weights or DEFAULT_WEIGHTS
+    # Weights are archetype-conditioned (roadmap 1.4): when the caller doesn't override, pick the
+    # profile for this stock's business-model archetype (1.1) so a cyclical and a compounder aren't
+    # judged on the same category weights. Falls back to DEFAULT_WEIGHTS if unclassified.
+    if weights is not None:
+        w = weights
+        archetype = None
+    else:
+        stock = await db.get(Stock, ticker)
+        archetype = stock.archetype if stock else None
+        w = weights_for_archetype(archetype)
     t = thresholds or DEFAULT_THRESHOLDS
     today = date.today()
 
@@ -232,8 +242,8 @@ async def calculate_score(
     await db.commit()
 
     logger.info(
-        "[scoring] %s → composite=%.3f signal=%s (%d features)",
-        ticker, composite, signal, feature_count,
+        "[scoring] %s [%s] → composite=%.3f signal=%s (%d features)",
+        ticker, archetype or "default-weights", composite, signal, feature_count,
     )
 
     return ScoringResult(

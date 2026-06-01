@@ -40,7 +40,9 @@ async def run_scoring(request: ScoreRequest, db: AsyncSession = Depends(get_db))
     """
     from app.scoring.weights import ScoringWeights
 
-    weights = DEFAULT_WEIGHTS
+    # Default (weights=None) → calculate_score picks the archetype-conditioned profile (1.4).
+    # Only override when the caller supplies explicit weights.
+    weights = None
     if request.weights:
         weights = ScoringWeights(**request.weights)
         if not weights.validate():
