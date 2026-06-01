@@ -33,5 +33,12 @@ The test exercises the real code at every stage and asserts the data flows throu
    (agent reports) → peer-relative valuation → an **archetype-weighted composite** + signal.
 4. **API** — `/api/scoring/screen` returns the freshly-scored name with its rank.
 
+It checks the data actually flows, not just that it runs: the ingested values are **persisted to the
+DB** (exact financials/valuation/prices), that DB data **appears in the agent prompts** (e.g.
+`Forward P/E: 13.3x`, quarterly revenue), the agent output is **mapped into the right quant
+features** (e.g. verdict → `valuation_verdict_score = 0.75`), and — since every input is
+deterministic — the composite is pinned to a **golden value**, so any change to the scoring math
+trips the test.
+
 Faked at the edges only: SEC HTTP, the Anthropic API, and the yfinance/scraper sub-ingests
 (prices, valuation, estimates, news, transcripts). Everything that is *our* logic runs for real.
