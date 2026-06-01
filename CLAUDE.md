@@ -23,6 +23,23 @@ docker compose down           # Stop all services
 - API Docs (Swagger): http://localhost:8000/docs
 - Postgres exposed on host port 5433 (not 5432, which is used by local Postgres)
 
+## Testing
+Tests live in `backend/tests/` (`unit/` pure logic · `integration/` DB-backed · `api/` endpoints).
+The measurement layer (archetypes, peer weights, peer-relative normalization, archetype scoring
+weights) is the priority — it's deterministic logic that's easy to break silently. No test hits the
+network or the real Anthropic API (LLM calls are mocked).
+
+- **DB strategy:** the DB tiers use an ephemeral Postgres via **testcontainers** by default (what
+  CI uses). For fast local runs, point at a throwaway DB instead:
+  ```bash
+  docker compose exec db psql -U researcher -d equity_research -c "CREATE DATABASE equity_research_test;"
+  docker compose exec -e TEST_DATABASE_URL="postgresql+asyncpg://researcher:changeme_local_dev@db:5432/equity_research_test" \
+    backend pytest -q
+  ```
+  Unit tests need no DB: `docker compose exec backend pytest tests/unit -q`.
+- **CI:** `.github/workflows/test.yml` runs the full suite (testcontainers) + frontend `tsc` on every push/PR.
+- Run a marker subset: `pytest -m unit` · `-m integration` · `-m api`.
+
 ## Project Structure
 ```
 backend/

@@ -30,3 +30,7 @@ pgdata/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Python
+__pycache__/
+*.pyc
