@@ -464,6 +464,70 @@ function CallHighlightsBlock({ h }: { h: CallHighlights }) {
   );
 }
 
+// ─── Dialectic: conviction + leaning illustrations ──────────────────────────
+
+// Conviction is the agent's confidence in its OWN call (0–1), after weighing the other side —
+// not a probability the stock rises. Banded + captioned so the number isn't a mystery.
+function convictionBand(v: number): { label: string; color: string } {
+  if (v < 0.4) return { label: 'Low', color: 'var(--color-neg-fg)' };
+  if (v < 0.6) return { label: 'Moderate', color: 'var(--color-warn-fg)' };
+  if (v < 0.8) return { label: 'High', color: 'var(--color-pos-fg)' };
+  return { label: 'Very high', color: 'var(--color-pos-fg)' };
+}
+
+function ConvictionMeter({ value, help }: { value: number; help?: string }) {
+  const band = convictionBand(value);
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-ink-3)' }}>
+          Conviction
+        </span>
+        <span style={{ fontSize: 11.5 }}>
+          <span style={{ color: band.color, fontWeight: 700 }}>{band.label}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-ink-2)', marginLeft: 6 }}>
+            {value.toFixed(2)}
+          </span>
+        </span>
+      </div>
+      <div style={{ position: 'relative', height: 6, borderRadius: 3, background: 'var(--color-surface-2)', overflow: 'hidden' }}>
+        <div style={{ width: `${Math.round(value * 100)}%`, height: '100%', background: band.color }} />
+      </div>
+      {help && (
+        <div style={{ fontSize: 11, color: 'var(--color-ink-3)', lineHeight: 1.5, marginTop: 6 }}>{help}</div>
+      )}
+    </div>
+  );
+}
+
+const LEANINGS = ['strong_bear', 'bear', 'neutral', 'bull', 'strong_bull'];
+
+// A 5-segment bear↔bull spectrum with the judge's landing spot highlighted.
+function LeaningScale({ leaning }: { leaning: string }) {
+  const idx = LEANINGS.indexOf(leaning);
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+        {LEANINGS.map((l, i) => {
+          const active = i === idx;
+          const color = i > 2 ? 'var(--color-pos-fg)' : i < 2 ? 'var(--color-neg-fg)' : 'var(--color-ink-2)';
+          return (
+            <div
+              key={l}
+              title={l.replace(/_/g, ' ')}
+              style={{ flex: 1, height: 8, borderRadius: 2, background: active ? color : 'var(--color-surface-2)' }}
+            />
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--color-ink-3)' }}>
+        <span>Bearish</span>
+        <span>Bullish</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dialectic: bull / bear case points ─────────────────────────────────────
 
 function CasePoints({
@@ -479,16 +543,19 @@ function CasePoints({
   if (!points.length) return null;
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 10 }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: accent }}>
           {kind === 'bull' ? 'Bull points' : 'Bear points'}
         </span>
-        {conviction != null && (
-          <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
-            Conviction <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-ink)' }}>{conviction.toFixed(2)}</span>
-          </span>
-        )}
       </div>
+      {conviction != null && (
+        <div style={{ maxWidth: 320, marginBottom: 16 }}>
+          <ConvictionMeter
+            value={conviction}
+            help={`The ${kind}'s honest confidence in this case — how strongly the evidence supports it.`}
+          />
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {points.map((p, i) => (
           <div key={i} style={{ borderLeft: `2px solid ${accent}`, paddingLeft: 12 }}>
@@ -567,14 +634,32 @@ function JudgeBlock({ j }: { j: NonNullable<NormalizedAgent['judge_view']> }) {
   const tone = LEANING_TONE[j.leaning] || 'var(--color-ink-2)';
   return (
     <div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'baseline', marginBottom: 6 }}>
-        <span style={{ fontSize: 18, fontWeight: 700, color: tone, textTransform: 'capitalize' }}>
-          {j.leaning ? j.leaning.replace(/_/g, ' ') : '—'}
-        </span>
+      {/* Verdict card: leaning on a bear↔bull scale + a captioned conviction meter */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 20,
+          padding: 16,
+          marginBottom: 18,
+          background: 'var(--color-surface-2)',
+          borderRadius: 8,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginBottom: 6 }}>
+            Leaning
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: tone, textTransform: 'capitalize', marginBottom: 10 }}>
+            {j.leaning ? j.leaning.replace(/_/g, ' ') : '—'}
+          </div>
+          <LeaningScale leaning={j.leaning} />
+        </div>
         {j.conviction != null && (
-          <span style={{ fontSize: 12, color: 'var(--color-ink-3)' }}>
-            Conviction <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-ink)' }}>{j.conviction.toFixed(2)}</span>
-          </span>
+          <ConvictionMeter
+            value={j.conviction}
+            help="How sure the judge is of this leaning after weighing the bear case — lower when serious bear points stay unresolved. This is confidence in the call, not the odds the stock rises."
+          />
         )}
       </div>
       <Addressed title="Bear points addressed" items={j.bear_addressed} />
