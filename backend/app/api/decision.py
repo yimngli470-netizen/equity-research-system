@@ -33,6 +33,8 @@ class DecisionResponse(BaseModel):
     risk_flags: list[RiskFlagResponse]
     reasoning: str
     scores: dict[str, float]
+    judge_leaning: str | None = None
+    judge_conviction: float | None = None
 
 
 @router.post("/run", response_model=DecisionResponse)
@@ -61,6 +63,8 @@ async def run_decision_endpoint(
         ],
         reasoning=result.reasoning,
         scores=result.scores,
+        judge_leaning=result.judge_leaning,
+        judge_conviction=result.judge_conviction,
     )
 
 
@@ -109,4 +113,6 @@ async def get_latest_decision(ticker: str, db: AsyncSession = Depends(get_db)):
         risk_flags=[RiskFlagResponse(**f) for f in decision.risk_flags],
         reasoning=decision.reasoning,
         scores=scores,
+        judge_leaning=decision.judge_leaning,
+        judge_conviction=decision.judge_conviction,
     )

@@ -19,12 +19,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.decision.risk_flags import RiskFlag, evaluate_risk_flags
+from app.models.analysis import AnalysisReport
 from app.models.decision import StockDecision
 from app.models.score import QuantFeature, StockScore
 
 logger = logging.getLogger(__name__)
 
 SIGNAL_LEVELS = ["SELL", "REDUCE", "HOLD", "BUY", "STRONG_BUY"]
+CONFIDENCE_LEVELS = ["low", "moderate", "high"]
+
+
+def _min_confidence(a: str, b: str | None) -> str:
+    """The lower of two confidence levels (b may be None = no constraint)."""
+    if b is None:
+        return a
+    return CONFIDENCE_LEVELS[min(
+        CONFIDENCE_LEVELS.index(a) if a in CONFIDENCE_LEVELS else 1,
+        CONFIDENCE_LEVELS.index(b) if b in CONFIDENCE_LEVELS else 1,
+    )]
 
 
 def _downgrade_signal(signal: str, steps: int = 1) -> str:
@@ -94,9 +106,9 @@ def _build_reasoning(
 
     # Lead with the final signal
     if final_signal == raw_signal:
-        parts.append(f"Signal: {final_signal} (no adjustment from risk analysis).")
+        parts.append(f"Signal: {final_signal} (no adjustment).")
     else:
-        parts.append(f"Signal adjusted from {raw_signal} to {final_signal} due to risk flags.")
+        parts.append(f"Signal adjusted from {raw_signal} (quant screen) to {final_signal}.")
 
     # Highlight strongest and weakest categories
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
@@ -126,6 +138,59 @@ def _build_reasoning(
     return " ".join(parts)
 
 
+def _apply_judge_gate(signal: str, judge: dict) -> tuple[str, str | None, list[str]]:
+    """The dialectic judge (2.1) binds the decision: a bearish or low-conviction verdict caps the
+    signal (and confidence), so a high quant screen can't ship as a strong buy the analyst doubts.
+    Only ever *lowers* the signal — never raises it. Returns (signal, confidence_ceiling, notes)."""
+    notes: list[str] = []
+    leaning = str(judge.get("leaning") or "").lower()
+    conviction = judge.get("conviction")
+
+    leaning_cap = {"strong_bear": "REDUCE", "bear": "HOLD", "neutral": "HOLD"}.get(leaning)
+    if leaning_cap:
+        capped = _cap_signal(signal, leaning_cap)
+        if capped != signal:
+            notes.append(f"judge leaning '{leaning}' caps signal to {leaning_cap}")
+        signal = capped
+
+    ceiling: str | None = None
+    if isinstance(conviction, (int, float)):
+        if conviction < 0.35:
+            capped = _cap_signal(signal, "HOLD")
+            if capped != signal:
+                notes.append(f"judge conviction {conviction:.2f} (<0.35) caps signal to HOLD")
+            signal, ceiling = capped, "low"
+        elif conviction < 0.5:
+            capped = _cap_signal(signal, "BUY")
+            if capped != signal:
+                notes.append(f"judge conviction {conviction:.2f} (<0.5) caps STRONG_BUY to BUY")
+            signal, ceiling = capped, "moderate"
+        elif conviction < 0.6:
+            ceiling = "moderate"
+    return signal, ceiling, notes
+
+
+def _apply_validation_gate(signal: str, validation: dict | None) -> tuple[str, str | None, list[str]]:
+    """Evidence gate (2.4): if the validation agent found the report's claims largely unverifiable
+    or contradicted, a buy cannot ship — cap at HOLD and force low confidence.
+
+    Reads RAW values straight from the validation report (reliability_score, contradicted/total) —
+    not the normalized quant feature, where `contradiction_rate` is inverted (high = good)."""
+    if not validation:
+        return signal, None, []
+    summary = validation.get("summary") or {}
+    reliability = summary.get("reliability_score")
+    total = summary.get("total_checks") or 0
+    contradicted = summary.get("contradicted") or 0
+    contra_rate = (contradicted / total) if total else 0.0
+
+    if (isinstance(reliability, (int, float)) and reliability < 0.4) or contra_rate > 0.4:
+        capped = _cap_signal(signal, "HOLD")
+        note = [f"evidence gate: reliability={reliability}, {contradicted}/{total} claims contradicted → caps to HOLD"]
+        return capped, "low", note
+    return signal, None, []
+
+
 @dataclass
 class DecisionResult:
     ticker: str
@@ -137,6 +202,8 @@ class DecisionResult:
     risk_flags: list[dict]
     reasoning: str
     scores: dict[str, float]
+    judge_leaning: str | None = None
+    judge_conviction: float | None = None
 
 
 async def run_decision(
@@ -210,11 +277,52 @@ async def run_decision(
     if major_downgrades > 0:
         final_signal = _downgrade_signal(final_signal, major_downgrades)
 
-    # Assess confidence
+    # Assess confidence from data completeness + flags + validation reliability
     confidence = _assess_confidence(feature_count, flags, scores, features)
+
+    # Wire the dialectic judge (2.1) + the evidence gate into the decision (roadmap 2.4). These can
+    # only LOWER the signal/confidence — the reasoning layer's skepticism binds the quant screen.
+    judge = (
+        await db.execute(
+            select(AnalysisReport)
+            .where(AnalysisReport.ticker == ticker, AnalysisReport.agent_type == "judge")
+            .order_by(AnalysisReport.run_date.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    judge_report = judge.report if judge and isinstance(judge.report, dict) and "error" not in judge.report else None
+
+    judge_leaning = judge_conviction = None
+    adjustments: list[str] = []
+    if judge_report:
+        judge_leaning = judge_report.get("leaning")
+        jc = judge_report.get("conviction")
+        judge_conviction = float(jc) if isinstance(jc, (int, float)) else None
+        final_signal, ceiling, notes = _apply_judge_gate(final_signal, judge_report)
+        confidence = _min_confidence(confidence, ceiling)
+        adjustments += notes
+
+    validation = (
+        await db.execute(
+            select(AnalysisReport)
+            .where(AnalysisReport.ticker == ticker, AnalysisReport.agent_type == "validation")
+            .order_by(AnalysisReport.run_date.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    validation_report = validation.report if validation and isinstance(validation.report, dict) and "error" not in validation.report else None
+    final_signal, val_ceiling, val_notes = _apply_validation_gate(final_signal, validation_report)
+    confidence = _min_confidence(confidence, val_ceiling)
+    adjustments += val_notes
 
     # Build reasoning
     reasoning = _build_reasoning(raw_signal, final_signal, scores, flags, confidence)
+    if judge_report:
+        conv_txt = f"{judge_conviction:.2f}" if judge_conviction is not None else "n/a"
+        reasoning += f" Judge leaning: {judge_leaning or 'n/a'} (conviction {conv_txt})."
+    if adjustments:
+        reasoning += " Adjustments: " + "; ".join(adjustments) + "."
+    reasoning = reasoning[:1000]
 
     # Save to DB
     flag_dicts = [f.to_dict() for f in flags]
@@ -234,6 +342,8 @@ async def run_decision(
         row.confidence = confidence
         row.risk_flags = flag_dicts
         row.reasoning = reasoning
+        row.judge_leaning = judge_leaning
+        row.judge_conviction = judge_conviction
     else:
         db.add(StockDecision(
             ticker=ticker,
@@ -244,6 +354,8 @@ async def run_decision(
             confidence=confidence,
             risk_flags=flag_dicts,
             reasoning=reasoning,
+            judge_leaning=judge_leaning,
+            judge_conviction=judge_conviction,
         ))
 
     await db.commit()
@@ -263,4 +375,6 @@ async def run_decision(
         risk_flags=flag_dicts,
         reasoning=reasoning,
         scores=scores,
+        judge_leaning=judge_leaning,
+        judge_conviction=judge_conviction,
     )

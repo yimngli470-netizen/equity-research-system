@@ -22,12 +22,38 @@ export default function DecisionPanel({ decision }: Props) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <SignalBadge signal={decision.final_signal} size="lg" variant="prominent" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <ConfidencePill confidence={decision.confidence} />
             <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
-              Composite {decision.raw_composite.toFixed(2)} ·{' '}
+              {decision.raw_signal !== decision.final_signal ? (
+                <>
+                  Quant screen{' '}
+                  <span style={{ textDecoration: 'line-through', color: 'var(--color-ink-3)' }}>
+                    {decision.raw_signal.replace(/_/g, ' ')}
+                  </span>{' '}
+                  · adjusted ·{' '}
+                </>
+              ) : (
+                <>Composite {decision.raw_composite.toFixed(2)} · </>
+              )}
               {decision.risk_flags.length} flag{decision.risk_flags.length !== 1 ? 's' : ''}
             </span>
+            {decision.judge_leaning && (
+              <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
+                Judge:{' '}
+                <span style={{ color: 'var(--color-ink-2)', textTransform: 'capitalize' }}>
+                  {decision.judge_leaning.replace(/_/g, ' ')}
+                </span>
+                {decision.judge_conviction != null && (
+                  <>
+                    {' · conviction '}
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-ink-2)' }}>
+                      {decision.judge_conviction.toFixed(2)}
+                    </span>
+                  </>
+                )}
+              </span>
+            )}
           </div>
         </div>
         <div

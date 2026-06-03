@@ -32,6 +32,11 @@ class StockDecision(Base):
     # Reasoning — why the final signal was chosen
     reasoning: Mapped[str] = mapped_column(String(1000))
 
+    # The dialectic judge's verdict (roadmap 2.4) — binds the decision: a bearish or low-conviction
+    # judge caps the final signal/confidence even when the quant screen is high.
+    judge_leaning: Mapped[str | None] = mapped_column(String(20))
+    judge_conviction: Mapped[float | None] = mapped_column(Float)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

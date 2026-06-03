@@ -89,6 +89,8 @@ export interface Decision {
   risk_flags: RiskFlag[];
   reasoning: string;
   scores: Record<string, number>;
+  judge_leaning: string | null;
+  judge_conviction: number | null;
 }
 
 export interface IngestionResult {

@@ -112,6 +112,9 @@ _AGENT_REPORT = {
     "consensus_comparison": {"your_eps_vs_consensus": "above", "your_revenue_vs_consensus": "in_line"},
     "guidance_assessment": {"management_guidance_tone": "confident", "guidance_vs_consensus": "above"},
     "summary": {"reliability_score": 0.8, "total_checks": 10, "contradicted": 1},
+    # Judge fields (2.1/2.4): a bear leaning here must cap the decision signal below the screen.
+    "leaning": "bear",
+    "conviction": 0.3,
 }
 
 
@@ -274,7 +277,17 @@ async def test_full_backend_workflow(db, client, patch_world):
     # "valid" number) trips this. Update intentionally when the math legitimately changes.
     assert score.composite_score == pytest.approx(GOLDEN_COMPOSITE, abs=0.001)
 
-    # ========== 4) API → the screen reflects the freshly-scored name ==========
+    # ========== 4) DECIDE → the judge verdict binds the signal (2.4) ==========
+    from app.decision.engine import run_decision
+    dec = await run_decision(db, TICKER)
+    # The quant screen is a BUY (composite 0.6373), but the bear-leaning, low-conviction judge
+    # must cap the final signal below a buy — the reasoning layer binds the screen.
+    assert dec.raw_signal == "BUY"
+    assert dec.final_signal in {"HOLD", "REDUCE", "SELL"}
+    assert dec.judge_leaning == "bear"
+    assert dec.judge_conviction == pytest.approx(0.3)
+
+    # ========== 5) API → the screen reflects the freshly-scored name ==========
     rows = (await client.get("/api/scoring/screen")).json()
     me = next(r for r in rows if r["ticker"] == TICKER)
     assert me["archetype"] == "secular-grower"

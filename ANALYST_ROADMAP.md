@@ -45,9 +45,9 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 | ID | Problem | Severity | Status (2026-05-30) |
 |----|---------|----------|---------------------|
 | **P1** | **Absolute, not peer-relative, normalization** — one fixed ruler (`forward_pe 10→60`) for cyclicals and platforms alike. P/E 7 is meaningless in absolute terms. (`quant/normalizer.py` fixed `(low,high)` bounds) | Critical | ✅ **Valuation path done** (1.2 + 1.3): multiples scored as weighted percentile vs peers. Residual: growth/profitability still absolute (follow-up); peak-earnings denominator = P2.2 |
-| **P2** | **Systematic over-bullish bias on cyclicals** — skepticism quarantined in the 10%-weight risk bucket + the *excluded* validation channel; scored verdicts anchor on momentum + management guidance. (valuation agent said $1100 "significantly undervalued"; validation reliability 0.38 ignored) | Critical | 🟨 **Reasoning layer fixes it** (2.1): first-class bear + judge that must engage every bear point → MU judged "modest position, conviction 0.45" vs the 0.85 screen. Still needs wiring into the decision (2.4) to fully close |
+| **P2** | **Systematic over-bullish bias on cyclicals** — skepticism quarantined in the 10%-weight risk bucket + the *excluded* validation channel; scored verdicts anchor on momentum + management guidance. (valuation agent said $1100 "significantly undervalued"; validation reliability 0.38 ignored) | Critical | ✅ **Done** (2.1 + 2.4): first-class bear + judge that must engage every bear point, now WIRED into the decision — MU's 0.852 STRONG_BUY screen becomes a **BUY decision at moderate confidence**, capped by the judge's 0.45 conviction. Skepticism moves the recommendation, not just a sidecar |
 | **P3** | **Data starvation & shallowness** — 6 quarters (one empty), segment + cycle KPIs come back "not disclosed", no analyst consensus fed in. | Critical | ✅ **Largely resolved** (Phase 0) — EDGAR 21–67 quarters, consensus fed, KPI extraction proven (AMD 4/5); residual = blocked-ticker IR coverage |
-| **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | 🟨 **Substrate done** (Phase 0: provenance columns + verbatim-quote KPI extraction); **publish-gate still open** → Phase 2.4 |
+| **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | ✅ **Done** — provenance substrate (Phase 0) + evidence **gate** (2.4): low validation reliability / high contradiction rate caps a buy to HOLD at low confidence. Follow-up: per-claim source-citation in the validation prompt |
 | **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | 🟨 **Scoring layer done** (1.1 archetypes + 1.4 archetype-conditioned weights + 1.3 peer-relative). The "re-rate vs peak?" *reasoning* + cycle-position signal still open → P2.2 + ML M3 |
 | **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | 🟨 **Dialectic done** (2.1): bull/bear/judge with leaning + calibrated conviction + "what would change my mind". Dated kill-criteria still open → 2.5 |
 | **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
@@ -162,8 +162,20 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > 0.45**, verdict "modest position sized for the significant risks" — having *conceded* "momentum
 > exhaustion after 684% gain" and the peak-margin/normalized-earnings bear points. Skepticism is no
 > longer quarantined (P2). **Note:** the dialectic is a parallel analyst verdict; it does NOT yet
-> feed the composite/decision — wiring judge→conviction is the 2.4 bridge. **Next: 2.4 (evidence-gate
-> + wire judge into decision) or 2.2 (regime-aware valuation).**
+> feed the composite/decision — wiring judge→conviction is the 2.4 bridge.
+
+> **Status: 2.4 DONE (2026-06-02) — judge + evidence gate bind the decision.** `decision/engine.py`
+> now reads the latest judge report and caps the final signal/confidence by its leaning + conviction
+> (bear/neutral → cap at HOLD/REDUCE; conviction <0.5 → no STRONG_BUY; <0.35 → HOLD), and an evidence
+> gate caps a buy to HOLD when validation reliability <0.4 or >40% of claims are contradicted (reads
+> RAW values from the validation report — the normalized `contradiction_rate` feature is inverted).
+> Gates only ever LOWER the signal. `judge_leaning`/`judge_conviction` persisted (migration
+> `d7b3e9c4a210`), surfaced in the decision API + `DecisionPanel` (shows "quant screen X → adjusted"
+> + judge leaning/conviction). **Verified on MU: composite screen 0.852 STRONG_BUY → decision BUY at
+> moderate confidence**, capped by the judge's 0.45 conviction (evidence gate correctly did not fire).
+> e2e extended with a decision stage (bear judge caps BUY→HOLD). **Follow-up:** validation prompt to
+> require a source citation per quantitative claim. **Next: 2.2 (regime-aware valuation) or 2.5
+> (kill-criteria).**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
