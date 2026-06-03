@@ -44,14 +44,14 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 
 | ID | Problem | Severity | Status (2026-05-30) |
 |----|---------|----------|---------------------|
-| **P1** | **Absolute, not peer-relative, normalization** — one fixed ruler (`forward_pe 10→60`) for cyclicals and platforms alike. P/E 7 is meaningless in absolute terms. (`quant/normalizer.py` fixed `(low,high)` bounds) | Critical | ✅ **Valuation path done** (1.2 + 1.3): multiples scored as weighted percentile vs peers. Residual: growth/profitability still absolute (follow-up); peak-earnings denominator = P2.2 |
+| **P1** | **Absolute, not peer-relative, normalization** — one fixed ruler (`forward_pe 10→60`) for cyclicals and platforms alike. P/E 7 is meaningless in absolute terms. (`quant/normalizer.py` fixed `(low,high)` bounds) | Critical | ✅ **Done** — valuation path peer-relative (1.2+1.3); peak-earnings denominator fixed in the valuation agent (2.2, normalized earnings). Residual: growth/profitability/event still absolute & peak-biased in the SCREEN (follow-up, ML M3) |
 | **P2** | **Systematic over-bullish bias on cyclicals** — skepticism quarantined in the 10%-weight risk bucket + the *excluded* validation channel; scored verdicts anchor on momentum + management guidance. (valuation agent said $1100 "significantly undervalued"; validation reliability 0.38 ignored) | Critical | ✅ **Done** (2.1 + 2.4): first-class bear + judge that must engage every bear point, now WIRED into the decision — MU's 0.852 STRONG_BUY screen becomes a **BUY decision at moderate confidence**, capped by the judge's 0.45 conviction. Skepticism moves the recommendation, not just a sidecar |
 | **P3** | **Data starvation & shallowness** — 6 quarters (one empty), segment + cycle KPIs come back "not disclosed", no analyst consensus fed in. | Critical | ✅ **Largely resolved** (Phase 0) — EDGAR 21–67 quarters, consensus fed, KPI extraction proven (AMD 4/5); residual = blocked-ticker IR coverage |
 | **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | ✅ **Done** — provenance substrate (Phase 0) + evidence **gate** (2.4): low validation reliability / high contradiction rate caps a buy to HOLD at low confidence. Follow-up: per-claim source-citation in the validation prompt |
 | **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | 🟨 **Scoring layer done** (1.1 archetypes + 1.4 archetype-conditioned weights + 1.3 peer-relative). The "re-rate vs peak?" *reasoning* + cycle-position signal still open → P2.2 + ML M3 |
 | **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | 🟨 **Dialectic done** (2.1): bull/bear/judge with leaning + calibrated conviction + "what would change my mind". Dated kill-criteria still open → 2.5 |
 | **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
-| **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | ⬜ **Open** → Phase 2.6 |
+| **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | 🟨 **margin_of_safety fixed** (2.6): schema says FRACTION + `postprocess_report` coerces percents & clamps. Broader free-number audit across all agents remains |
 | **P9** | **Composite-as-oracle framing** — UI + decision flow treat the weighted average as the recommendation (dashboard signal badge) | Medium | ✅ **Done** (1.5): composite reframed as a peer-rank screen (`/api/scoring/screen` + `ScreenRankBar`), "not a recommendation" copy, real archetype weights shown |
 
 ---
@@ -174,8 +174,21 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > + judge leaning/conviction). **Verified on MU: composite screen 0.852 STRONG_BUY → decision BUY at
 > moderate confidence**, capped by the judge's 0.45 conviction (evidence gate correctly did not fire).
 > e2e extended with a decision stage (bear judge caps BUY→HOLD). **Follow-up:** validation prompt to
-> require a source citation per quantitative claim. **Next: 2.2 (regime-aware valuation) or 2.5
-> (kill-criteria).**
+> require a source citation per quantitative claim.
+
+> **Status: 2.2 + 2.6 DONE (2026-06-02) — regime-aware valuation on normalized earnings.** New
+> `app/measurement/normalized_earnings.py` (median through-cycle margin → normalized net income +
+> cycle-position z-score; pure stats). Fed into `valuation_agent.build_context` (REGIME block:
+> archetype, current vs mid-cycle margin, spot vs normalized P/E). Prompt rewritten: branch on
+> archetype, value cyclicals on NORMALIZED earnings, output a `regime` block + "re-rate vs peak?".
+> **2.6:** `margin_of_safety` documented as a FRACTION + `postprocess_report` coerces stray percents
+> and clamps (kills the 53.3/31.5 instability). **THE FOUNDING BUG, REVERSED — verified on MU:** the
+> agent that once said "significantly_undervalued, ~$1100, MoS 53" now says **moderately_overvalued,
+> MoS −0.23**, computing normalized P/E 114x vs spot 44.7x ("the low spot P/E is a peak-earnings
+> illusion"). MU's AI-valuation sub-score 0.78 → 0.52. **Residual:** the composite SCREEN is still
+> 0.82 STRONG_BUY because growth/momentum/event remain peak-biased — fully de-biasing the screen
+> needs cycle-normalized growth/momentum features (ML M3 territory); the binding decision is already
+> BUY (judge-capped). **Phase 2 remaining: 2.3 (triangulation), 2.5 (dated kill-criteria).**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|

@@ -9,11 +9,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.base import BaseAgent
 from app.agents.transcript_summarizer import format_summary_for_agent
 from app.ingestion.computed_metrics import format_for_llm, get_computed_metrics
+from app.measurement.normalized_earnings import compute_normalized_earnings
 from app.models.estimate import AnalystEstimate
+from app.models.stock import Stock
 from app.models.transcript import EarningsTranscript
 from app.models.valuation import Valuation
 
 logger = logging.getLogger(__name__)
+
+
+def _format_normalized_earnings(archetype: str | None, ne, market_cap: float | None) -> str:
+    """Render the mid-cycle / normalized-earnings block (roadmap 2.2) for the prompt."""
+    if ne is None:
+        return ""
+    lines = ["=== REGIME / NORMALIZED EARNINGS (measured from filed history) ==="]
+    if archetype:
+        lines.append(f"Business-model archetype: {archetype}")
+    lines.append(f"Cycle position (net-margin z-score): {ne.cycle_position}")
+    if ne.current_net_margin is not None and ne.midcycle_net_margin is not None:
+        lines.append(
+            f"Net margin — current TTM {ne.current_net_margin:.1%} vs mid-cycle (median) "
+            f"{ne.midcycle_net_margin:.1%}  → current is {ne.margin_ratio}x mid-cycle"
+        )
+    if ne.trough_net_margin is not None and ne.peak_net_margin is not None:
+        lines.append(f"Net margin range over history: {ne.trough_net_margin:.1%} (trough) .. {ne.peak_net_margin:.1%} (peak)")
+    if ne.ttm_net_income is not None and ne.normalized_net_income is not None:
+        lines.append(
+            f"Net income — current TTM ${ne.ttm_net_income/1e9:.2f}B vs NORMALIZED (mid-cycle margin) "
+            f"${ne.normalized_net_income/1e9:.2f}B  (normalized is {ne.normalized_factor}x of spot)"
+        )
+        if market_cap and ne.ttm_net_income and ne.normalized_net_income and ne.normalized_net_income > 0:
+            lines.append(
+                f"Implied P/E — SPOT ≈ {market_cap/ne.ttm_net_income:.1f}x  vs  "
+                f"NORMALIZED ≈ {market_cap/ne.normalized_net_income:.1f}x"
+            )
+    lines.append(
+        "NOTE: a low SPOT multiple on PEAK earnings is a trap. If this is a cyclical at/near a peak, "
+        "anchor your fair value on the NORMALIZED earnings, not spot."
+    )
+    return "\n".join(lines)
 
 
 class ValuationAgent(BaseAgent):
@@ -24,6 +58,16 @@ class ValuationAgent(BaseAgent):
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         snapshot = await get_computed_metrics(db, ticker)
         context = format_for_llm(snapshot)
+
+        # Regime-aware valuation (roadmap 2.2): give the agent the archetype + the through-cycle
+        # normalized-earnings view so it values cyclicals on mid-cycle, not peak, earnings.
+        stock = await db.get(Stock, ticker)
+        archetype = stock.archetype if stock else None
+        ne = await compute_normalized_earnings(db, ticker)
+        market_cap = (snapshot.valuation or {}).get("market_cap") if snapshot.valuation else None
+        regime_block = _format_normalized_earnings(archetype, ne, market_cap)
+        if regime_block:
+            context += "\n\n" + regime_block
 
         # Add analyst consensus estimates (next 4 quarters)
         result = await db.execute(
@@ -102,10 +146,21 @@ class ValuationAgent(BaseAgent):
         return context
 
     def get_system_prompt(self) -> str:
-        return """You are a senior valuation analyst. Given a company's financial data, growth rates, current valuation multiples, analyst consensus estimates, and management guidance from earnings calls, provide a comprehensive valuation assessment.
+        return """You are a senior valuation analyst. Given a company's financial data, growth rates, current valuation multiples, analyst consensus estimates, management guidance, and a measured NORMALIZED/MID-CYCLE earnings view, provide a comprehensive valuation assessment.
+
+REGIME-AWARE VALUATION (read first — this changes how you value the stock):
+- A "REGIME / NORMALIZED EARNINGS" block is provided with the cycle position, current vs mid-cycle
+  margins, and normalized earnings. USE IT. The right denominator depends on the business model:
+- If the business is CYCLICAL (cyclical-commodity archetype, or the block shows current margins far
+  above/below mid-cycle, i.e. cycle position "peak"/"trough"): a low SPOT P/E on PEAK earnings is a
+  TRAP, not cheapness. You MUST anchor your fair value on the NORMALIZED (mid-cycle) earnings, and
+  state explicitly whether the current multiple reflects a durable re-rate or a peak-earnings illusion.
+- If the business is a platform / mature-compounder / secular-grower with stable margins (normalized
+  ≈ spot): spot earnings are a fine basis; note margin durability rather than cycle-normalizing.
 
 You should assess:
-1. MULTIPLES ANALYSIS — Are current P/E, P/S, EV/EBITDA multiples justified by growth? Compare to historical and peer ranges.
+0. REGIME — Where is this company in its cycle, and which earnings basis is correct (spot vs normalized)?
+1. MULTIPLES ANALYSIS — Are current P/E, P/S, EV/EBITDA multiples justified by growth? Compare to historical and peer ranges. For cyclicals, compute the multiple on normalized earnings too.
 2. GROWTH-ADJUSTED VALUE — PEG ratio interpretation. Is the market fairly pricing the growth?
 3. DCF FRAMEWORK — Provide a simplified DCF assessment with your assumptions for revenue growth (5 years), terminal growth, FCF margin, and WACC. Calculate bull/base/bear intrinsic values.
 4. TARGET PRICE RANGE — Based on multiples and DCF, what's a reasonable price range?
@@ -120,6 +175,13 @@ You must respond with valid JSON only, no other text. Use this exact schema:
 {
   "ticker": "string",
   "current_price": number,
+  "regime": {
+    "cycle_position": "peak | mid | trough | not_cyclical",
+    "earnings_basis": "spot | normalized — which you used and why",
+    "spot_pe": number,                                  // P/E on current/spot earnings, or null
+    "normalized_pe": number,                            // P/E on mid-cycle earnings, or null if not cyclical
+    "re_rate_vs_peak": "string — is the current multiple a durable re-rate or a peak-earnings illusion?"
+  },
   "multiples_analysis": {
     "pe_assessment": "string — is P/E reasonable for this growth?",
     "ps_assessment": "string — is P/S justified?",
@@ -144,7 +206,7 @@ You must respond with valid JSON only, no other text. Use this exact schema:
     "mid": number,
     "high": number
   },
-  "margin_of_safety": number,
+  "margin_of_safety": number,   // FRACTION, not percent: (fair_value − price)/price. e.g. 0.30 = 30% upside, -0.20 = 20% downside. Range about -1.0 to 1.0.
   "valuation_verdict": "significantly_undervalued | moderately_undervalued | fairly_valued | moderately_overvalued | significantly_overvalued",
   "valuation_score": 0.0-1.0,
   "consensus_comparison": {
@@ -174,8 +236,20 @@ If no analyst estimates are available, set consensus_comparison to null.
 If no transcript/guidance data is available, set guidance_assessment to null."""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:
-        return f"""Provide a comprehensive valuation analysis for {ticker}. Assess multiples, run a simplified DCF, determine a target price range. If analyst consensus estimates and management guidance are provided, compare your assumptions against them.
+        return f"""Provide a comprehensive valuation analysis for {ticker}. Assess the regime/cycle first, then multiples, run a simplified DCF, determine a target price range. For a cyclical, value on NORMALIZED (mid-cycle) earnings and say so. If analyst consensus estimates and management guidance are provided, compare your assumptions against them.
 
 {context}
 
 Respond with JSON only."""
+
+    def postprocess_report(self, report: dict, ticker: str) -> dict:
+        # Output-contract fix (roadmap 2.6): margin_of_safety must be a FRACTION. Models still
+        # sometimes emit a percent (e.g. 30 meaning 30%); coerce it and clamp to a sane range so the
+        # normalizer (which expects a fraction) doesn't clamp a 30 to 1.0.
+        report = super().postprocess_report(report, ticker)
+        mos = report.get("margin_of_safety")
+        if isinstance(mos, (int, float)):
+            if abs(mos) > 1.5:               # almost certainly a percent
+                mos = mos / 100.0
+            report["margin_of_safety"] = max(-1.0, min(5.0, mos))
+        return report
