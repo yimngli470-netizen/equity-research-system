@@ -45,11 +45,11 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 | ID | Problem | Severity | Status (2026-05-30) |
 |----|---------|----------|---------------------|
 | **P1** | **Absolute, not peer-relative, normalization** — one fixed ruler (`forward_pe 10→60`) for cyclicals and platforms alike. P/E 7 is meaningless in absolute terms. (`quant/normalizer.py` fixed `(low,high)` bounds) | Critical | ✅ **Valuation path done** (1.2 + 1.3): multiples scored as weighted percentile vs peers. Residual: growth/profitability still absolute (follow-up); peak-earnings denominator = P2.2 |
-| **P2** | **Systematic over-bullish bias on cyclicals** — skepticism quarantined in the 10%-weight risk bucket + the *excluded* validation channel; scored verdicts anchor on momentum + management guidance. (valuation agent said $1100 "significantly undervalued"; validation reliability 0.38 ignored) | Critical | 🟨 **Dented** — consensus now fed as a normal-weight anchor (mean $674 would flag MU); core fix = Phase 2.1/2.4 |
+| **P2** | **Systematic over-bullish bias on cyclicals** — skepticism quarantined in the 10%-weight risk bucket + the *excluded* validation channel; scored verdicts anchor on momentum + management guidance. (valuation agent said $1100 "significantly undervalued"; validation reliability 0.38 ignored) | Critical | 🟨 **Reasoning layer fixes it** (2.1): first-class bear + judge that must engage every bear point → MU judged "modest position, conviction 0.45" vs the 0.85 screen. Still needs wiring into the decision (2.4) to fully close |
 | **P3** | **Data starvation & shallowness** — 6 quarters (one empty), segment + cycle KPIs come back "not disclosed", no analyst consensus fed in. | Critical | ✅ **Largely resolved** (Phase 0) — EDGAR 21–67 quarters, consensus fed, KPI extraction proven (AMD 4/5); residual = blocked-ticker IR coverage |
 | **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | 🟨 **Substrate done** (Phase 0: provenance columns + verbatim-quote KPI extraction); **publish-gate still open** → Phase 2.4 |
 | **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | 🟨 **Scoring layer done** (1.1 archetypes + 1.4 archetype-conditioned weights + 1.3 peer-relative). The "re-rate vs peak?" *reasoning* + cycle-position signal still open → P2.2 + ML M3 |
-| **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | ⬜ **Open** → Phase 2.1/2.5 |
+| **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | 🟨 **Dialectic done** (2.1): bull/bear/judge with leaning + calibrated conviction + "what would change my mind". Dated kill-criteria still open → 2.5 |
 | **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
 | **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | ⬜ **Open** → Phase 2.6 |
 | **P9** | **Composite-as-oracle framing** — UI + decision flow treat the weighted average as the recommendation (dashboard signal badge) | Medium | ✅ **Done** (1.5): composite reframed as a peer-rank screen (`/api/scoring/screen` + `ScreenRankBar`), "not a recommendation" copy, real archetype weights shown |
@@ -152,6 +152,18 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 1.5 | **Composite reframed as screen-rank** — relabel in API/UI; surface percentile-within-peers, not an absolute verdict | S | UI/API copy + ranking field | dashboard shows "rank vs peers"; signal no longer presented as the recommendation |
 
 ### Phase 2 — Reasoning Layer (resolves P2, P5, P6, P8)
+
+> **Status: 2.1 DONE (2026-06-02) — Bull/Bear/Judge dialectic.** New `agents/bull_agent.py`,
+> `bear_agent.py`, `judge_agent.py` + `agents/synthesis.py` (shared evidence pack). Registered in the
+> orchestrator after the analytical agents (bull → bear → judge), bear is first-class. The judge MUST
+> address every bear point (concede/rebut/partial) and its conviction must reflect unresolved bear
+> risk. Rendered in the UI (case-point lists + judge leaning/conviction/addressed-points). **Verified
+> live on MU:** quant screen says 0.852 STRONG_BUY, but the judge returns **leaning=bull, conviction
+> 0.45**, verdict "modest position sized for the significant risks" — having *conceded* "momentum
+> exhaustion after 684% gain" and the peak-margin/normalized-earnings bear points. Skepticism is no
+> longer quarantined (P2). **Note:** the dialectic is a parallel analyst verdict; it does NOT yet
+> feed the composite/decision — wiring judge→conviction is the 2.4 bridge. **Next: 2.4 (evidence-gate
+> + wire judge into decision) or 2.2 (regime-aware valuation).**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|

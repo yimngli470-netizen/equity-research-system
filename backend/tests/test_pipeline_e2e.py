@@ -243,7 +243,9 @@ async def test_full_backend_workflow(db, client, patch_world):
     agent_types = set((await db.execute(
         select(AnalysisReport.agent_type).where(AnalysisReport.ticker == TICKER)
     )).scalars())
-    assert agent_types == {"news", "earnings", "industry", "valuation", "validation"}
+    # Four analytical agents + the bull/bear/judge dialectic (2.1) + validation.
+    assert agent_types == {"news", "earnings", "industry", "valuation",
+                           "bull", "bear", "judge", "validation"}
 
     # --- (b) the DB data actually reached the agent prompt ---
     all_user_prompts = "\n\n".join(p["user"] for p in captured_prompts)

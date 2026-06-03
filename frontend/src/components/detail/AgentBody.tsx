@@ -464,6 +464,137 @@ function CallHighlightsBlock({ h }: { h: CallHighlights }) {
   );
 }
 
+// ─── Dialectic: bull / bear case points ─────────────────────────────────────
+
+function CasePoints({
+  kind,
+  points,
+  conviction,
+}: {
+  kind: 'bull' | 'bear';
+  points: NonNullable<NormalizedAgent['case_points']>;
+  conviction: number | null | undefined;
+}) {
+  const accent = kind === 'bull' ? 'var(--color-pos-fg)' : 'var(--color-neg-fg)';
+  if (!points.length) return null;
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: accent }}>
+          {kind === 'bull' ? 'Bull points' : 'Bear points'}
+        </span>
+        {conviction != null && (
+          <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
+            Conviction <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-ink)' }}>{conviction.toFixed(2)}</span>
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {points.map((p, i) => (
+          <div key={i} style={{ borderLeft: `2px solid ${accent}`, paddingLeft: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--color-ink)', fontWeight: 500, marginBottom: 3 }}>
+              {p.claim}
+              {p.weight && (
+                <span style={{ marginLeft: 8, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--color-ink-3)' }}>
+                  {p.weight}
+                </span>
+              )}
+            </div>
+            {p.evidence && (
+              <div style={{ fontSize: 12, color: 'var(--color-ink-2)', lineHeight: 1.55 }}>
+                {emphasizeNumbers(p.evidence)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Dialectic: judge synthesis ─────────────────────────────────────────────
+
+const LEANING_TONE: Record<string, string> = {
+  strong_bull: 'var(--color-pos-fg)',
+  bull: 'var(--color-pos-fg)',
+  neutral: 'var(--color-ink-2)',
+  bear: 'var(--color-neg-fg)',
+  strong_bear: 'var(--color-neg-fg)',
+};
+const ASSESS_TONE: Record<string, string> = {
+  conceded: 'var(--color-neg-fg)',
+  rebutted: 'var(--color-pos-fg)',
+  partial: 'var(--color-warn-fg)',
+  accepted: 'var(--color-pos-fg)',
+  discounted: 'var(--color-ink-3)',
+};
+
+function Addressed({
+  title,
+  items,
+}: {
+  title: string;
+  items: { point: string; assessment: string; reasoning: string }[];
+}) {
+  if (!items.length) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginBottom: 8 }}>
+        {title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {items.map((p, i) => (
+          <div key={i}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: ASSESS_TONE[p.assessment] || 'var(--color-ink-3)', whiteSpace: 'nowrap' }}>
+                {p.assessment}
+              </span>
+              <span style={{ fontSize: 12.5, color: 'var(--color-ink)' }}>{p.point}</span>
+            </div>
+            {p.reasoning && (
+              <div style={{ fontSize: 12, color: 'var(--color-ink-2)', lineHeight: 1.5, marginTop: 2 }}>
+                {emphasizeNumbers(p.reasoning)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function JudgeBlock({ j }: { j: NonNullable<NormalizedAgent['judge_view']> }) {
+  const tone = LEANING_TONE[j.leaning] || 'var(--color-ink-2)';
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'baseline', marginBottom: 6 }}>
+        <span style={{ fontSize: 18, fontWeight: 700, color: tone, textTransform: 'capitalize' }}>
+          {j.leaning ? j.leaning.replace(/_/g, ' ') : '—'}
+        </span>
+        {j.conviction != null && (
+          <span style={{ fontSize: 12, color: 'var(--color-ink-3)' }}>
+            Conviction <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-ink)' }}>{j.conviction.toFixed(2)}</span>
+          </span>
+        )}
+      </div>
+      <Addressed title="Bear points addressed" items={j.bear_addressed} />
+      <Addressed title="Bull points addressed" items={j.bull_addressed} />
+      {j.change_mind.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginBottom: 8 }}>
+            What would change the call
+          </div>
+          <ul style={{ margin: 0, padding: 0 }}>
+            {j.change_mind.map((c, i) => (
+              <RichBullet key={i} text={c} accent="var(--color-ink-3)" />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -636,6 +767,14 @@ export default function AgentBody({ agent }: Props) {
             ))}
           </div>
         )}
+
+      {(agent.agent_type === 'bull' || agent.agent_type === 'bear') &&
+        agent.case_points &&
+        agent.case_kind && (
+          <CasePoints kind={agent.case_kind} points={agent.case_points} conviction={agent.case_conviction} />
+        )}
+
+      {agent.agent_type === 'judge' && agent.judge_view && <JudgeBlock j={agent.judge_view} />}
 
       {agent.agent_type === 'validation' && agent.validation_tiles && (
         <div

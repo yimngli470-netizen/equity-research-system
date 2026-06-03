@@ -23,7 +23,7 @@ import { normalizeAgent } from '../components/detail/agentView';
 import { runPipeline, usePipelineState } from '../state/pipelineTracker';
 
 const AGENT_LAYOUT_KEY = 'agent-layout';
-const AGENT_ORDER = ['news', 'earnings', 'industry', 'valuation', 'validation'];
+const AGENT_ORDER = ['news', 'earnings', 'industry', 'valuation', 'bull', 'bear', 'judge', 'validation'];
 
 function loadAgentLayout(): AgentLayout {
   const v = localStorage.getItem(AGENT_LAYOUT_KEY);

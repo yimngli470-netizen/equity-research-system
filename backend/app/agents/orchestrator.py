@@ -6,8 +6,11 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.bear_agent import BearAgent
+from app.agents.bull_agent import BullAgent
 from app.agents.earnings_agent import EarningsAgent
 from app.agents.industry_agent import IndustryAgent
+from app.agents.judge_agent import JudgeAgent
 from app.agents.news_agent import NewsAgent
 from app.agents.validation_agent import ValidationAgent
 from app.agents.valuation_agent import ValuationAgent
@@ -15,14 +18,23 @@ from app.database import async_session
 
 logger = logging.getLogger(__name__)
 
-# Agent registry
+# Agent registry. ORDER MATTERS — agents run sequentially in this order, each committing before the
+# next. The bull/bear/judge dialectic (roadmap 2.1) is a synthesis layer: it must run AFTER the four
+# analytical agents (whose reports it reads), and the judge must run AFTER bull and bear (it
+# reconciles their cases). Validation always runs last (see run_all_agents).
 AGENTS = {
     "news": NewsAgent,
     "earnings": EarningsAgent,
     "industry": IndustryAgent,
     "valuation": ValuationAgent,
+    "bull": BullAgent,
+    "bear": BearAgent,
+    "judge": JudgeAgent,
     "validation": ValidationAgent,
 }
+
+# The adversarial dialectic must run in this relative order, after the analytical agents.
+_DIALECTIC_ORDER = ["bull", "bear", "judge"]
 
 
 @dataclass
@@ -96,16 +108,19 @@ async def run_all_agents(
         agent_types: Specific agents to run. None = all agents.
         force: Skip cache and re-run all agents.
     """
-    types = agent_types or list(AGENTS.keys())
+    requested = set(agent_types or list(AGENTS.keys()))
 
     # Validate agent types
-    for t in types:
+    for t in requested:
         if t not in AGENTS:
             raise ValueError(f"Unknown agent type: {t}. Available: {list(AGENTS.keys())}")
 
-    # Validation agent always runs last and with force=True
-    run_validation = "validation" in types
-    types = [t for t in types if t != "validation"]
+    # Enforce execution order regardless of how agent_types was passed: analytical agents first
+    # (the dialectic reads their reports), then bull → bear → judge, then validation last.
+    analytical = [t for t in ("news", "earnings", "industry", "valuation") if t in requested]
+    dialectic = [t for t in _DIALECTIC_ORDER if t in requested]
+    run_validation = "validation" in requested
+    types = analytical + dialectic
 
     logger.info("Running agents for %s: %s (force=%s)", ticker, types, force)
 

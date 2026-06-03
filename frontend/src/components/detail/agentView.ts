@@ -58,6 +58,19 @@ export interface NormalizedAgent {
   industry_competitors?: { name: string; threat: string; note: string }[];
   valuation_tiles?: Tile[];
   validation_tiles?: Tile[];
+  // Dialectic (bull / bear): evidence-cited points.
+  case_kind?: 'bull' | 'bear';
+  case_points?: { claim: string; evidence: string; weight: string }[];
+  case_conviction?: number | null;
+  // Dialectic (judge): the reconciled view.
+  judge_view?: {
+    leaning: string;
+    conviction: number | null;
+    decisive_factors: string[];
+    bear_addressed: { point: string; assessment: string; reasoning: string }[];
+    bull_addressed: { point: string; assessment: string; reasoning: string }[];
+    change_mind: string[];
+  };
 }
 
 const AGENT_MODEL: Record<string, string> = {
@@ -65,8 +78,15 @@ const AGENT_MODEL: Record<string, string> = {
   earnings: 'Opus 4',
   industry: 'Opus 4',
   valuation: 'Opus 4',
+  bull: 'Opus 4',
+  bear: 'Opus 4',
+  judge: 'Opus 4',
   validation: 'Sonnet 4',
 };
+
+function toStrList(v: unknown): string[] {
+  return Array.isArray(v) ? (v as unknown[]).map((x) => asString(x)).filter(Boolean) : [];
+}
 
 function asString(v: unknown): string {
   if (v == null) return '';
@@ -113,6 +133,8 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
   // object under summary. Pull a readable narrative from whichever field has one.
   let summary = '';
   if (typeof r.summary === 'string') summary = r.summary;
+  else if (typeof r.thesis === 'string') summary = r.thesis;            // bull / bear
+  else if (typeof r.synthesis === 'string') summary = r.synthesis;      // judge
   else if (typeof r.headline_assessment === 'string') summary = r.headline_assessment;
   else if (typeof r.cycle_assessment === 'string') summary = r.cycle_assessment;
   else if (agent_type === 'validation' && typeof r.summary === 'object' && r.summary) {
@@ -297,6 +319,42 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
       tiles.push({ label: 'Verdict', value: r.valuation_verdict.replace(/_/g, ' ') });
     }
     base.valuation_tiles = tiles;
+  }
+
+  if (agent_type === 'bull' || agent_type === 'bear') {
+    const listKey = agent_type === 'bull' ? 'bull_points' : 'bear_points';
+    const weightKey = agent_type === 'bull' ? 'importance' : 'severity';
+    const raw = Array.isArray(r[listKey]) ? (r[listKey] as Record<string, unknown>[]) : [];
+    base.case_kind = agent_type;
+    base.case_conviction = asNumber(r.conviction);
+    base.case_points = raw
+      .map((p) => ({
+        claim: asString(p.claim),
+        evidence: asString(p.evidence),
+        weight: asString(p[weightKey]).toLowerCase(),
+      }))
+      .filter((p) => p.claim);
+  }
+
+  if (agent_type === 'judge') {
+    const addressed = (v: unknown) =>
+      Array.isArray(v)
+        ? (v as Record<string, unknown>[])
+            .map((p) => ({
+              point: asString(p.point),
+              assessment: asString(p.assessment).toLowerCase(),
+              reasoning: asString(p.reasoning),
+            }))
+            .filter((p) => p.point)
+        : [];
+    base.judge_view = {
+      leaning: asString(r.leaning).toLowerCase(),
+      conviction: asNumber(r.conviction),
+      decisive_factors: toStrList(r.decisive_factors),
+      bear_addressed: addressed(r.bear_points_addressed),
+      bull_addressed: addressed(r.bull_points_addressed),
+      change_mind: toStrList(r.what_would_change_my_mind),
+    };
   }
 
   if (agent_type === 'validation') {
