@@ -368,6 +368,14 @@ async def run_decision(
     except Exception:
         logger.exception("[thesis] snapshot failed for %s", ticker)
 
+    # Grade any PAST thesis whose predictions have now come due (3.2). Cheap no-op when nothing is
+    # due; an LLM grading pass only fires when a kill-criterion's by_date has passed.
+    try:
+        from app.thesis.grading import grade_due_theses
+        await grade_due_theses(db, ticker)
+    except Exception:
+        logger.exception("[thesis] grading failed for %s", ticker)
+
     logger.info(
         "[decision] %s → raw=%s final=%s confidence=%s flags=%d",
         ticker, raw_signal, final_signal, confidence, len(flags),

@@ -234,7 +234,17 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > ticker/day: archetype, judge leaning + conviction + verdict, valuation fair_value, price_at,
 > composite, screen signal, binding decision, and the dated `kill_criteria`. **Verified on MU:** fair
 > value $520 vs price $751 captured with 3 dated predictions → a gradable bet on the record. Covered
-> by the e2e. **Next: 3.2 — grade due theses on the next pipeline run (per user: no scheduler).**
+> by the e2e.
+
+> **Status: 3.2 DONE (2026-06-03) — outcome grading on pipeline run (no scheduler).**
+> `app/thesis/grading.py::grade_due_theses`, wired into `run_decision` after the snapshot: finds open
+> theses whose kill-criteria `by_date` has passed (ISO or fiscal-quarter parsing) and grades each
+> due, ungraded prediction hit/miss/partial/undetermined via one LLM pass over the post-thesis data,
+> plus deterministic `realized_return` + `fair_value_gap`. Incremental (grades predictions as they
+> come due; flips `status`→graded when all done); cheap no-op when nothing is due. **Verified live on
+> a synthetic past-due MU thesis:** "gross margin falls below 30% by 2026-03-31" → **MISS** (cited
+> "Q2 FY2026 GM 74.4%"); a not-yet-due fiscal-quarter prediction correctly left open. **Next: 3.3
+> (calibration — Brier/reliability per archetype, the answer to P7) + 3.4 (position sizing).**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
