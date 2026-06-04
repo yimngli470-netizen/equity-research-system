@@ -178,7 +178,11 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 > **Status: 2.2 + 2.6 DONE (2026-06-02) — regime-aware valuation on normalized earnings.** New
 > `app/measurement/normalized_earnings.py` (median through-cycle margin → normalized net income +
-> cycle-position z-score; pure stats). Fed into `valuation_agent.build_context` (REGIME block:
+> cycle-position z-score; pure stats). **Archetype-aware (refined 2026-06-03):** mid-cycle
+> normalization only applies to true cyclicals — a `basis` flag (cyclical / stable / inflection)
+> prevents mislabeling stable compounders "peak" (AAPL z-noise) and refuses to normalize loss→profit
+> turnarounds with a negative historical median margin (UBER). MU still normalizes (0.39x); others
+> read "stable" / "inflection". Fed into `valuation_agent.build_context` (REGIME block:
 > archetype, current vs mid-cycle margin, spot vs normalized P/E). Prompt rewritten: branch on
 > archetype, value cyclicals on NORMALIZED earnings, output a `regime` block + "re-rate vs peak?".
 > **2.6:** `margin_of_safety` documented as a FRACTION + `postprocess_report` coerces stray percents

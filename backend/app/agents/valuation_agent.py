@@ -19,34 +19,50 @@ logger = logging.getLogger(__name__)
 
 
 def _format_normalized_earnings(archetype: str | None, ne, market_cap: float | None) -> str:
-    """Render the mid-cycle / normalized-earnings block (roadmap 2.2) for the prompt."""
+    """Render the mid-cycle / normalized-earnings block (roadmap 2.2), branched on whether the name
+    is actually a cyclical (only then is median-reversion the right model)."""
     if ne is None:
         return ""
     lines = ["=== REGIME / NORMALIZED EARNINGS (measured from filed history) ==="]
     if archetype:
         lines.append(f"Business-model archetype: {archetype}")
-    lines.append(f"Cycle position (net-margin z-score): {ne.cycle_position}")
+
+    # The current vs mid-cycle margin is informative context for any name.
     if ne.current_net_margin is not None and ne.midcycle_net_margin is not None:
         lines.append(
-            f"Net margin — current TTM {ne.current_net_margin:.1%} vs mid-cycle (median) "
-            f"{ne.midcycle_net_margin:.1%}  → current is {ne.margin_ratio}x mid-cycle"
+            f"Net margin — current TTM {ne.current_net_margin:.1%} vs 5yr median "
+            f"{ne.midcycle_net_margin:.1%} (range {ne.trough_net_margin:.1%}..{ne.peak_net_margin:.1%})"
+            + (f"  → current is {ne.margin_ratio}x median" if ne.margin_ratio else "")
         )
-    if ne.trough_net_margin is not None and ne.peak_net_margin is not None:
-        lines.append(f"Net margin range over history: {ne.trough_net_margin:.1%} (trough) .. {ne.peak_net_margin:.1%} (peak)")
-    if ne.ttm_net_income is not None and ne.normalized_net_income is not None:
-        lines.append(
-            f"Net income — current TTM ${ne.ttm_net_income/1e9:.2f}B vs NORMALIZED (mid-cycle margin) "
-            f"${ne.normalized_net_income/1e9:.2f}B  (normalized is {ne.normalized_factor}x of spot)"
-        )
-        if market_cap and ne.ttm_net_income and ne.normalized_net_income and ne.normalized_net_income > 0:
+
+    if ne.basis == "cyclical":
+        lines.append(f"Cycle position: {ne.cycle_position} (this IS a margin-cyclical business)")
+        if ne.ttm_net_income is not None and ne.normalized_net_income is not None:
             lines.append(
-                f"Implied P/E — SPOT ≈ {market_cap/ne.ttm_net_income:.1f}x  vs  "
-                f"NORMALIZED ≈ {market_cap/ne.normalized_net_income:.1f}x"
+                f"Net income — current TTM ${ne.ttm_net_income/1e9:.2f}B vs NORMALIZED (mid-cycle margin) "
+                f"${ne.normalized_net_income/1e9:.2f}B  (normalized is {ne.normalized_factor}x of spot)"
             )
-    lines.append(
-        "NOTE: a low SPOT multiple on PEAK earnings is a trap. If this is a cyclical at/near a peak, "
-        "anchor your fair value on the NORMALIZED earnings, not spot."
-    )
+            if market_cap and ne.ttm_net_income and ne.normalized_net_income and ne.normalized_net_income > 0:
+                lines.append(
+                    f"Implied P/E — SPOT ≈ {market_cap/ne.ttm_net_income:.1f}x  vs  "
+                    f"NORMALIZED ≈ {market_cap/ne.normalized_net_income:.1f}x"
+                )
+        lines.append(
+            "NOTE: this is a cyclical — a low SPOT multiple on PEAK earnings is a trap. Anchor your "
+            "fair value on the NORMALIZED (mid-cycle) earnings, not spot."
+        )
+    elif ne.basis == "inflection":
+        lines.append(
+            "Margin regime: INFLECTION — the historical median margin is non-positive (a losses→profits "
+            "transition), so a historical-median normalization is INVALID. Value on CURRENT/FORWARD "
+            "earnings, not a backward cycle average."
+        )
+    else:  # stable
+        lines.append(
+            "Margin regime: STABLE — not a commodity cyclical, so spot earnings are the right basis "
+            "(no cycle-normalization). If current margins sit well ABOVE the 5yr median, weigh how "
+            "durable that expansion is (secular vs temporary) rather than mechanically mean-reverting."
+        )
     return "\n".join(lines)
 
 
@@ -63,7 +79,7 @@ class ValuationAgent(BaseAgent):
         # normalized-earnings view so it values cyclicals on mid-cycle, not peak, earnings.
         stock = await db.get(Stock, ticker)
         archetype = stock.archetype if stock else None
-        ne = await compute_normalized_earnings(db, ticker)
+        ne = await compute_normalized_earnings(db, ticker, archetype)
         market_cap = (snapshot.valuation or {}).get("market_cap") if snapshot.valuation else None
         regime_block = _format_normalized_earnings(archetype, ne, market_cap)
         if regime_block:
