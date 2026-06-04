@@ -196,7 +196,22 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > JSONB (Phase 3.2 will grade them at their date). Rendered in the UI as a dated checklist.
 > **Verified on MU:** e.g. "Data Center revenue declines QoQ for two consecutive quarters by Q4
 > FY2026" (watch: DC segment revenue → bear), "MU guides Q4 FY2026 revenue below $30B by 2026-07-15".
-> Closes P6. **Phase 2 remaining: 2.3 (valuation triangulation) — the last item.**
+> Closes P6.
+
+> **Status: 2.3 DONE (2026-06-03) — PHASE 2 COMPLETE.** Valuation agent now TRIANGULATES: it states
+> its own base fair value, the street mean target, the % divergence (recomputed deterministically in
+> `postprocess_report`), and MUST justify any gap >20% — an unexplained gap is flagged "UNJUSTIFIED".
+> **Verified on MU — the founding failure, reversed:** the agent that once said $1100 (above the $674
+> street, unexplained) now says **fair value $520, −23% vs the $674 street, justified** ("street
+> anchors on peak earnings momentum; I normalize for the commodity cycle"). $520 ≈ the user's
+> original chat-Claude read (~$500). Satisfies acceptance gate #3 (triangulation). Rendered in the
+> valuation card (Your FV / Street target / vs Street + reconciliation note).
+>
+> **PHASE 2 SHIPPED (2.1–2.6).** Resolves P2 ✅, P4 ✅, P6 ✅, P8 🟨, and finishes P1 ✅. The reasoning
+> layer is live end-to-end on MU: regime-aware valuation ($520, overvalued) → dialectic (judge bull,
+> conviction ~0.5, engages every bear point) → judge+evidence gate caps the decision to BUY → dated
+> kill-criteria for accountability. **Next major arc: Phase 3 (thesis journal + outcome grading +
+> calibration) — and the ML/measurement track (M1 embeddings, M3 cycle-position into the screen).**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|

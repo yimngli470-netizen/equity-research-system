@@ -875,17 +875,36 @@ export default function AgentBody({ agent }: Props) {
       {agent.agent_type === 'valuation' &&
         agent.valuation_tiles &&
         agent.valuation_tiles.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: 12,
-            }}
-          >
-            {agent.valuation_tiles.map((t, i) => (
-              <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
-            ))}
-          </div>
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gap: 12,
+              }}
+            >
+              {agent.valuation_tiles.map((t, i) => (
+                <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
+              ))}
+            </div>
+            {agent.valuation_note && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: '10px 14px',
+                  borderLeft: '2px solid var(--color-rule)',
+                  fontSize: 12.5,
+                  color: 'var(--color-ink-2)',
+                  lineHeight: 1.55,
+                }}
+              >
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginRight: 8 }}>
+                  vs Street
+                </span>
+                {emphasizeNumbers(agent.valuation_note)}
+              </div>
+            )}
+          </>
         )}
 
       {(agent.agent_type === 'bull' || agent.agent_type === 'bear') &&

@@ -57,6 +57,7 @@ export interface NormalizedAgent {
   industry_meta?: { cycle: string | null; moat: number | null };
   industry_competitors?: { name: string; threat: string; note: string }[];
   valuation_tiles?: Tile[];
+  valuation_note?: string | null;   // triangulation reconciliation vs the street (2.3)
   validation_tiles?: Tile[];
   // Dialectic (bull / bear): evidence-cited points.
   case_kind?: 'bull' | 'bear';
@@ -319,7 +320,21 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
     if (typeof r.valuation_verdict === 'string') {
       tiles.push({ label: 'Verdict', value: r.valuation_verdict.replace(/_/g, ' ') });
     }
+
+    // Triangulation vs the street (2.3): fair value, street target, divergence + justification.
+    const tri = (r.triangulation as Record<string, unknown>) || {};
+    const fv = asNumber(tri.your_fair_value);
+    const street = asNumber(tri.street_mean_target);
+    const div = asNumber(tri.divergence_pct);
+    if (fv != null) tiles.push({ label: 'Your fair value', value: fmtPriceTile(fv) });
+    if (street != null) tiles.push({ label: 'Street target', value: fmtPriceTile(street) });
+    if (div != null) {
+      tiles.push({ label: 'vs Street', value: fmtSignedPct(div), tone: div >= 0 ? 'pos' : 'neg' });
+    }
     base.valuation_tiles = tiles;
+    const justification = asString(tri.divergence_justification);
+    const reconciliation = asString(tri.reconciliation);
+    base.valuation_note = reconciliation || justification || null;
   }
 
   if (agent_type === 'bull' || agent_type === 'bear') {

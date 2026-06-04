@@ -167,6 +167,7 @@ You should assess:
 5. VALUATION VERDICT — Is the stock undervalued, fairly valued, or overvalued at current prices?
 6. CONSENSUS COMPARISON — If analyst estimates are provided, compare your assumptions against the consensus and explain any divergence.
 7. GUIDANCE ASSESSMENT — If management guidance is provided, assess the tone and compare it to consensus expectations.
+8. TRIANGULATION — Reconcile your OWN base fair value against (a) the street price target and (b) management guidance. If your fair value diverges materially from the street, you MUST justify it (see TRIANGULATION POLICY below).
 
 Be specific with numbers. Use the actual financial data provided to justify your assumptions.
 IMPORTANT: Use ONLY the data provided. Do not fabricate numbers. When analyst estimates or guidance are available, explicitly reference them.
@@ -219,8 +220,24 @@ You must respond with valid JSON only, no other text. Use this exact schema:
     "guidance_vs_consensus": "above | in_line | below",
     "key_guidance_points": ["string"]
   },
+  "triangulation": {
+    "your_fair_value": number,                  // your base-case fair value per share
+    "street_mean_target": number,               // from the ANALYST PRICE TARGET block, or null if absent
+    "divergence_pct": number,                   // (your_fair_value − street_mean_target)/street_mean_target, or null
+    "divergence_justification": "string — REQUIRED if |divergence_pct| > 0.20: a specific, defensible reason you differ from the street (e.g. 'street anchors on peak earnings'); null if within ±20%",
+    "vs_management_guidance": "above | in_line | below",
+    "reconciliation": "string — 1-2 sentences reconciling your fair value with the street and guidance"
+  },
   "summary": "string — 3-4 sentence valuation assessment"
 }
+
+TRIANGULATION POLICY (important):
+- Your DCF/multiples work sets your fair value; the street price target does NOT (it herds and lags).
+- BUT you must TRIANGULATE: state your fair value, the street mean target, and the % divergence.
+- If your fair value is more than 20% away from the street mean, you MUST give a specific, defensible
+  reason for the gap. A large UNEXPLAINED divergence from the street is not allowed — either justify
+  it (you see something the street doesn't, or vice-versa) or revisit your assumptions.
+- If no street price target is available, set street_mean_target/divergence_pct to null.
 
 CONSENSUS POLICY (important — two different things, weighted differently):
 1. FORWARD EPS/REVENUE CONSENSUS is a meaningful reference. Compare your estimates against
@@ -252,4 +269,18 @@ Respond with JSON only."""
             if abs(mos) > 1.5:               # almost certainly a percent
                 mos = mos / 100.0
             report["margin_of_safety"] = max(-1.0, min(5.0, mos))
+
+        # Triangulation (2.3): recompute the street divergence deterministically from the two
+        # numbers so it can't be miscalculated, and flag a large UNexplained gap.
+        tri = report.get("triangulation")
+        if isinstance(tri, dict):
+            fv = tri.get("your_fair_value")
+            street = tri.get("street_mean_target")
+            if isinstance(fv, (int, float)) and isinstance(street, (int, float)) and street > 0:
+                div = (fv - street) / street
+                tri["divergence_pct"] = round(div, 4)
+                if abs(div) > 0.20 and not (tri.get("divergence_justification") or "").strip():
+                    tri["divergence_justification"] = (
+                        "UNJUSTIFIED: fair value diverges >20% from the street mean with no stated reason."
+                    )
         return report
