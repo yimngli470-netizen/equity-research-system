@@ -360,6 +360,14 @@ async def run_decision(
 
     await db.commit()
 
+    # Thesis journal (roadmap 3.1): snapshot this verdict as the last pipeline step (run-once, not a
+    # scheduler). Best-effort — journaling must never break the decision.
+    try:
+        from app.thesis.journal import snapshot_thesis
+        await snapshot_thesis(db, ticker, decision_signal=final_signal)
+    except Exception:
+        logger.exception("[thesis] snapshot failed for %s", ticker)
+
     logger.info(
         "[decision] %s → raw=%s final=%s confidence=%s flags=%d",
         ticker, raw_signal, final_signal, confidence, len(flags),

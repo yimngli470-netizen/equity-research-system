@@ -287,6 +287,14 @@ async def test_full_backend_workflow(db, client, patch_world):
     assert dec.judge_leaning == "bear"
     assert dec.judge_conviction == pytest.approx(0.3)
 
+    # running the decision also journals an immutable thesis snapshot (3.1).
+    from app.models.thesis import StockThesis
+    th = (await db.execute(select(StockThesis).where(StockThesis.ticker == TICKER))).scalar_one()
+    assert th.leaning == "bear"
+    assert th.decision_signal == dec.final_signal
+    assert th.fair_value == 120.0          # from the canned valuation target mid
+    assert th.status == "open"
+
     # ========== 5) API → the screen reflects the freshly-scored name ==========
     rows = (await client.get("/api/scoring/screen")).json()
     me = next(r for r in rows if r["ticker"] == TICKER)

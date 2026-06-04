@@ -228,6 +228,14 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 ### Phase 3 — Accountability & Decisions (resolves P7, P9)
 
+> **Status: 3.1 DONE (2026-06-03) — thesis journal.** `stock_theses` table (migration
+> `e8c1d2f5a730`) + `app/thesis/journal.py::snapshot_thesis`, wired as the last step of
+> `run_decision` (run-once-on-pipeline, NOT a scheduler). Each run writes one immutable snapshot per
+> ticker/day: archetype, judge leaning + conviction + verdict, valuation fair_value, price_at,
+> composite, screen signal, binding decision, and the dated `kill_criteria`. **Verified on MU:** fair
+> value $520 vs price $751 captured with 3 dated predictions → a gradable bet on the record. Covered
+> by the e2e. **Next: 3.2 — grade due theses on the next pipeline run (per user: no scheduler).**
+
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 3.1 | **Thesis journal** — `stock_theses` table: thesis, bull/bear, predictions[], confidence, price_at, archetype, links to score/decision | M | persisted theses | each analyst run writes an immutable thesis snapshot |
