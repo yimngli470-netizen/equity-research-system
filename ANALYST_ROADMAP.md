@@ -231,11 +231,19 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 3.1 | **Thesis journal** — `stock_theses` table: thesis, bull/bear, predictions[], confidence, price_at, archetype, links to score/decision | M | persisted theses | each analyst run writes an immutable thesis snapshot |
-| 3.2 | **Outcome grading** — scheduler job revisits theses at horizon, scores each falsifiable prediction (hit/miss/partial) and price vs target | M | graded outcomes | predictions auto-scored after their date |
+| 3.2 | **Outcome grading** — **on each Run-Full-Pipeline** (NOT a background scheduler, per user), grade any open thesis whose kill-criteria `by_date` has passed: score each prediction hit/miss/partial against the freshly-ingested data + price vs fair value | M | graded outcomes | due predictions scored on the next pipeline run after their date |
 | 3.3 | **Calibration metrics** — Brier-style score + reliability curve, segmented by archetype | M | calibration dashboard | "when it says 80%, it's right ~X%" answerable, per archetype |
 | 3.4 | **Position-sizing / portfolio context** — recommendation includes size guidance conditioned on conviction + concentration + correlation with existing book | L | sizing block | recommendation is "how much," not just direction |
 
 ### Cross-cutting
+- **Measurement audit — logged limitation (2026-06-03).** Descriptive measurements (`compute_quant_profile`,
+  `computed_metrics`, peer similarity) are correctly universal, but the quant **SCREEN** still applies
+  universal rulers that are **peak-biased for cyclicals** (a cyclical at its top scores maximally bullish):
+  `quant/normalizer.py` fixed growth/margin/momentum bounds (High), `measurement/peer_normalize.py`
+  spot-multiple percentiles (Med), `decision/risk_flags.py` has no peak-cycle flag (Med). Shared fix =
+  feed `cycle_position` (already in `measurement/normalized_earnings.py`) into all three → this is **ML
+  M3**. The valuation *reasoning* + the *binding decision* are already cycle-aware; only the screen lags,
+  and the decision overrides the screen, so not urgent — tracked for M3.
 - **Observability & cost** — log every agent's prompt/raw output/tokens (the dry-run harness we built); budget guardrails.
 - **Schema/versioning** — version report schemas; migrations for all new tables.
 - **Backfill** — re-run EDGAR + IR extraction historically so the calibration loop has data to learn from sooner.
