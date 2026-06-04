@@ -69,7 +69,8 @@ export interface NormalizedAgent {
     decisive_factors: string[];
     bear_addressed: { point: string; assessment: string; reasoning: string }[];
     bull_addressed: { point: string; assessment: string; reasoning: string }[];
-    change_mind: string[];
+    kill_criteria: { prediction: string; watch_metric: string; by_date: string; would_confirm: string }[];
+    change_mind: string[]; // legacy fallback for older judge reports
   };
 }
 
@@ -347,12 +348,23 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
             }))
             .filter((p) => p.point)
         : [];
+    const killCriteria = Array.isArray(r.kill_criteria)
+      ? (r.kill_criteria as Record<string, unknown>[])
+          .map((k) => ({
+            prediction: asString(k.prediction),
+            watch_metric: asString(k.watch_metric),
+            by_date: asString(k.by_date),
+            would_confirm: asString(k.would_confirm).toLowerCase(),
+          }))
+          .filter((k) => k.prediction)
+      : [];
     base.judge_view = {
       leaning: asString(r.leaning).toLowerCase(),
       conviction: asNumber(r.conviction),
       decisive_factors: toStrList(r.decisive_factors),
       bear_addressed: addressed(r.bear_points_addressed),
       bull_addressed: addressed(r.bull_points_addressed),
+      kill_criteria: killCriteria,
       change_mind: toStrList(r.what_would_change_my_mind),
     };
   }

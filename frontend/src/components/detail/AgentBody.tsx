@@ -664,17 +664,52 @@ function JudgeBlock({ j }: { j: NonNullable<NormalizedAgent['judge_view']> }) {
       </div>
       <Addressed title="Bear points addressed" items={j.bear_addressed} />
       <Addressed title="Bull points addressed" items={j.bull_addressed} />
-      {j.change_mind.length > 0 && (
+      {j.kill_criteria.length > 0 ? (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginBottom: 8 }}>
-            What would change the call
+            Kill criteria — dated, falsifiable
           </div>
-          <ul style={{ margin: 0, padding: 0 }}>
-            {j.change_mind.map((c, i) => (
-              <RichBullet key={i} text={c} accent="var(--color-ink-3)" />
-            ))}
-          </ul>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {j.kill_criteria.map((k, i) => {
+              const tone = k.would_confirm === 'bull' ? 'var(--color-pos-fg)' : 'var(--color-neg-fg)';
+              return (
+                <div key={i} style={{ borderLeft: `2px solid ${tone}`, paddingLeft: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                    {k.by_date && (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--color-ink-3)', whiteSpace: 'nowrap' }}>
+                        {k.by_date}
+                      </span>
+                    )}
+                    {k.would_confirm && (
+                      <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: tone }}>
+                        → {k.would_confirm}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 12.5, color: 'var(--color-ink)' }}>{k.prediction}</span>
+                  </div>
+                  {k.watch_metric && (
+                    <div style={{ fontSize: 11.5, color: 'var(--color-ink-3)', marginTop: 2 }}>
+                      Watch: {k.watch_metric}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
+      ) : (
+        j.change_mind.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginBottom: 8 }}>
+              What would change the call
+            </div>
+            <ul style={{ margin: 0, padding: 0 }}>
+              {j.change_mind.map((c, i) => (
+                <RichBullet key={i} text={c} accent="var(--color-ink-3)" />
+              ))}
+            </ul>
+          </div>
+        )
       )}
     </div>
   );

@@ -49,7 +49,7 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 | **P3** | **Data starvation & shallowness** — 6 quarters (one empty), segment + cycle KPIs come back "not disclosed", no analyst consensus fed in. | Critical | ✅ **Largely resolved** (Phase 0) — EDGAR 21–67 quarters, consensus fed, KPI extraction proven (AMD 4/5); residual = blocked-ticker IR coverage |
 | **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | ✅ **Done** — provenance substrate (Phase 0) + evidence **gate** (2.4): low validation reliability / high contradiction rate caps a buy to HOLD at low confidence. Follow-up: per-claim source-citation in the validation prompt |
 | **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | 🟨 **Scoring layer done** (1.1 archetypes + 1.4 archetype-conditioned weights + 1.3 peer-relative). The "re-rate vs peak?" *reasoning* + cycle-position signal still open → P2.2 + ML M3 |
-| **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | 🟨 **Dialectic done** (2.1): bull/bear/judge with leaning + calibrated conviction + "what would change my mind". Dated kill-criteria still open → 2.5 |
+| **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | ✅ **Done** (2.1 + 2.5): bull/bear/judge with leaning + calibrated conviction + ≥2 **dated, falsifiable kill-criteria** (watch_metric + by_date + would_confirm) ready for Phase 3 grading |
 | **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
 | **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | 🟨 **margin_of_safety fixed** (2.6): schema says FRACTION + `postprocess_report` coerces percents & clamps. Broader free-number audit across all agents remains |
 | **P9** | **Composite-as-oracle framing** — UI + decision flow treat the weighted average as the recommendation (dashboard signal badge) | Medium | ✅ **Done** (1.5): composite reframed as a peer-rank screen (`/api/scoring/screen` + `ScreenRankBar`), "not a recommendation" copy, real archetype weights shown |
@@ -188,7 +188,15 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > illusion"). MU's AI-valuation sub-score 0.78 → 0.52. **Residual:** the composite SCREEN is still
 > 0.82 STRONG_BUY because growth/momentum/event remain peak-biased — fully de-biasing the screen
 > needs cycle-normalized growth/momentum features (ML M3 territory); the binding decision is already
-> BUY (judge-capped). **Phase 2 remaining: 2.3 (triangulation), 2.5 (dated kill-criteria).**
+> BUY (judge-capped).
+
+> **Status: 2.5 DONE (2026-06-03) — dated, falsifiable kill-criteria.** The judge now emits
+> structured `kill_criteria` (≥2): each a falsifiable prediction + `watch_metric` + `by_date` +
+> `would_confirm` (bull/bear), with conviction calibrated against them. Stored in the judge report
+> JSONB (Phase 3.2 will grade them at their date). Rendered in the UI as a dated checklist.
+> **Verified on MU:** e.g. "Data Center revenue declines QoQ for two consecutive quarters by Q4
+> FY2026" (watch: DC segment revenue → bear), "MU guides Q4 FY2026 revenue below $30B by 2026-07-15".
+> Closes P6. **Phase 2 remaining: 2.3 (valuation triangulation) — the last item.**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
