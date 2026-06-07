@@ -323,8 +323,9 @@ POST /api/scoring/run                     # Calculate score {ticker, weights?}
 GET  /api/scoring/weights                 # View default weights + thresholds
 GET  /api/scoring/features/{ticker}       # View all normalized features
 GET  /api/analysis/agents                 # List agents with cache settings + models
-POST /api/decision/run                    # Run decision engine {ticker}
-GET  /api/decision/{ticker}/latest        # Latest decision with risk flags
+POST /api/decision/run                    # Run decision engine {ticker} (incl. position sizing)
+GET  /api/decision/{ticker}/latest        # Latest decision with risk flags + position sizing
+GET  /api/decision/calibration            # Brier score + reliability curve over graded theses, per archetype
 ```
 
 ## Database

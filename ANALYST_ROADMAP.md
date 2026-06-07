@@ -50,7 +50,7 @@ These are the diagnosed defects from analysis of MU (a cyclical at cycle-peak, s
 | **P4** | **No verifiability / provenance** — agents cite numbers not present in their source; no `source`/`as_of` on stored data. (validation flagged 5/8 segment claims UNVERIFIABLE) | Critical | ✅ **Done** — provenance substrate (Phase 0) + evidence **gate** (2.4): low validation reliability / high contradiction rate caps a buy to HOLD at low confidence. Follow-up: per-claim source-citation in the validation prompt |
 | **P5** | **No regime / archetype awareness** — cannot distinguish cyclical-commodity vs platform vs compounder; can't reason "is this a re-rate or a peak?" | High | 🟨 **Scoring layer done** (1.1 archetypes + 1.4 archetype-conditioned weights + 1.3 peer-relative). The "re-rate vs peak?" *reasoning* + cycle-position signal still open → P2.2 + ML M3 |
 | **P6** | **Single-point verdicts; no dialectic, no calibrated uncertainty, no falsifiable theses** (valuation agent emits one bullish verdict + self-rated 0.85) | High | ✅ **Done** (2.1 + 2.5): bull/bear/judge with leaning + calibrated conviction + ≥2 **dated, falsifiable kill-criteria** (watch_metric + by_date + would_confirm) ready for Phase 3 grading |
-| **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ⬜ **Open** → Phase 3 + ML M4 |
+| **P7** | **No track record / calibration loop** — no way to know whether to trust any output (nothing journaled or graded) | High | ✅ **Done** (Phase 3): every verdict is journaled (3.1), its dated predictions graded on the next pipeline run after they come due (3.2), and the graded history rolls up into a Brier score + per-archetype reliability curve + `overconfidence_gap` (3.3) — which then *shrinks position size* (3.4). The trust loop is closed; ML M4 (learned calibration) is the long-term upgrade |
 | **P8** | **Prompt output-contract bugs** — `margin_of_safety` emitted as percent (53.3, unstable 31.5 on rerun) vs normalizer expecting a fraction; free `number` fields have undefined units. | Medium | 🟨 **margin_of_safety fixed** (2.6): schema says FRACTION + `postprocess_report` coerces percents & clamps. Broader free-number audit across all agents remains |
 | **P9** | **Composite-as-oracle framing** — UI + decision flow treat the weighted average as the recommendation (dashboard signal badge) | Medium | ✅ **Done** (1.5): composite reframed as a peer-rank screen (`/api/scoring/screen` + `ScreenRankBar`), "not a recommendation" copy, real archetype weights shown |
 
@@ -243,15 +243,32 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > plus deterministic `realized_return` + `fair_value_gap`. Incremental (grades predictions as they
 > come due; flips `status`→graded when all done); cheap no-op when nothing is due. **Verified live on
 > a synthetic past-due MU thesis:** "gross margin falls below 30% by 2026-03-31" → **MISS** (cited
-> "Q2 FY2026 GM 74.4%"); a not-yet-due fiscal-quarter prediction correctly left open. **Next: 3.3
-> (calibration — Brier/reliability per archetype, the answer to P7) + 3.4 (position sizing).**
+> "Q2 FY2026 GM 74.4%"); a not-yet-due fiscal-quarter prediction correctly left open.
+
+> **Status: 3.3 DONE (2026-06-06) — calibration (closes P7).** `app/thesis/calibration.py` turns the
+> graded thesis history into a Brier-style score + reliability curve, overall and **per archetype**,
+> over two outcome views: the judge's prediction hit-rate and directional (did-the-call-pay) success.
+> `overconfidence_gap = mean(conviction) − mean(realized)` answers "is the analyst's stated conviction
+> earned?" Exposed at `GET /api/decision/calibration`; pure deterministic stats (one query), degrades
+> to a clean no-op until there's graded history. Verified: Brier/bucket/directional math checks out on
+> synthetic rows; `calibration_shrink()` feeds 3.4. **This is the trust loop P7 asked for.**
+
+> **Status: 3.4 DONE (2026-06-06) — position sizing.** `app/decision/sizing.py::compute_position_size`
+> makes the recommendation a *how much*: a signal-keyed base weight × a transparent multiplier stack —
+> **conviction** (judge probability) × data **confidence** × **risk** (critical→0, each major ×0.8) ×
+> **concentration** (a correlation-with-book proxy: same-sector watchlist names) × the **calibration**
+> shrink from 3.3 — capped at a 10% single-name budget. Deterministic + fully auditable (every factor
+> in the rationale); a HOLD/REDUCE/SELL sizes to 0 (trim/exit, not add). Wired into `run_decision`
+> (persisted as `stock_decisions.position_sizing` JSONB, migration `f3a9b1c8d240`), surfaced in the
+> API + `DecisionPanel`. **Verified on the e2e:** MU's bear-judge-capped HOLD → 0% target, action
+> "hold". **Phase 3 COMPLETE.**
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 3.1 | **Thesis journal** — `stock_theses` table: thesis, bull/bear, predictions[], confidence, price_at, archetype, links to score/decision | M | persisted theses | each analyst run writes an immutable thesis snapshot |
 | 3.2 | **Outcome grading** — **on each Run-Full-Pipeline** (NOT a background scheduler, per user), grade any open thesis whose kill-criteria `by_date` has passed: score each prediction hit/miss/partial against the freshly-ingested data + price vs fair value | M | graded outcomes | due predictions scored on the next pipeline run after their date |
-| 3.3 | **Calibration metrics** — Brier-style score + reliability curve, segmented by archetype | M | calibration dashboard | "when it says 80%, it's right ~X%" answerable, per archetype |
-| 3.4 | **Position-sizing / portfolio context** — recommendation includes size guidance conditioned on conviction + concentration + correlation with existing book | L | sizing block | recommendation is "how much," not just direction |
+| 3.3 | ✅ **Calibration metrics** — Brier-style score + reliability curve, segmented by archetype | M | `GET /api/decision/calibration` | "when it says 80%, it's right ~X%" answerable, per archetype |
+| 3.4 | ✅ **Position-sizing / portfolio context** — recommendation includes size guidance conditioned on conviction + concentration + correlation with existing book | L | `position_sizing` block | recommendation is "how much," not just direction |
 
 ### Cross-cutting
 - **Measurement audit — logged limitation (2026-06-03).** Descriptive measurements (`compute_quant_profile`,

@@ -15,13 +15,15 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.decision.risk_flags import RiskFlag, evaluate_risk_flags
+from app.decision.sizing import compute_position_size
 from app.models.analysis import AnalysisReport
 from app.models.decision import StockDecision
 from app.models.score import QuantFeature, StockScore
+from app.models.stock import Stock
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +206,7 @@ class DecisionResult:
     scores: dict[str, float]
     judge_leaning: str | None = None
     judge_conviction: float | None = None
+    position_sizing: dict | None = None
 
 
 async def run_decision(
@@ -315,6 +318,41 @@ async def run_decision(
     confidence = _min_confidence(confidence, val_ceiling)
     adjustments += val_notes
 
+    # Position sizing (roadmap 3.4): translate the binding signal into a target weight, conditioned
+    # on conviction + data confidence + risk flags + sector concentration + the calibration shrink
+    # (3.3). Deterministic; best-effort — a sizing hiccup must never break the decision.
+    position_sizing: dict | None = None
+    try:
+        stock = (
+            await db.execute(select(Stock).where(Stock.ticker == ticker))
+        ).scalar_one_or_none()
+        archetype = stock.archetype if stock else None
+        sector = stock.sector if stock else None
+        sector_peers = 1
+        if sector:
+            sector_peers = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(Stock)
+                    .where(Stock.sector == sector, Stock.active.is_(True))
+                )
+            ).scalar_one() or 1
+
+        from app.thesis.calibration import calibration_shrink
+        cal_factor, cal_note = await calibration_shrink(db, archetype)
+
+        position_sizing = compute_position_size(
+            final_signal=final_signal,
+            confidence=confidence,
+            conviction=judge_conviction,
+            risk_flags=[f.to_dict() for f in flags],
+            sector_peers=sector_peers,
+            calibration_factor=cal_factor,
+            calibration_note=cal_note,
+        ).to_dict()
+    except Exception:
+        logger.exception("[decision] position sizing failed for %s", ticker)
+
     # Build reasoning
     reasoning = _build_reasoning(raw_signal, final_signal, scores, flags, confidence)
     if judge_report:
@@ -344,6 +382,7 @@ async def run_decision(
         row.reasoning = reasoning
         row.judge_leaning = judge_leaning
         row.judge_conviction = judge_conviction
+        row.position_sizing = position_sizing
     else:
         db.add(StockDecision(
             ticker=ticker,
@@ -356,6 +395,7 @@ async def run_decision(
             reasoning=reasoning,
             judge_leaning=judge_leaning,
             judge_conviction=judge_conviction,
+            position_sizing=position_sizing,
         ))
 
     await db.commit()
@@ -393,4 +433,5 @@ async def run_decision(
         scores=scores,
         judge_leaning=judge_leaning,
         judge_conviction=judge_conviction,
+        position_sizing=position_sizing,
     )

@@ -37,6 +37,10 @@ class StockDecision(Base):
     judge_leaning: Mapped[str | None] = mapped_column(String(20))
     judge_conviction: Mapped[float | None] = mapped_column(Float)
 
+    # Position-sizing block (roadmap 3.4) — how much, not just which way: target weight + the
+    # multiplier stack (conviction × confidence × risk × concentration × calibration).
+    position_sizing: Mapped[dict | None] = mapped_column(JSONB)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

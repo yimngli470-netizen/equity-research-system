@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.decision.engine import run_decision
 from app.models.decision import StockDecision
+from app.thesis.calibration import compute_calibration
 
 router = APIRouter(prefix="/api/decision", tags=["decision"])
 
@@ -35,6 +36,7 @@ class DecisionResponse(BaseModel):
     scores: dict[str, float]
     judge_leaning: str | None = None
     judge_conviction: float | None = None
+    position_sizing: dict | None = None
 
 
 @router.post("/run", response_model=DecisionResponse)
@@ -65,7 +67,15 @@ async def run_decision_endpoint(
         scores=result.scores,
         judge_leaning=result.judge_leaning,
         judge_conviction=result.judge_conviction,
+        position_sizing=result.position_sizing,
     )
+
+
+@router.get("/calibration")
+async def get_calibration(db: AsyncSession = Depends(get_db)):
+    """Calibration over the graded thesis history (roadmap 3.3): a Brier-style score + reliability
+    curve, overall and per archetype. The answer to 'when it says 70%, how often is it right?'"""
+    return await compute_calibration(db)
 
 
 @router.get("/{ticker}/latest", response_model=DecisionResponse | None)
@@ -115,4 +125,5 @@ async def get_latest_decision(ticker: str, db: AsyncSession = Depends(get_db)):
         scores=scores,
         judge_leaning=decision.judge_leaning,
         judge_conviction=decision.judge_conviction,
+        position_sizing=decision.position_sizing,
     )

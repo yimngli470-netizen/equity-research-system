@@ -91,6 +91,16 @@ export interface Decision {
   scores: Record<string, number>;
   judge_leaning: string | null;
   judge_conviction: number | null;
+  position_sizing: PositionSizing | null;
+}
+
+export interface PositionSizing {
+  action: string;               // accumulate | hold | trim | exit
+  target_weight_pct: number;
+  max_weight_pct: number;
+  tier: string;                 // none | starter | half | full | max
+  multipliers: Record<string, number>;
+  rationale: string;
 }
 
 export interface IngestionResult {

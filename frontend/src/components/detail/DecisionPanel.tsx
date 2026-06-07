@@ -81,6 +81,79 @@ export default function DecisionPanel({ decision }: Props) {
       >
         {decision.reasoning}
       </p>
+      {decision.position_sizing && <SizingBlock sizing={decision.position_sizing} />}
     </Card>
+  );
+}
+
+function SizingBlock({ sizing }: { sizing: NonNullable<Decision['position_sizing']> }) {
+  const accumulate = sizing.action === 'accumulate';
+  const actionLabel: Record<string, string> = {
+    accumulate: 'Accumulate',
+    hold: 'Hold — no new capital',
+    trim: 'Trim',
+    exit: 'Exit',
+  };
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        paddingTop: 16,
+        borderTop: '1px solid var(--color-rule-soft)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 18,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 96 }}>
+        <span
+          style={{
+            fontSize: 10,
+            letterSpacing: '.06em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+            color: 'var(--color-ink-3)',
+          }}
+        >
+          Position size
+        </span>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 22,
+            fontWeight: 700,
+            color: accumulate ? 'var(--color-ink)' : 'var(--color-ink-3)',
+          }}
+        >
+          {accumulate ? `${sizing.target_weight_pct.toFixed(1)}%` : '—'}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
+          {actionLabel[sizing.action] ?? sizing.action}
+          {accumulate && (
+            <>
+              {' · '}
+              <span style={{ textTransform: 'capitalize' }}>{sizing.tier}</span>
+              {' · cap '}
+              {sizing.max_weight_pct.toFixed(0)}%
+            </>
+          )}
+        </span>
+      </div>
+      <p
+        style={{
+          flex: 1,
+          minWidth: 200,
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: 'var(--color-ink-2)',
+          margin: 0,
+          fontFamily: 'var(--font-mono)',
+          textWrap: 'pretty' as const,
+        }}
+      >
+        {sizing.rationale}
+      </p>
+    </div>
   );
 }

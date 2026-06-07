@@ -295,6 +295,14 @@ async def test_full_backend_workflow(db, client, patch_world):
     assert th.fair_value == 120.0          # from the canned valuation target mid
     assert th.status == "open"
 
+    # position sizing (3.4): a capped-to-HOLD/REDUCE decision commits no new capital — the sizer
+    # returns a 0% target with a non-accumulate action.
+    sizing = dec.position_sizing
+    assert sizing is not None
+    assert sizing["action"] in {"hold", "trim", "exit"}
+    assert sizing["target_weight_pct"] == 0.0
+    assert sizing["max_weight_pct"] == 10.0
+
     # ========== 5) API → the screen reflects the freshly-scored name ==========
     rows = (await client.get("/api/scoring/screen")).json()
     me = next(r for r in rows if r["ticker"] == TICKER)
