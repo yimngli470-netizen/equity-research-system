@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CallHighlights, KeyMetric, NormalizedAgent, TileTone } from './agentView';
 
 const TONE_COLOR: Record<TileTone, string> = {
@@ -191,29 +193,79 @@ function ForwardGuidanceCallout({ text, tone }: { text: string; tone: string | n
 
 // ─── Tile / Stat ────────────────────────────────────────────────────────────
 
-// A small ⓘ that reveals an explanation on hover (native tooltip — no dependency, supports newlines).
+// A small ⓘ that reveals an explanation on hover/focus. Uses a portal + fixed positioning so the
+// popover escapes any overflow-clipping parent, and a real styled box (not the flaky native title).
 function InfoDot({ help }: { help: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [coords, setCoords] = useState<{ x: number; y: number; below: boolean } | null>(null);
+
+  const open = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const below = r.top < 170; // not enough room above → drop the popover below the icon
+    setCoords({ x: r.left + r.width / 2, y: below ? r.bottom : r.top, below });
+  };
+  const close = () => setCoords(null);
+
   return (
     <span
-      title={help}
+      ref={ref}
+      onMouseEnter={open}
+      onMouseLeave={close}
+      onFocus={open}
+      onBlur={close}
+      tabIndex={0}
+      role="button"
       aria-label={help}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 13,
-        height: 13,
+        width: 14,
+        height: 14,
         borderRadius: '50%',
-        border: '1px solid var(--color-ink-3)',
-        color: 'var(--color-ink-3)',
+        border: `1px solid ${coords ? 'var(--color-ink)' : 'var(--color-ink-3)'}`,
+        color: coords ? 'var(--color-ink)' : 'var(--color-ink-3)',
         fontSize: 9,
         fontWeight: 700,
         fontStyle: 'normal',
+        textTransform: 'none',
         cursor: 'help',
         lineHeight: 1,
+        flexShrink: 0,
       }}
     >
       i
+      {coords &&
+        createPortal(
+          <div
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              left: coords.x,
+              top: coords.below ? coords.y + 10 : coords.y - 10,
+              transform: coords.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+              maxWidth: 300,
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-rule)',
+              color: 'var(--color-ink-2)',
+              padding: '10px 12px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 400,
+              letterSpacing: 'normal',
+              lineHeight: 1.5,
+              whiteSpace: 'pre-line',
+              textTransform: 'none',
+              boxShadow: '0 8px 24px rgba(0,0,0,.22)',
+              zIndex: 10000,
+              pointerEvents: 'none',
+            }}
+          >
+            {help}
+          </div>,
+          document.body
+        )}
     </span>
   );
 }
