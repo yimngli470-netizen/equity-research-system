@@ -40,6 +40,14 @@ export interface KeyMetric {
   detail: string;
 }
 
+export interface ValidationCheck {
+  agent: string;        // which analyst agent made the claim
+  claim: string;        // the specific claim that was checked
+  verdict: 'CONFIRMED' | 'CLOSE' | 'CONTRADICTED' | 'UNVERIFIABLE' | string;
+  detail: string;       // how it was resolved against the DB
+  source: 'deterministic' | 'semantic' | string;
+}
+
 export interface NormalizedAgent {
   agent_type: string;
   model: string;
@@ -59,6 +67,7 @@ export interface NormalizedAgent {
   valuation_tiles?: Tile[];
   valuation_note?: string | null;   // triangulation reconciliation vs the street (2.3)
   validation_tiles?: Tile[];
+  validation_checks?: ValidationCheck[];   // the individual claims that were checked
   // Dialectic (bull / bear): evidence-cited points.
   case_kind?: 'bull' | 'bear';
   case_points?: { claim: string; evidence: string; weight: string }[];
@@ -85,7 +94,7 @@ const AGENT_MODEL: Record<string, string> = {
   bull: 'Opus 4',
   bear: 'Opus 4',
   judge: 'Opus 4',
-  validation: 'Sonnet 4',
+  validation: 'Deterministic',
 };
 
 function toStrList(v: unknown): string[] {
@@ -407,6 +416,15 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
         value: reliability != null ? reliability.toFixed(2) : '—',
       },
     ];
+
+    const rawChecks = Array.isArray(r.checks) ? (r.checks as Record<string, unknown>[]) : [];
+    base.validation_checks = rawChecks.map((c) => ({
+      agent: asString(c.agent) || '—',
+      claim: asString(c.claim) || asString(c.field) || 'Unspecified claim',
+      verdict: asString(c.verdict).toUpperCase() || 'UNVERIFIABLE',
+      detail: asString(c.detail),
+      source: asString(c.source) || 'deterministic',
+    }));
   }
 
   return base;

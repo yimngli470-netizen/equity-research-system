@@ -927,18 +927,94 @@ export default function AgentBody({ agent }: Props) {
       {agent.agent_type === 'judge' && agent.judge_view && <JudgeBlock j={agent.judge_view} />}
 
       {agent.agent_type === 'validation' && agent.validation_tiles && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: 12,
-          }}
-        >
-          {agent.validation_tiles.map((t, i) => (
-            <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
-          ))}
-        </div>
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 12,
+            }}
+          >
+            {agent.validation_tiles.map((t, i) => (
+              <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
+            ))}
+          </div>
+          {agent.validation_checks && agent.validation_checks.length > 0 ? (
+            <ValidationChecks checks={agent.validation_checks} />
+          ) : (
+            <p style={{ fontSize: 12, color: 'var(--color-ink-3)', marginTop: 14 }}>
+              No numeric claims were found to check in this run.
+            </p>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+const VERDICT_TONE: Record<string, string> = {
+  CONFIRMED: 'var(--color-pos-fg)',
+  CLOSE: 'var(--color-pos-fg)',
+  CONTRADICTED: 'var(--color-neg-fg)',
+  UNVERIFIABLE: 'var(--color-ink-3)',
+};
+
+function ValidationChecks({ checks }: { checks: NonNullable<NormalizedAgent['validation_checks']> }) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '.1em',
+          textTransform: 'uppercase',
+          color: 'var(--color-ink-3)',
+          marginBottom: 8,
+        }}
+      >
+        Claims checked — each re-derived against the database
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {checks.map((c, i) => {
+          const tone = VERDICT_TONE[c.verdict] || 'var(--color-ink-3)';
+          return (
+            <div key={i} style={{ borderLeft: `2px solid ${tone}`, paddingLeft: 12 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '.04em',
+                    color: tone,
+                  }}
+                >
+                  {c.verdict}
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--color-ink)', fontWeight: 500 }}>
+                  {c.claim}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--color-ink-3)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '.04em',
+                  }}
+                >
+                  · {c.agent}
+                  {c.source === 'semantic' ? ' · semantic' : ''}
+                </span>
+              </div>
+              {c.detail && (
+                <div style={{ fontSize: 12, color: 'var(--color-ink-2)', marginTop: 2 }}>
+                  {c.detail}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
