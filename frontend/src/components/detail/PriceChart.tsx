@@ -31,8 +31,11 @@ export default function PriceChart({ ticker, refreshKey = 0 }: Props) {
   }, [ticker, refreshKey]);
 
   const days = RANGES[rangeIdx].days;
-  // API returns ascending or descending? Check by sorting by date.
-  const sorted = [...prices].sort((a, b) => (a.date < b.date ? -1 : 1));
+  // Sort ascending and drop rows without a usable close (a bad/incomplete ingested bar serializes
+  // close as null — one such row must not blank the chart, let alone the page).
+  const sorted = [...prices]
+    .filter((p) => p.close != null && Number.isFinite(p.close))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
   const sliced = sorted.slice(-days);
   const points = sliced.map((p, i) => ({ day: i, price: p.close }));
   const latest = sorted.at(-1);

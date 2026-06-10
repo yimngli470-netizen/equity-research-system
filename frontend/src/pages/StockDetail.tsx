@@ -18,6 +18,7 @@ import PriceChart from '../components/detail/PriceChart';
 import RiskFlagsPanel from '../components/detail/RiskFlagsPanel';
 import ScoreBreakdownPanel from '../components/detail/ScoreBreakdownPanel';
 import ScreenRankBar from '../components/detail/ScreenRankBar';
+import ErrorBoundary from '../components/primitives/ErrorBoundary';
 import SectionHeader from '../components/primitives/SectionHeader';
 import { normalizeAgent } from '../components/detail/agentView';
 import { runPipeline, usePipelineState } from '../state/pipelineTracker';
@@ -187,17 +188,29 @@ export default function StockDetail() {
         </div>
       )}
 
-      <PriceChart ticker={ticker} refreshKey={dataRefreshKey} />
+      <ErrorBoundary label="Price chart">
+        <PriceChart ticker={ticker} refreshKey={dataRefreshKey} />
+      </ErrorBoundary>
 
-      {decision && <DecisionPanel decision={decision} />}
+      {decision && (
+        <ErrorBoundary label="Decision panel">
+          <DecisionPanel decision={decision} />
+        </ErrorBoundary>
+      )}
 
-      {screenRank && <ScreenRankBar rank={screenRank} />}
+      {screenRank && (
+        <ErrorBoundary label="Screen rank">
+          <ScreenRankBar rank={screenRank} />
+        </ErrorBoundary>
+      )}
 
       {score && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 18, marginBottom: 18 }}>
-          <ScoreBreakdownPanel score={score} />
-          <RiskFlagsPanel flags={decision?.risk_flags || []} />
-        </div>
+        <ErrorBoundary label="Score breakdown">
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 18, marginBottom: 18 }}>
+            <ScoreBreakdownPanel score={score} />
+            <RiskFlagsPanel flags={decision?.risk_flags || []} />
+          </div>
+        </ErrorBoundary>
       )}
 
       <SectionHeader
@@ -210,10 +223,14 @@ export default function StockDetail() {
         }
         actions={<AgentLayoutToggle value={agentLayout} onChange={setAgentLayout} />}
       />
-      <AgentReports agents={agentsOrdered} layout={agentLayout} />
+      <ErrorBoundary label="Agent reports">
+        <AgentReports agents={agentsOrdered} layout={agentLayout} />
+      </ErrorBoundary>
 
       <div style={{ marginTop: 28 }}>
-        <FinancialsTable ticker={ticker} refreshKey={dataRefreshKey} />
+        <ErrorBoundary label="Financials table">
+          <FinancialsTable ticker={ticker} refreshKey={dataRefreshKey} />
+        </ErrorBoundary>
       </div>
     </div>
   );

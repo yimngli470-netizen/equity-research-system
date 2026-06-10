@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 from datetime import date, timedelta
 
 import yfinance as yf
@@ -47,20 +48,34 @@ async def ingest_prices(
         return 0
 
     rows = []
+    skipped = 0
     for idx, row in df.iterrows():
         trade_date = idx.date() if hasattr(idx, "date") else idx
+        o, h, lo, c, ac = (float(row[k]) for k in ("Open", "High", "Low", "Close", "Adj Close"))
+        # yfinance sometimes returns an incomplete bar (e.g. today's, intraday) with NaN fields.
+        # A persisted NaN poisons everything downstream (JSON null → frontend crash, NaN momentum),
+        # so skip any row that isn't fully finite — it'll ingest cleanly on the next run.
+        if not all(math.isfinite(v) for v in (o, h, lo, c, ac)):
+            skipped += 1
+            logger.warning("[prices] %s %s: non-finite OHLC from yfinance — row skipped", ticker, trade_date)
+            continue
+        vol = row["Volume"]
         rows.append(
             {
                 "ticker": ticker,
                 "date": trade_date,
-                "open": float(row["Open"]),
-                "high": float(row["High"]),
-                "low": float(row["Low"]),
-                "close": float(row["Close"]),
-                "adj_close": float(row["Adj Close"]),
-                "volume": int(row["Volume"]),
+                "open": o,
+                "high": h,
+                "low": lo,
+                "close": c,
+                "adj_close": ac,
+                "volume": int(vol) if math.isfinite(float(vol)) else 0,
             }
         )
+
+    if not rows:
+        logger.warning("No valid price rows for %s (%d skipped)", ticker, skipped)
+        return 0
 
     # Upsert: insert or update on conflict
     stmt = insert(DailyPrice).values(rows)
