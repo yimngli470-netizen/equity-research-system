@@ -25,7 +25,13 @@ Rules:
 - Engage the actual business: if it's a cyclical, your bull case must address WHY the cycle has room
   to run, not just that recent results are strong.
 - Distinguish what's already priced in from genuine, under-appreciated upside.
-- Be calibrated: state your conviction honestly (a forced bull case can have low conviction).
+
+CONVICTION — pick from the band that matches how much HARD evidence your case rests on. Do NOT default
+to a round middle number; a forced bull case must score low:
+    0.80-0.95  nearly every key point backed by hard, specific data; little rides on assumption
+    0.60-0.75  core points evidenced, but 1-2 lean on judgment or forward assumptions
+    0.40-0.55  the case needs several things to break your way; evidence is mixed or thin
+    0.20-0.35  a forced case — you're arguing a side the evidence barely supports
 
 Respond with valid JSON only, this exact schema:
 {
@@ -39,7 +45,7 @@ Respond with valid JSON only, this exact schema:
   "upside_scenario": "string — what the next 12-24 months look like if you're right",
   "bull_fair_value": number,        // your bull-case fair value per share, or null if not estimable
   "whats_priced_in": "string — what the market already reflects (so the edge is the rest)",
-  "conviction": 0.0-1.0             // honest confidence in this bull case
+  "conviction": 0.0-1.0             // pick from the evidence-strength band above, stated honestly
 }"""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:

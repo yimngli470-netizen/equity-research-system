@@ -67,6 +67,8 @@ export interface NormalizedAgent {
   judge_view?: {
     leaning: string;
     conviction: number | null;
+    unresolved_bear_points: number | null;
+    total_bear_points: number | null;
     decisive_factors: string[];
     bear_addressed: { point: string; assessment: string; reasoning: string }[];
     bull_addressed: { point: string; assessment: string; reasoning: string }[];
@@ -376,6 +378,8 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
     base.judge_view = {
       leaning: asString(r.leaning).toLowerCase(),
       conviction: asNumber(r.conviction),
+      unresolved_bear_points: asNumber(r.unresolved_bear_points),
+      total_bear_points: asNumber(r.total_bear_points),
       decisive_factors: toStrList(r.decisive_factors),
       bear_addressed: addressed(r.bear_points_addressed),
       bull_addressed: addressed(r.bull_points_addressed),

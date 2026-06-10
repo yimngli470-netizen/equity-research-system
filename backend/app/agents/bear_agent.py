@@ -34,7 +34,13 @@ Stress-test specifically (these are where bull cases usually break):
 Rules:
 - Cite evidence for every claim. No vague "it could fall".
 - Rank your points by how much they'd actually impair the thesis (severity).
-- Be calibrated: state honest conviction.
+
+CONVICTION — pick from the band that matches how much HARD evidence your case rests on. Do NOT default
+to a round middle number; a reflexive, thinly-evidenced bear case must score low:
+    0.80-0.95  nearly every key risk backed by hard, specific data; the impairment is concrete
+    0.60-0.75  core risks evidenced, but 1-2 lean on judgment or things that haven't broken yet
+    0.40-0.55  the case needs several things to go wrong; evidence is mixed or thin
+    0.20-0.35  a forced case — you're shorting a side the evidence barely supports
 
 Respond with valid JSON only, this exact schema:
 {
@@ -48,7 +54,7 @@ Respond with valid JSON only, this exact schema:
   "downside_scenario": "string — what the next 12-24 months look like if you're right",
   "bear_fair_value": number,        // your bear-case fair value per share, or null if not estimable
   "cycle_warning": "string — if cyclical: where in the cycle, and the normalized-earnings view; else null",
-  "conviction": 0.0-1.0
+  "conviction": 0.0-1.0             // pick from the evidence-strength band above, stated honestly
 }"""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:

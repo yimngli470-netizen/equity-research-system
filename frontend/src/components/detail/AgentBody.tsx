@@ -656,10 +656,21 @@ function JudgeBlock({ j }: { j: NonNullable<NormalizedAgent['judge_view']> }) {
           <LeaningScale leaning={j.leaning} />
         </div>
         {j.conviction != null && (
-          <ConvictionMeter
-            value={j.conviction}
-            help="How sure the judge is of this leaning after weighing the bear case — lower when serious bear points stay unresolved. This is confidence in the call, not the odds the stock rises."
-          />
+          <div>
+            <ConvictionMeter
+              value={j.conviction}
+              help="How sure the judge is of this leaning after weighing the bear case — set by an anchored rubric off the count of unresolved bear points, not a gestalt guess. This is confidence in the call, not the odds the stock rises."
+            />
+            {j.unresolved_bear_points != null && j.total_bear_points != null && (
+              <div style={{ fontSize: 11, color: 'var(--color-ink-3)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>
+                {j.unresolved_bear_points} of {j.total_bear_points} bear point
+                {j.total_bear_points !== 1 ? 's' : ''} unresolved
+                <span style={{ color: 'var(--color-ink-4, var(--color-ink-3))' }}>
+                  {' '}— the rubric anchor for this conviction
+                </span>
+              </div>
+            )}
+          </div>
         )}
       </div>
       <Addressed title="Bear points addressed" items={j.bear_addressed} />

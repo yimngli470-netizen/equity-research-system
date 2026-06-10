@@ -113,8 +113,11 @@ _AGENT_REPORT = {
     "guidance_assessment": {"management_guidance_tone": "confident", "guidance_vs_consensus": "above"},
     "summary": {"reliability_score": 0.8, "total_checks": 10, "contradicted": 1},
     # Judge fields (2.1/2.4): a bear leaning here must cap the decision signal below the screen.
+    # conviction is rubric-anchored off the unresolved-bear-point count (3 of 4 → low band).
     "leaning": "bear",
     "conviction": 0.3,
+    "unresolved_bear_points": 3,
+    "total_bear_points": 4,
 }
 
 
