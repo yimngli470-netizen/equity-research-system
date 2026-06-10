@@ -271,6 +271,14 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 3.4 | ✅ **Position-sizing / portfolio context** — recommendation includes size guidance conditioned on conviction + concentration + correlation with existing book | L | `position_sizing` block | recommendation is "how much," not just direction |
 
 ### Cross-cutting
+- **LLM-cost trim (2026-06-09).** Per-pipeline LLM calls **8 → 6** (5 Opus + 1 Sonnet). Two changes,
+  both behaviour-preserving (e2e golden composite unchanged): (1) **validation is deterministic-only**
+  — the Sonnet semantic pass confirmed ~95% of claims and almost never moved the evidence gate, so it
+  was dropped; the pure-Python `deterministic_validator` (which catches the real risk — hallucinated
+  numbers — for free) stays and still feeds the gate + AI features. (2) **bull+bear from one Opus call**
+  (`agents/debate.py::DebateAgent`) — same evidence pack, so one dual-advocate call writes both `bull`
+  and `bear` rows; judge/UI/features/e2e read two rows unchanged. Deeper cuts available if wanted
+  (drop news; downgrade earnings/industry to Sonnet) but they trade away analysis depth — not taken.
 - **Measurement audit — logged limitation (2026-06-03).** Descriptive measurements (`compute_quant_profile`,
   `computed_metrics`, peer similarity) are correctly universal, but the quant **SCREEN** still applies
   universal rulers that are **peak-biased for cyclicals** (a cyclical at its top scores maximally bullish):

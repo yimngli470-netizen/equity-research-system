@@ -65,7 +65,22 @@ class BaseAgent(ABC):
         context = await self.build_context(db, ticker)
         system_prompt = self.get_system_prompt()
         user_prompt = self.get_user_prompt(ticker, context)
+        user_prompt = await self._augment_user_prompt(db, ticker, user_prompt)
 
+        # Call Claude API in a thread to avoid blocking the async event loop
+        import asyncio
+        report = await asyncio.to_thread(self._call_claude, system_prompt, user_prompt)
+        report = self.postprocess_report(report, ticker)
+
+        # Save to DB
+        await self._save_report(db, ticker, report)
+
+        return report
+
+    async def _augment_user_prompt(self, db: AsyncSession, ticker: str, user_prompt: str) -> str:
+        """Prepend deterministic, real-time anchors to a user prompt (shared by all agents and the
+        bull/bear debate): today's date, a just-reported-quarter marker, and stale-data warnings.
+        Pure code, no LLM — keeps agents from narrating stale data as 'current'."""
         # Anchor the agent in real time so it stops hallucinating "validation_date: 2024-12-19"
         # and so claims about "current" / "latest" data have a concrete reference point.
         prefix_parts = [f"Today's date is {date.today().isoformat()}."]
@@ -96,17 +111,7 @@ class BaseAgent(ABC):
         except Exception:
             logger.exception("[%s] freshness check failed for %s", self.agent_type, ticker)
 
-        user_prompt = "\n\n".join(prefix_parts) + f"\n\n{user_prompt}"
-
-        # Call Claude API in a thread to avoid blocking the async event loop
-        import asyncio
-        report = await asyncio.to_thread(self._call_claude, system_prompt, user_prompt)
-        report = self.postprocess_report(report, ticker)
-
-        # Save to DB
-        await self._save_report(db, ticker, report)
-
-        return report
+        return "\n\n".join(prefix_parts) + f"\n\n{user_prompt}"
 
     @abstractmethod
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
@@ -202,12 +207,16 @@ class BaseAgent(ABC):
         return result.scalar_one_or_none()
 
     async def _save_report(self, db: AsyncSession, ticker: str, report: dict):
-        """Save or update the analysis report in the database."""
-        # Check for existing report today
+        """Save or update this agent's report in the database."""
+        await self._save_report_as(db, ticker, self.agent_type, report)
+
+    async def _save_report_as(self, db: AsyncSession, ticker: str, agent_type: str, report: dict):
+        """Upsert an analysis report under an explicit agent_type. Lets one LLM call persist more
+        than one report row (e.g. the bull/bear debate writes both `bull` and `bear` from one call)."""
         existing = await db.execute(
             select(AnalysisReport).where(
                 AnalysisReport.ticker == ticker,
-                AnalysisReport.agent_type == self.agent_type,
+                AnalysisReport.agent_type == agent_type,
                 AnalysisReport.run_date == date.today(),
             )
         )
@@ -220,7 +229,7 @@ class BaseAgent(ABC):
             db.add(
                 AnalysisReport(
                     ticker=ticker,
-                    agent_type=self.agent_type,
+                    agent_type=agent_type,
                     run_date=date.today(),
                     report=report,
                     version=1,
@@ -228,4 +237,4 @@ class BaseAgent(ABC):
             )
 
         await db.commit()
-        logger.info("[%s] Saved report for %s", self.agent_type, ticker)
+        logger.info("[%s] Saved report for %s", agent_type, ticker)

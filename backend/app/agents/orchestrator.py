@@ -6,8 +6,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.bear_agent import BearAgent
-from app.agents.bull_agent import BullAgent
+from app.agents.debate import DebateAgent
 from app.agents.earnings_agent import EarningsAgent
 from app.agents.industry_agent import IndustryAgent
 from app.agents.judge_agent import JudgeAgent
@@ -20,21 +19,18 @@ logger = logging.getLogger(__name__)
 
 # Agent registry. ORDER MATTERS — agents run sequentially in this order, each committing before the
 # next. The bull/bear/judge dialectic (roadmap 2.1) is a synthesis layer: it must run AFTER the four
-# analytical agents (whose reports it reads), and the judge must run AFTER bull and bear (it
-# reconciles their cases). Validation always runs last (see run_all_agents).
+# analytical agents (whose reports it reads). Bull and bear come from ONE Opus call (`DebateAgent`,
+# which writes both `bull` and `bear` rows), then the judge reconciles them. Validation runs last and
+# is deterministic-only (no LLM). Note: "bull"/"bear" are produced by the debate step, not the
+# registry — see run_all_agents.
 AGENTS = {
     "news": NewsAgent,
     "earnings": EarningsAgent,
     "industry": IndustryAgent,
     "valuation": ValuationAgent,
-    "bull": BullAgent,
-    "bear": BearAgent,
     "judge": JudgeAgent,
     "validation": ValidationAgent,
 }
-
-# The adversarial dialectic must run in this relative order, after the analytical agents.
-_DIALECTIC_ORDER = ["bull", "bear", "judge"]
 
 
 @dataclass
@@ -54,6 +50,11 @@ class OrchestrationResult:
     @property
     def all_succeeded(self) -> bool:
         return all(r.success for r in self.results)
+
+
+# Every pipeline step in canonical run order. bull+bear come from the single debate call.
+_ALL_STEPS = ["news", "earnings", "industry", "valuation", "bull", "bear", "judge", "validation"]
+_ANALYTICAL = ["news", "earnings", "industry", "valuation"]
 
 
 async def _run_single_agent(
@@ -93,6 +94,22 @@ async def _run_single_agent(
         )
 
 
+async def _run_debate(ticker: str, force: bool) -> list[AgentResult]:
+    """One Opus call → both the bull and bear rows. Returns an AgentResult for each side."""
+    from app.agents.debate import DebateAgent
+
+    try:
+        async with async_session() as db:
+            pair = await DebateAgent().run(db, ticker, force=force)
+        return [
+            AgentResult(agent_type=side, success="error" not in rep, report=rep, cached=False)
+            for side, rep in (("bull", pair["bull"]), ("bear", pair["bear"]))
+        ]
+    except Exception as e:
+        logger.exception("[debate] failed for %s", ticker)
+        return [AgentResult(agent_type=s, success=False, error=str(e)) for s in ("bull", "bear")]
+
+
 async def run_all_agents(
     ticker: str,
     agent_types: list[str] | None = None,
@@ -108,39 +125,47 @@ async def run_all_agents(
         agent_types: Specific agents to run. None = all agents.
         force: Skip cache and re-run all agents.
     """
-    requested = set(agent_types or list(AGENTS.keys()))
+    requested = set(agent_types or _ALL_STEPS)
 
-    # Validate agent types
+    # Validate requested steps
     for t in requested:
-        if t not in AGENTS:
-            raise ValueError(f"Unknown agent type: {t}. Available: {list(AGENTS.keys())}")
+        if t not in _ALL_STEPS:
+            raise ValueError(f"Unknown agent type: {t}. Available: {_ALL_STEPS}")
 
-    # Enforce execution order regardless of how agent_types was passed: analytical agents first
-    # (the dialectic reads their reports), then bull → bear → judge, then validation last.
-    analytical = [t for t in ("news", "earnings", "industry", "valuation") if t in requested]
-    dialectic = [t for t in _DIALECTIC_ORDER if t in requested]
+    # Enforce execution order regardless of how agent_types was passed: analytical agents first (the
+    # dialectic reads their reports), then the bull/bear debate (one call), then the judge, then
+    # validation (deterministic, depends on fresh agent outputs).
+    analytical = [t for t in _ANALYTICAL if t in requested]
+    run_debate = ("bull" in requested) or ("bear" in requested)
+    run_judge = "judge" in requested
     run_validation = "validation" in requested
-    types = analytical + dialectic
 
-    logger.info("Running agents for %s: %s (force=%s)", ticker, types, force)
+    logger.info("Running for %s: analytical=%s debate=%s judge=%s validation=%s (force=%s)",
+                ticker, analytical, run_debate, run_judge, run_validation, force)
 
     result = OrchestrationResult(ticker=ticker)
 
-    for agent_type in types:
+    for agent_type in analytical:
         agent_result = await _run_single_agent(agent_type, ticker, force)
         result.results.append(agent_result)
-
         status = "cached" if agent_result.cached else ("ok" if agent_result.success else "FAILED")
-        logger.info(
-            "[%s] %s → %s",
-            agent_type, ticker, status,
-        )
+        logger.info("[%s] %s → %s", agent_type, ticker, status)
+
+    if run_debate:
+        for agent_result in await _run_debate(ticker, force):
+            result.results.append(agent_result)
+            logger.info("[%s] %s → %s", agent_result.agent_type, ticker,
+                        "ok" if agent_result.success else "FAILED")
+
+    if run_judge:
+        agent_result = await _run_single_agent("judge", ticker, force)
+        result.results.append(agent_result)
+        logger.info("[judge] %s → %s", ticker, "ok" if agent_result.success else "FAILED")
 
     # Run validation last — always force since it depends on fresh agent outputs
     if run_validation:
         agent_result = await _run_single_agent("validation", ticker, force=True)
         result.results.append(agent_result)
-        status = "ok" if agent_result.success else "FAILED"
-        logger.info("[validation] %s → %s", ticker, status)
+        logger.info("[validation] %s → %s", ticker, "ok" if agent_result.success else "FAILED")
 
     return result

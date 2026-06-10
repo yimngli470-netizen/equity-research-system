@@ -137,7 +137,12 @@ def patch_world(engine, monkeypatch):
             class _Messages:
                 def create(_self, *, system, messages, **kw):
                     captured_prompts.append({"system": system, "user": messages[-1]["content"]})
-                    text = json.dumps(_AGENT_REPORT)
+                    # The bull/bear debate (DebateAgent) asks for both cases in one call → nest them.
+                    if "DUAL ADVOCATE" in system:
+                        payload = {"bull": _AGENT_REPORT, "bear": _AGENT_REPORT}
+                    else:
+                        payload = _AGENT_REPORT
+                    text = json.dumps(payload)
                     return type("R", (), {"content": [type("C", (), {"text": text})()]})()
 
             self.messages = _Messages()

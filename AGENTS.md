@@ -7,14 +7,23 @@ This project's canonical documentation for AI coding agents lives in **[`CLAUDE.
 Read those instead of a second copy here — a previous standalone copy of the docs in this file
 had drifted out of date, so it was replaced with this pointer to keep a single source of truth.
 
-## LLM surface (as of 2026-06-03)
+## LLM surface (as of 2026-06-09)
 
-**8 orchestrated research agents** (`BaseAgent` subclasses in `app/agents/`, run per ticker via
-`orchestrator.run_all_agents`): `news, earnings, industry, valuation` (analytical) → `bull, bear,
-judge` (dialectic, roadmap 2.1) → `validation` (last). **5 LLM utilities** (call Claude but aren't
-orchestrated agents, mostly once-per-ticker-cached): `ingestion/archetype` (business-model label),
-`ingestion/bootstrap` (KPI defs + IR discovery), `ingestion/kpi_extractor`, `agents/transcript_summarizer`,
-`ingestion/ir/repair`. → **13 distinct LLM tasks.**
+**Per-pipeline LLM calls: 6** (was 8 — trimmed 2026-06-09). The orchestrated steps
+(`orchestrator.run_all_agents`): `news` (Sonnet), `earnings, industry, valuation` (Opus, analytical)
+→ the **bull/bear `debate`** (one Opus call in `agents/debate.py::DebateAgent` that produces BOTH the
+`bull` and `bear` report rows — was two calls) → `judge` (Opus) → `validation` (**deterministic-only,
+no LLM** — `agents/validation_agent.py` runs the pure-Python `decision/deterministic_validator`). So
+5 Opus + 1 Sonnet per run.
+
+Why the trim: the bull and bear advocate the *same* evidence pack, so one dual-advocate call suffices
+(judge/UI/features still read two rows). And the validation LLM (semantic) pass confirmed ~95% of
+claims and almost never moved the gate — its real value (catching hallucinated numbers) was already
+in the deterministic validator, which stays. See roadmap "LLM-cost trim".
+
+**5 LLM utilities** (call Claude but aren't orchestrated agents, mostly once-per-ticker-cached):
+`ingestion/archetype` (business-model label), `ingestion/bootstrap` (KPI defs + IR discovery),
+`ingestion/kpi_extractor`, `agents/transcript_summarizer`, `ingestion/ir/repair`.
 
 **Architecture rule (§4a):** the LLM assigns knowledge-laden *labels once* (e.g. `stocks.archetype`,
 cached on the row); all downstream numbers (normalization basis, peer weights, scoring, the

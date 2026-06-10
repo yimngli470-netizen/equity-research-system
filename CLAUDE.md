@@ -96,7 +96,8 @@ backend/
       industry_agent.py      #   Opus 4, weekly refresh, cycle position + competitive landscape
       valuation_agent.py     #   Opus 4, weekly refresh, DCF + multiples + consensus comparison
       validation_agent.py    #   Sonnet 4, runs after all agents, cross-checks claims vs hard data
-      orchestrator.py        #   run_all_agents() sequential execution, validation always last
+      orchestrator.py        #   run_all_agents(): analytical → bull/bear debate (1 call) → judge → validation
+      debate.py              #   DebateAgent: one Opus call → both bull + bear report rows (roadmap 2.1)
       transcript_utils.py    #   Keyword-based transcript filtering for agent context windows
     quant/                   # Layer 3: feature extraction
       hard_features.py       #   31 features from financials: growth, profitability, valuation, momentum
@@ -166,7 +167,9 @@ Each agent has a `max_age_days` setting. When triggered:
 | Earnings | Opus 4 | Monthly | Quarterly deep-dive + transcript analysis | yfinance financials + transcript (FMP → IR fallback) + FMP surprises |
 | Industry | Opus 4 | Weekly | Cycle position, competitive landscape | yfinance + transcript competitive excerpts (FMP → IR fallback) |
 | Valuation | Opus 4 | Weekly | DCF, multiples, consensus comparison | yfinance + FMP estimates + transcript guidance (FMP → IR fallback) |
-| Validation | Sonnet 4 | Every run | Cross-check agent claims vs hard DB data | All agent reports + DB financials/valuation/estimates |
+| Bull + Bear (debate) | Opus 4 | Every run | Strongest honest bull AND bear case — **one Opus call** (`debate.py`) writes both rows | Shared evidence pack (financials + archetype + screen + analyst reports) |
+| Judge | Opus 4 | Every run | Reconciles bull vs bear → leaning + rubric-anchored conviction + dated kill-criteria | Bull + bear cases |
+| Validation | **None (deterministic)** | Every run | Re-derive numeric claims vs hard DB data (no LLM) | All agent reports + DB financials/valuation/estimates |
 
 ### Refresh Strategy
 The system has two trigger paths with deliberately different cache semantics:
