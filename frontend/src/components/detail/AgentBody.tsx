@@ -191,7 +191,34 @@ function ForwardGuidanceCallout({ text, tone }: { text: string; tone: string | n
 
 // ─── Tile / Stat ────────────────────────────────────────────────────────────
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: TileTone }) {
+// A small ⓘ that reveals an explanation on hover (native tooltip — no dependency, supports newlines).
+function InfoDot({ help }: { help: string }) {
+  return (
+    <span
+      title={help}
+      aria-label={help}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 13,
+        height: 13,
+        borderRadius: '50%',
+        border: '1px solid var(--color-ink-3)',
+        color: 'var(--color-ink-3)',
+        fontSize: 9,
+        fontWeight: 700,
+        fontStyle: 'normal',
+        cursor: 'help',
+        lineHeight: 1,
+      }}
+    >
+      i
+    </span>
+  );
+}
+
+function Stat({ label, value, tone, help }: { label: string; value: string; tone?: TileTone; help?: string }) {
   return (
     <div style={{ padding: 12, background: 'var(--color-surface-2)', borderRadius: 6 }}>
       <div
@@ -202,9 +229,13 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: Til
           color: 'var(--color-ink-3)',
           fontWeight: 600,
           marginBottom: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
         }}
       >
         {label}
+        {help && <InfoDot help={help} />}
       </div>
       <div
         style={{
@@ -816,7 +847,7 @@ export default function AgentBody({ agent }: Props) {
               }}
             >
               {agent.earnings_tiles.map((t, i) => (
-                <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
+                <Stat key={i} label={t.label} value={t.value} tone={t.tone} help={t.help} />
               ))}
             </div>
           )}
@@ -895,7 +926,7 @@ export default function AgentBody({ agent }: Props) {
               }}
             >
               {agent.valuation_tiles.map((t, i) => (
-                <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
+                <Stat key={i} label={t.label} value={t.value} tone={t.tone} help={t.help} />
               ))}
             </div>
             {agent.valuation_note && (
@@ -936,7 +967,7 @@ export default function AgentBody({ agent }: Props) {
             }}
           >
             {agent.validation_tiles.map((t, i) => (
-              <Stat key={i} label={t.label} value={t.value} tone={t.tone} />
+              <Stat key={i} label={t.label} value={t.value} tone={t.tone} help={t.help} />
             ))}
           </div>
           {agent.validation_checks && agent.validation_checks.length > 0 ? (

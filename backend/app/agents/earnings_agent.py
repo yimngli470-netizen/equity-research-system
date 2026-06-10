@@ -22,6 +22,31 @@ class EarningsAgent(BaseAgent):
     max_age_days = 30  # refresh monthly or when new quarter drops
     model = "claude-opus-4-20250514"
 
+    async def run(self, db: AsyncSession, ticker: str, force: bool = False) -> dict:
+        """Run the LLM agent, then overwrite the beat/miss NUMBERS with deterministic ones computed
+        from `earnings_events` (the LLM emitted `avg_surprise_pct` in ambiguous units — see
+        `quant/earnings_surprise.py`). Keeps the LLM's narrative; fixes only the measured figures."""
+        report = await super().run(db, ticker, force=force)
+        if not isinstance(report, dict) or "error" in report:
+            return report
+
+        from app.quant.earnings_surprise import eps_surprise_stats
+        stats = await eps_surprise_stats(db, ticker)
+        if stats is None:
+            return report
+
+        bm = dict(report.get("beat_miss_history") or {})
+        corrected = {"last_4q_eps_beats": stats.last_4q_eps_beats,
+                     "avg_surprise_pct": stats.avg_surprise_pct,  # a FRACTION (0.117 = +11.7%)
+                     "trend": stats.trend}
+        if {k: bm.get(k) for k in corrected} != corrected:
+            bm.update(corrected)
+            report["beat_miss_history"] = bm
+            await self._save_report(db, ticker, report)  # persist the corrected figures
+            logger.info("[earnings] %s: corrected beat/miss → beats=%d avg_surprise=%.3f trend=%s",
+                        ticker, stats.last_4q_eps_beats, stats.avg_surprise_pct, stats.trend)
+        return report
+
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         snapshot = await get_computed_metrics(db, ticker)
         context = format_for_llm(snapshot)

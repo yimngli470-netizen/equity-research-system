@@ -10,6 +10,7 @@ export interface Tile {
   label: string;
   value: string;
   tone?: TileTone;
+  help?: string;   // optional explanation shown via an info icon on hover
 }
 
 export interface EvidenceNote {
@@ -129,12 +130,35 @@ function fmtPriceTile(v: number | null): string {
 // Map a trend/direction string from the agent to a tile + tone.
 // 'unknown' renders muted (gray italic) so the user can tell the difference
 // between "agent says decelerating" and "agent has no idea".
+// Plain-language definitions for the trend labels, shown on the tile's info icon.
+const REVENUE_TREND_HELP =
+  'How the revenue GROWTH RATE itself is changing over recent quarters (not the level):\n' +
+  '• Accelerating — the YoY growth rate is rising (e.g. +20% → +25%).\n' +
+  '• Stable — the growth rate is holding roughly steady.\n' +
+  '• Decelerating — still growing, but the growth rate is slowing each period.\n' +
+  '• Unknown — not enough guidance/consensus/transcript evidence to classify.';
+const MARGIN_TREND_HELP =
+  'How profit MARGINS are moving over recent quarters:\n' +
+  '• Expanding — margins widening (operating leverage / pricing power).\n' +
+  '• Stable — margins roughly flat.\n' +
+  '• Compressing — margins narrowing (cost or pricing pressure).\n' +
+  '• Unknown — not enough evidence to classify.';
+
+function trendKind(label: string): 'revenue' | 'margin' {
+  return /margin/i.test(label) ? 'margin' : 'revenue';
+}
+
 function trendTile(label: string, raw: string): Tile {
   const v = raw.toLowerCase();
-  if (v === 'unknown') return { label, value: 'Unknown', tone: 'muted' };
-  if (v === 'accelerating' || v === 'expanding') return { label, value: raw, tone: 'pos' };
-  if (v === 'decelerating' || v === 'compressing') return { label, value: raw, tone: 'warn' };
-  return { label, value: raw };
+  const fwd = /^fwd/i.test(label);
+  const base = trendKind(label) === 'margin' ? MARGIN_TREND_HELP : REVENUE_TREND_HELP;
+  const help = fwd
+    ? `Forward view — what to expect NEXT quarter, from management guidance, consensus, or the call.\n\n${base}`
+    : `Trailing view — what recent reported quarters show.\n\n${base}`;
+  if (v === 'unknown') return { label, value: 'Unknown', tone: 'muted', help };
+  if (v === 'accelerating' || v === 'expanding') return { label, value: raw, tone: 'pos', help };
+  if (v === 'decelerating' || v === 'compressing') return { label, value: raw, tone: 'warn', help };
+  return { label, value: raw, help };
 }
 
 export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
@@ -224,13 +248,28 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
         label: 'Avg surprise',
         value: fmtSignedPct(avgSurprise),
         tone: avgSurprise >= 0 ? 'pos' : 'neg',
+        help:
+          'Average EPS surprise vs Wall Street consensus over the last 4 reported quarters — how far ' +
+          'actual EPS landed above (+) or below (−) the estimate, on average. ' +
+          'E.g. +11.7% means EPS came in ~11.7% above consensus. Computed deterministically from ' +
+          'reported actuals vs estimates (earnings_events), not estimated by the model.',
       });
     }
 
     // Quality score
     const eq = asNumber(r.earnings_quality_score);
     if (eq != null) {
-      tiles.push({ label: 'Earnings quality', value: eq.toFixed(2), tone: eq >= 0.6 ? 'pos' : eq < 0.4 ? 'warn' : undefined });
+      tiles.push({
+        label: 'Earnings quality',
+        value: eq.toFixed(2),
+        tone: eq >= 0.6 ? 'pos' : eq < 0.4 ? 'warn' : undefined,
+        help:
+          'The earnings analyst’s 0–1 read of HOW GOOD the earnings are beneath the headline number. ' +
+          'Higher when growth is driven by real, recurring demand rather than one-time items, and when ' +
+          'free cash flow tracks reported net income (cash-backed profits). Lower when results lean on ' +
+          'one-offs, accruals, or FCF lags net income. A qualitative judgment by the earnings agent — ' +
+          '≥0.60 strong, <0.40 a flag.',
+      });
     }
 
     base.earnings_tiles = tiles;
