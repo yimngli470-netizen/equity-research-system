@@ -118,8 +118,12 @@ def _extract_industry_features(report: dict) -> dict[str, float | None]:
     """Extract features from industry agent report."""
     features: dict[str, float | None] = {}
 
-    # Cycle position
+    # Cycle position. "structural_growth" = the industry agent judged demand non-cyclical (secular
+    # grower / platform — no cycle clock applies): durable demand, scored mildly positive, between
+    # mid_cycle and early_recovery rather than letting the feature go missing (which would default
+    # the category to neutral 0.5 and quietly penalize non-cyclical names).
     cycle_map = {
+        "structural_growth": 0.7,
         "early_recovery": 0.8,
         "mid_cycle": 0.6,
         "late_cycle": 0.3,

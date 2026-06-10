@@ -271,6 +271,14 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 3.4 | ✅ **Position-sizing / portfolio context** — recommendation includes size guidance conditioned on conviction + concentration + correlation with existing book | L | `position_sizing` block | recommendation is "how much," not just direction |
 
 ### Cross-cutting
+- **Industry agent archetype-conditioned (2026-06-09)** — user-spotted over-correction: after the MU
+  fixes, the industry prompt forced EVERY stock into a cycle label (META: "mid-cycle internet
+  services" — filler). Same disease as the 2.2 normalized-earnings bug, on the reasoning side: one
+  ruler for all archetypes. Fix: the agent now receives the archetype, must judge `demand_cyclicality`
+  (structural | moderately_cyclical | highly_cyclical) FIRST, and only applies a cycle clock where
+  demand is genuinely cyclical — `cycle_position: structural_growth` (scored 0.7) otherwise. Verified
+  both directions: META → moderately_cyclical demand (ad spend is GDP-sensitive — a specific claim)
+  but structural_growth platform; MU → highly_cyclical / late_cycle with quantified peak evidence.
 - **LLM-cost trim (2026-06-09).** Per-pipeline LLM calls **8 → 6** (5 Opus + 1 Sonnet). Two changes,
   both behaviour-preserving (e2e golden composite unchanged): (1) **validation is deterministic-only**
   — the Sonnet semantic pass confirmed ~95% of claims and almost never moved the evidence gate, so it

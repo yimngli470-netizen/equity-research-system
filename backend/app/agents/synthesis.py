@@ -25,8 +25,8 @@ _CONDENSE: dict[str, list[str]] = {
     "news": ["overall_sentiment", "summary"],
     "earnings": ["earnings_quality_score", "trend_analysis", "forward_outlook", "risks",
                  "beat_miss_history", "summary"],
-    "industry": ["cycle_position", "cycle_assessment", "competitive_position", "theme_exposures",
-                 "industry_risks", "summary"],
+    "industry": ["demand_cyclicality", "cycle_position", "cycle_assessment", "competitive_position",
+                 "theme_exposures", "industry_risks", "summary"],
     "valuation": ["valuation_verdict", "valuation_score", "target_price_range", "margin_of_safety",
                   "multiples_analysis", "consensus_comparison", "dcf_analysis", "summary"],
 }

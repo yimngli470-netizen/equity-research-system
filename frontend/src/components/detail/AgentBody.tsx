@@ -924,7 +924,23 @@ export default function AgentBody({ agent }: Props) {
 
       {agent.agent_type === 'industry' && agent.industry_meta && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12 }}>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12, alignItems: 'center' }}>
+            {agent.industry_meta.cyclicality && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ color: 'var(--color-ink-3)' }}>Demand:</span>{' '}
+                <span style={{ color: 'var(--color-ink)', textTransform: 'capitalize' }}>
+                  {agent.industry_meta.cyclicality.replace(/_/g, ' ')}
+                </span>
+                <InfoDot
+                  help={
+                    'How cyclical this industry’s demand actually is — judged per business-model archetype, so a cycle frame isn’t forced onto every stock:\n' +
+                    '• Structural — demand is driven by secular adoption (platforms, secular growers); no meaningful cycle clock. Cycle shows "structural growth".\n' +
+                    '• Moderately cyclical — demand has real macro sensitivity (e.g. ad spend tracks GDP).\n' +
+                    '• Highly cyclical — boom/bust supply-demand cycles (memory, commodities); cycle position is the primary lens and peak earnings are a trap.'
+                  }
+                />
+              </span>
+            )}
             {agent.industry_meta.cycle && (
               <span>
                 <span style={{ color: 'var(--color-ink-3)' }}>Cycle:</span>{' '}

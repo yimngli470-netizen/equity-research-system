@@ -63,7 +63,7 @@ export interface NormalizedAgent {
   evidence_note?: EvidenceNote | null;  // earnings agent: surfaces "unknown"/missing-data signals
   call_highlights?: CallHighlights | null;  // earnings agent: transcript-derived sub-block
   key_metrics?: KeyMetric[];                // earnings agent: per-ticker watched metrics
-  industry_meta?: { cycle: string | null; moat: number | null };
+  industry_meta?: { cycle: string | null; cyclicality: string | null; moat: number | null };
   industry_competitors?: { name: string; threat: string; note: string }[];
   valuation_tiles?: Tile[];
   valuation_note?: string | null;   // triangulation reconciliation vs the street (2.3)
@@ -337,11 +337,12 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
 
   if (agent_type === 'industry') {
     const cycle = typeof r.cycle_position === 'string' ? r.cycle_position : null;
+    const cyclicality = typeof r.demand_cyclicality === 'string' ? r.demand_cyclicality : null;
     const comp = (r.competitive_position as Record<string, unknown>) || {};
     const moatStr = asString(comp.moat_strength).toLowerCase();
     const moatMap: Record<string, number> = { weak: 0.3, moderate: 0.55, strong: 0.85 };
     const moat = moatMap[moatStr] ?? asNumber(comp.moat_strength);
-    base.industry_meta = { cycle, moat: moat ?? null };
+    base.industry_meta = { cycle, cyclicality, moat: moat ?? null };
 
     const competitors = Array.isArray(comp.key_competitors) ? (comp.key_competitors as string[]) : [];
     const risks = Array.isArray(comp.competitive_risks) ? (comp.competitive_risks as string[]) : [];

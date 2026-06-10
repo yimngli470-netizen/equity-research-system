@@ -25,13 +25,22 @@ class IndustryAgent(BaseAgent):
         sector = stock.sector or "Unknown"
         industry = stock.industry or "Unknown"
 
+        # Business-model archetype (roadmap 1.1) — conditions WHICH analytical lens applies. A
+        # cyclical-commodity name gets cycle-first analysis; a platform/secular-grower must NOT be
+        # force-fitted into a cycle narrative (the META "mid-cycle internet services" failure mode).
+        archetype_block = ""
+        if stock.archetype:
+            archetype_block = f"\nBusiness-model archetype: {stock.archetype}"
+            if stock.archetype_rationale:
+                archetype_block += f" — {stock.archetype_rationale}"
+
         # Get the company's financial context
         snapshot = await get_computed_metrics(db, ticker)
         financial_context = format_for_llm(snapshot)
 
         context = f"""Company: {stock.name} ({ticker})
 Sector: {sector}
-Industry: {industry}
+Industry: {industry}{archetype_block}
 
 {financial_context}"""
 
@@ -56,14 +65,31 @@ Industry: {industry}
         return context
 
     def get_system_prompt(self) -> str:
-        return """You are a senior industry analyst. Given a company's financial data and its sector/industry classification, provide a comprehensive industry analysis.
+        return """You are a senior industry analyst. Given a company's financial data, its sector/industry
+classification, and its business-model archetype, provide a comprehensive industry analysis.
+
+FIRST, decide how cyclical this industry's DEMAND actually is — do not force a cycle narrative onto a
+business that doesn't have one. Use the archetype as your prior:
+- cyclical-commodity / deep-value-turnaround → demand IS cyclical. Cycle analysis is your PRIMARY
+  lens: where in the cycle, what the supply/capacity picture says, whether current results are
+  peak-ish. Be explicit and quantitative about it.
+- financial → analyze the credit/rate cycle (a real cycle, but a different one — say which).
+- secular-grower / platform / mature-compounder → demand is mostly structural. Do NOT lead with a
+  cycle label. Lead with what actually drives the industry: secular demand durability, TAM and
+  penetration, platform/network dynamics, pricing power, competitive intensity, regulation. Set
+  cycle_position to "structural_growth" unless there is a genuine, evidenced industry cycle (e.g.
+  digital-ad spend IS GDP-sensitive — if you invoke that, say so specifically; "mid-cycle" as a
+  filler label is wrong).
+Record your call in `demand_cyclicality`, and make `cycle_assessment` justify it — for structural
+industries it should explain the demand driver, not a cycle clock.
 
 You should assess:
-1. CYCLE POSITION — Where is this industry in its cycle? Early recovery, mid-cycle, late cycle, or downturn?
+1. DEMAND CHARACTER — How cyclical is industry demand (see above)? Only then: cycle position if and
+   only if it genuinely applies.
 2. KEY INDICATORS — What metrics or signals should investors watch to track this industry's health?
 3. COMPETITIVE POSITION — How is this company positioned vs. competitors? Market share, moat, advantages.
 4. THEME EXPOSURES — What secular themes (AI, cloud, EVs, etc.) is this company exposed to, and how strongly?
-5. INDUSTRY RISKS — Cyclicality, regulation, disruption, concentration risks specific to this sector.
+5. INDUSTRY RISKS — Cyclicality (if real), regulation, disruption, concentration risks specific to this sector.
 
 Use your knowledge of the industry to provide context beyond just the financial numbers.
 If earnings call transcript excerpts are provided, ground your competitive assessment in management's own statements about competitors, market share, and positioning.
@@ -73,8 +99,9 @@ You must respond with valid JSON only, no other text. Use this exact schema:
   "ticker": "string",
   "sector": "string",
   "industry": "string",
-  "cycle_position": "early_recovery | mid_cycle | late_cycle | downturn",
-  "cycle_assessment": "string — 2-3 sentences explaining the cycle position",
+  "demand_cyclicality": "structural | moderately_cyclical | highly_cyclical",
+  "cycle_position": "structural_growth | early_recovery | mid_cycle | late_cycle | downturn",
+  "cycle_assessment": "string — 2-3 sentences. If cyclical: where in the cycle and why. If structural: what actually drives demand (do NOT manufacture a cycle)",
   "key_indicators": [
     {
       "indicator": "string",
