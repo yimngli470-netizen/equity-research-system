@@ -298,7 +298,7 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
-| 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **NASDAQ-100** (per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked NDX screen; promote-to-watchlist flow |
+| 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **S&P 500 + NASDAQ-100** (~520 unique names; per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked SPX+NDX screen; promote-to-watchlist flow |
 | 6.2 | **Portfolio object** — `portfolio_positions` (manual CRUD): real weights/cost basis; sizing engine swaps the watchlist-sector proxy for actual sector weight, price-correlation matrix, beta; decision emits target-vs-current weight ("add 2%") | M | real "how much" | sizing conditioned on the actual book |
 | 6.3 | **Backtest the screen** (= ML M4–M6) — walk-forward over EDGAR filed-date-gated history; rank-IC vs forward returns. **Honesty rule: the backtest validates the deterministic SCREEN only; the LLM agent layer's track record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | screen rank-IC measured out-of-sample; claims bounded by what's proven |
 
