@@ -270,6 +270,38 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 3.3 | ✅ **Calibration metrics** — Brier-style score + reliability curve, segmented by archetype | M | `GET /api/decision/calibration` | "when it says 80%, it's right ~X%" answerable, per archetype |
 | 3.4 | ✅ **Position-sizing / portfolio context** — recommendation includes size guidance conditioned on conviction + concentration + correlation with existing book | L | `position_sizing` block | recommendation is "how much," not just direction |
 
+### Phase 4 — The Analyst's Own Numbers (planned 2026-06-11)
+
+> **Goal:** stop re-packaging consensus. The system produces ITS OWN driver-based EPS forecasts, a
+> deterministic DCF, and a scenario-weighted 12-month price target — the defining artifacts of a
+> professional analyst. **Architecture rule (extends §4a):** every new number is deterministic code;
+> the LLM only sets *assumptions*, once per ticker per quarter, each with a cited
+> `basis: guidance | trend | judgment`. Net new LLM surface: **+1 call/ticker/quarter** (7 total).
+> All snapshots point-in-time immutable (the `stock_theses` pattern) so the accountability loop can
+> grade them. **Deliberately skipped (user, 2026-06-11): event-driven monitoring/alerting** — the
+> pull model stays (LLM cost); forecast grading still works pull-based (compare on next pipeline run).
+
+| # | Action | Effort | Output | Done when |
+|---|--------|--------|--------|-----------|
+| 4.1 | **Balance-sheet completion + accrue-now data** — map missing XBRL tags (total_debt, cash, shares_outstanding, SBC, buybacks); persist transcript segments into `segments`; ingest SPY benchmark prices; snapshot consensus per run (stop upsert-in-place) → revisions history accrues | M | complete fundamentals spine | leverage/dilution visible; every graded thesis can be benchmark-relative; consensus time-series accruing |
+| 4.2 | **Forecast model** — `app/forecast/`: `drivers.py` (deterministic historical driver series) → `assumptions.py` (ONE LLM call: 8-quarter assumptions, bull/base/bear ranges, each with basis) → `model.py` (deterministic compile → quarterly EPS path, FY aggregates) → immutable `forecasts` table; "our FY EPS vs street" delta into valuation context + quant features; grading scores our EPS vs actual vs street on later pipeline runs | L | our own estimates | per ticker: "we are ±X% vs street on FY27 EPS because <basis>" |
+| 4.3 | **Deterministic DCF + price target** — `app/valuation_model/`: FCF from the forecast model, WACC built from data (^TNX risk-free, OUR computed beta vs SPY, fixed ERP), archetype-bounded terminal growth, sensitivity grid; 3 scenarios × judge-emitted rubric-anchored `scenario_probabilities` (per user 2026-06-11) → EV → 12-mo PT; method blend per archetype (cyclicals: normalized-multiple primary / DCF secondary; growers: reverse) | L | PT + horizon + method | "$X, 12-mo, via <method>, P(bull/base/bear)=…, sensitivity grid" — fully auditable |
+
+### Phase 5 — Deliverable & Track Record (planned 2026-06-11)
+
+| # | Action | Effort | Output | Done when |
+|---|--------|--------|--------|-----------|
+| 5.1 | **Research-note builder** — `app/notes/`: deterministic assembler compiles rating, PT, estimates-vs-street table, thesis, dated kill-criteria, risks, valuation, financials appendix from existing DB artifacts (no new analysis LLM call); immutable `research_notes` snapshots; deterministic diff vs prior note ("what changed") | M | exportable research note | a professional note per ticker per run, archived + diffable |
+| 5.2 | **Track-record UI** — pages for thesis journal, graded outcomes, calibration curves (endpoint exists), forecast accuracy (our EPS vs actual vs street), and **benchmark-relative** returns (vs SPY from 4.1) | M | "Analyst Track Record" page | hit rate, Brier, excess return visible per archetype |
+
+### Phase 6 — Scale & Proof (planned 2026-06-11)
+
+| # | Action | Effort | Output | Done when |
+|---|--------|--------|--------|-----------|
+| 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **NASDAQ-100** (per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked NDX screen; promote-to-watchlist flow |
+| 6.2 | **Portfolio object** — `portfolio_positions` (manual CRUD): real weights/cost basis; sizing engine swaps the watchlist-sector proxy for actual sector weight, price-correlation matrix, beta; decision emits target-vs-current weight ("add 2%") | M | real "how much" | sizing conditioned on the actual book |
+| 6.3 | **Backtest the screen** (= ML M4–M6) — walk-forward over EDGAR filed-date-gated history; rank-IC vs forward returns. **Honesty rule: the backtest validates the deterministic SCREEN only; the LLM agent layer's track record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | screen rank-IC measured out-of-sample; claims bounded by what's proven |
+
 ### Cross-cutting
 - **Industry agent archetype-conditioned (2026-06-09)** — user-spotted over-correction: after the MU
   fixes, the industry prompt forced EVERY stock into a cycle label (META: "mid-cycle internet
