@@ -293,6 +293,7 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 |---|--------|--------|--------|-----------|
 | 5.1 | **Research-note builder** — `app/notes/`: deterministic assembler compiles rating, PT, estimates-vs-street table, thesis, dated kill-criteria, risks, valuation, financials appendix from existing DB artifacts (no new analysis LLM call); immutable `research_notes` snapshots; deterministic diff vs prior note ("what changed") | M | exportable research note | a professional note per ticker per run, archived + diffable |
 | 5.2 | **Track-record UI** — pages for thesis journal, graded outcomes, calibration curves (endpoint exists), forecast accuracy (our EPS vs actual vs street), and **benchmark-relative** returns (vs SPY from 4.1) | M | "Analyst Track Record" page | hit rate, Brier, excess return visible per archetype |
+| 5.3 | **Judge sees its own record** (user-surfaced gap, 2026-06-11) — feed the ticker's PRIOR graded theses ("your last MU call graded 1/2: GM-collapse HIT, inventory MISS") into the judge's context, so each fresh thesis is written knowing how the previous one scored | S | self-aware judge | judge context includes prior grades; no extra LLM call |
 
 ### Phase 6 — Scale & Proof (planned 2026-06-11)
 
@@ -300,7 +301,7 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 |---|--------|--------|--------|-----------|
 | 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **S&P 500 + NASDAQ-100** (~520 unique names; per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked SPX+NDX screen; promote-to-watchlist flow |
 | 6.2 | **Portfolio object** — `portfolio_positions` (manual CRUD): real weights/cost basis; sizing engine swaps the watchlist-sector proxy for actual sector weight, price-correlation matrix, beta; decision emits target-vs-current weight ("add 2%") | M | real "how much" | sizing conditioned on the actual book |
-| 6.3 | **Backtest the screen** (= ML M4–M6) — walk-forward over EDGAR filed-date-gated history; rank-IC vs forward returns. **Honesty rule: the backtest validates the deterministic SCREEN only; the LLM agent layer's track record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | screen rank-IC measured out-of-sample; claims bounded by what's proven |
+| 6.3 | **Backtest the screen** (= the evaluator over the M4 panel; see "Backtest ≠ model" in §4a) — walk-forward over EDGAR filed-date-gated history + historical index constituents; rank-IC vs forward returns. **First deliverable: baseline the EXISTING hand-weighted screen before any ML** (M5 must then beat it OOS; "no signal" is equally actionable). **Honesty rule: validates the deterministic SCREEN only; the LLM layer's record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | hand-screen baseline rank-IC measured, then M5 vs baseline OOS; claims bounded by what's proven |
 
 ### Cross-cutting
 - **Industry agent archetype-conditioned (2026-06-09)** — user-spotted over-correction: after the MU
@@ -359,10 +360,10 @@ The organizing principle:
 | World knowledge ("MU is memory-cyclical") | **LLM** | not in our data |
 | Unstructured → structured (transcripts→KPIs, news→events) | **LLM** | semantic extraction |
 | Rationales · bull/bear dialectic · evidence gating | **LLM** | qualitative reasoning + explanation |
-| Small-N labeling (archetype, 6 buckets, dozens of names) | **LLM** (grounded) | no training set exists |
+| Small-N labeling (archetype, 6 buckets, dozens of names) | **LLM** (grounded) | no training set exists — **but at universe scale (520 names) this flips to ML: M2b classifier trained on the LLM's own accumulated labels** |
 | **Peer similarity / closeness weights** (1.2) | **ML — embeddings + return-corr + feature distance** | reproducible *measurement*, not opinion |
 | **Archetype *discovery*** (are 6 buckets right?) | **ML — unsupervised clustering** | finds natural groupings vs imposed ones |
-| **Cycle-position / "re-rate vs peak?"** | **ML — HMM / change-point / state-space** | quantitative regime inference; LLMs unreliable here |
+| **Cycle-position / "re-rate vs peak?"** | **ML — HMM / change-point / state-space, ARCHETYPE-GATED** | quantitative regime inference; LLMs unreliable here. Cyclical archetypes only — an HMM will "find" regimes in any series, so running it on a platform manufactures a fake cycle (the industry-agent META bug in statistical form) |
 | **Normalized / mid-cycle earnings** | **Stats — through-cycle regression** | arithmetic, not reasoning |
 | **Calibrated probabilities** ("80% ⇒ right 80%") | **ML — GBM / logistic** | LLM "confidence" is not calibrated |
 | **Forward-return / surprise prediction** | **ML — supervised (GBM)** | classic quant use; hardest, needs panel |
@@ -377,16 +378,20 @@ assembled by **Phase 0 (EDGAR point-in-time fundamentals + price history)** + **
 journal (predictions → graded outcomes)**. Until it exists, supervised ML on ~15 names just
 overfits. **#1 failure mode = lookahead bias.**
 
-### What to build, in order (no false starts)
+### What to build, in order — with full data specs (expanded 2026-06-11)
 
-| # | Item | Needs labels? | Effort | Notes |
+| # | Model | Inference: in → out | Training data (X → y) | Trainable when |
 |---|---|---|---|---|
-| M1 | **Business-description embeddings** for peer weights (powers 1.2) | no | S | inference-only (API or local model); the cheapest, earliest ML win |
-| M2 | **Unsupervised archetype clustering** — validate/refine the 6 buckets on the quant profile | no | M | sanity-checks 1.1; may reveal sub-types (memory vs logic semis) |
-| M3 | **Cycle-state model** — HMM/change-point on revenue/margin/inventory → cycle position | no | M | feeds Phase 2.2 "re-rate vs peak"; through-cycle normalized earnings |
-| M4 | **Panel assembly** — point-in-time feature/label store from EDGAR + journal | n/a | L | prerequisite for M5+; build incrementally as the journal accrues |
-| M5 | **Supervised ranker** — GBM (XGBoost/LightGBM, **not** deep learning) on tabular features → forward peer-relative return / calibrated conviction | **yes (M4)** | L | walk-forward / **purged** time-series CV, time-based OOS, scored on rank-IC + Brier (never accuracy, never random split) |
-| M6 | **Learned weight profiles** — replace/blend the hand-authored 1.4 priors with M5-derived weights, per archetype | **yes (M4)** | M | only after M5 generalizes out-of-sample |
+| M1 | **Peer embeddings / weights** (1.2 at scale) | description text + return series + QuantProfile → weighted peer set (`MU → {WDC .85, STX .72…}` = cosine ⊕ return-corr ⊕ feature distance) | **none — no training.** Pretrained embedding model, inference-only; blend weights hand-set. The LLM `peer_weights` from 1.2 become the sanity check | **now** |
+| M2 | **Archetype clustering** (validate the 6 buckets) | universe QuantProfiles → clusters + "do natural groupings match the hand buckets? do memory semis split from logic?" | unsupervised — the ~520 profiles themselves; a quarterly analysis job, not a serving model | after 6.1 ingest |
+| M2b | **Universe archetype classifier** (tier-1 screening labels) | QuantProfile + sector → provisional archetype + confidence (picks weight profile + peer pool in tier-1 ONLY; promoted names still get the LLM labeler) | **already in the DB by design**: `stocks.archetype_features` (X) → `stocks.archetype` (y), accruing since 1.1. ~15 rows today, tech-heavy → **k-NN first**, not a fitted model; optional one-time ~50-name LLM batch to balance classes | **now** (k-NN) |
+| M3 | **Regime models — ARCHETYPE-GATED family** (one output shape, different functional form, dispatched on archetype + `demand_cyclicality` — same pattern as `normalized_earnings.basis`): cyclical-commodity/turnaround → **cycle-state HMM**; secular-grower/platform → **growth-FADE curve** (fitted decay toward GDP — the DCF fade rate, estimated not guessed); mature-compounder → **stability priors**. NEVER run the HMM on a platform | quarterly revenue/margin (+ inventory after 4.1) series → cyclicals: P(trough/recovery/mid/peak) + time-in-state; growers: growth_phase + fade_rate | unsupervised fitting on EDGAR history; **pool by industry** (MU+WDC+STX ≈ 3× the cycles of MU alone); validate vs known history (2018 memory peak, 2022-23 trough) | after 6.1 |
+| M3b | **Mean-reversion / fade priors** (anchors the 4.2 assumptions prompt + floors bear/base scenarios) | current margin/growth deviation from own through-cycle median + archetype + M3 state → expected reversion path + half-life ("memory GM at peak reverts toward ~58%, ~3q half-life") | EDGAR quarterly history: deviation at t → change over t+k, grouped by archetype; ~520 names × ≤60q ≈ **20-30k ticker-quarters**; fully point-in-time safe | after 6.1 |
+| M4 | **Panel assembly** — the point-in-time feature/label store (THE prerequisite; the real long-pole) | n/a — infrastructure | EDGAR `companyfacts` filed-date-gated fundamentals (have) + ~10y prices (extend lookback) + consensus snapshots (accrue from 4.1; early panel simply lacks revisions features) + **historical index constituents** (free GitHub lists — else survivorship bias) | build incrementally from 4.1/6.1 |
+| M4b | **Conviction calibration** (split out 2026-06-11; replaces the deterministic `calibration_shrink`) | judge stated conviction + leaning + archetype (+ unresolved_bear_points) → calibrated probability ("stated 0.65 behaves like 0.54") → position sizer + track-record UI | **the thesis journal + grading**: each graded thesis = one row (stated, context) → outcome; 4.2 adds the denser forecast-vs-actual label stream | **time-gated: ~30-50 graded theses (~2-4 quarters of accrual). The one training set money can't buy — why the journal shipped in Phase 3** |
+| M5 | **Supervised ranker** — GBM (XGBoost/LightGBM, **not** deep learning) | point-in-time **hard features only** (growth, profitability, peer-relative valuation, momentum, M3 state, archetype; deliberately NO agent features so one model serves all 520 names) → forward 3-mo peer-relative return → nightly batch screen scores | the M4 panel: (ticker, month-end) since ~2015, features filed≤T → next-3-mo return − peer median; **~60k rows**. Purged walk-forward CV, time-based OOS, scored rank-IC + Brier (never accuracy, never random split) | after M4 |
+| M5b | **Fair-multiple model** (3rd triangulation anchor in 4.3, next to DCF + street) | fundamentals + archetype + cycle state → fundamentals-implied fwd P/E + residual ("trades 2.3 turns below what the market pays for these characteristics") | same panel, y = **observed** multiple at t. **DESCRIPTIVE (what the market pays), not predictive — a residual signal, not alpha** | after M4 |
+| M6 | **Learned weight profiles** — distill M5's per-archetype importances → replace/blend the hand-authored `ARCHETYPE_WEIGHTS`, keeping the screen explainable | n/a — derived from M5 | M5's | only after M5 generalizes OOS |
 
 **Modeling stance:** start with the unsupervised/measurement wins (M1–M3) that need *no* labels
 and pay off now; GBMs over deep learning for tabular financial data at this scale (interpretable,
@@ -395,36 +400,75 @@ DL sequence models only if GBMs plateau with abundant data — likely never for 
 Be honest: supervised return prediction is what quant funds spend fortunes on and still find hard;
 the near-term ML value is the *measurement* layer, not alpha prediction.
 
-### Service architecture — ML as independent microservices
+### ML system design — agreed 2026-06-11 (supersedes the 2026-05-30 two-service sketch)
 
-**Decision (2026-05-30):** the ML/measurement work is built as **separate services** so the main
-app (FastAPI + ingestion + agents + UI) runs and ships independently of any model. Boundaries:
+User-confirmed shape: `main app → model services for output ← data pipeline + training`, with four
+refinements that change the build:
 
 ```
-main-app (FastAPI)  ──HTTP/gRPC──▶  measurement-svc   (peer weights, normalization stats,
-   │  owns: ingestion, agents,                          cycle-state, embeddings — M1–M3)
-   │  scoring orchestration, UI,                ──▶  ml-svc           (panel, GBM ranker,
-   │  Postgres                                          calibration — M4–M6; heavy deps:
-   └─ degrades gracefully if a                          numpy/scikit/xgboost, model registry)
-      measurement/ml call is down ──────────────▶  (shared) Postgres / feature store
+            ┌─ data-pipeline (daily job; $0 LLM) ───────────────────────────┐
+            │  universe prices · EDGAR (quarterly) · consensus snapshots    │
+            └──────────────────────────┬────────────────────────────────────┘
+                                       ▼
+  main app (FastAPI/agents/UI) ◀─reads─ Postgres ── system of record + feature store
+      │                                 ▲  ▲          + prediction log (model_version)
+      │ HTTP, on-demand only,           │  │
+      │ falls back to persisted         │  └─ point-in-time panel (as-of features → labels)
+      ▼ outputs / hand-priors           │                          │
+  ml-svc (serving) ── nightly batch ────┘                          ▼
+      ▲    /rank /calibrate /peer-weights /cycle-state      training pipeline (JOB, not service:
+      │                                                     triggered by label maturity)
+      └─ loads CURRENT ── model registry (versioned + promotion gate) ◀─ publishes candidate
 ```
 
-Principles:
-- **Contract, not coupling** — services expose a thin HTTP/JSON (or gRPC) API
-  (`/peer-weights/{ticker}`, `/normalize`, `/cycle-state/{ticker}`, `/rank`). The main app holds
-  no `sklearn`/`xgboost`/embedding deps; those stay in the ML images.
-- **Graceful degradation** — if `measurement-svc`/`ml-svc` is unavailable or returns low
-  confidence, the main app **falls back** to today's absolute normalization + hand-priors and
-  surfaces a coverage warning (same pattern as the IR-bootstrap amber banner). The app must never
-  hard-depend on a model being up.
-- **Independent lifecycle** — models retrain/redeploy on their own cadence (batch jobs writing
-  results + version into Postgres); the app reads the latest published version. Versioned outputs
-  so a bad model can be rolled back without touching the app.
-- **Async/cacheable** — peer weights, archetype, cycle-state are slow-moving: compute in batch,
-  cache in Postgres, read cheaply at request time. Only embeddings/ranking might be on-demand.
-- **Start in-process, split at the seam** — implement M1–M3 first as a `measurement/` package
-  behind an interface; promote to a deployed service when the dependency weight or retrain cadence
-  justifies it. The *interface* is the commitment; the process boundary is an operational detail.
+1. **Train on label maturity, never daily.** Serving features need daily freshness (universe
+   prices); training does NOT — forward returns take months to resolve, theses/EPS actuals arrive
+   quarterly. Daily retraining is churn + silent drift. Cadence: ranker monthly-quarterly,
+   calibration when new graded theses land, priors per new filed quarter, embeddings ~annually.
+   The training pipeline's hard part is **point-in-time correctness** (rebuild features
+   as-known-at-T via EDGAR filed dates + consensus snapshots), not freshness — "feed latest data
+   in" framing breeds lookahead bias; "rebuild the as-of panel" framing doesn't.
+2. **Batch-precompute into Postgres is the PRIMARY serving path.** Ranker scores 520 names nightly
+   → DB table; priors/peer-weights/archetypes recompute on input change → DB; calibration is a tiny
+   artifact applied in the main app. The HTTP `ml-svc` exists only for on-demand recompute (user
+   promotes a ticker mid-day). Consequence: **if ml-svc is down, nothing user-facing breaks** —
+   the app reads yesterday's persisted outputs or falls back to hand-priors (graceful degradation
+   by construction).
+3. **Model registry + promotion gate** — the piece naive designs miss. Versioned artifacts
+   (`models/ranker/2026-09-30/model.bin` + manifest: train-data hash, config, walk-forward
+   rank-IC/Brier); a candidate **never auto-replaces** the serving model — promotion only if OOS
+   metrics ≥ incumbent. Every served prediction is logged to Postgres with its `model_version` —
+   the thesis-journal accountability pattern extended to ML, and it feeds the next panel for free.
+4. **One `ml-svc` container first** (amends the two-service sketch): all model endpoints in one
+   docker-compose service; split a `measurement-svc` out only when dependency weight or cadence
+   forces it. Heavy deps (`sklearn`/`xgboost`/embeddings) never enter the main-app image.
+
+Reconciliation with the no-scheduler rule: that rule was about **LLM cost**. The daily data job
+costs $0 in LLM (extends the existing APScheduler daily ingestion to the universe); the pull model
+stays for all LLM analysis.
+
+| Model | Retrain trigger | Serving mode |
+|---|---|---|
+| M1 peer embeddings/weights | description/10-K change (~annual) | batch → DB |
+| M2b archetype classifier | watchlist labels change | batch → DB |
+| M3/M3b regime + priors | new quarter filed | batch → DB |
+| M4b calibration | new graded theses/forecasts | tiny artifact, applied in main app |
+| M5 ranker | monthly-quarterly, walk-forward gate | nightly batch scores → DB |
+
+### Backtest ≠ model (6.3 clarified, 2026-06-11)
+
+Three evidence streams, permanently distinct:
+- **Prospective track record** (journal→grading→calibration, accruing since Phase 3) — the ONLY
+  stream covering the full system incl. the LLM layer; cannot be accelerated or backfilled.
+- **Historical backtest** (6.3) — the deterministic SCREEN only. It trains nothing — it is the
+  *evaluator*: the M4 panel is the substrate, M5 trains inside the same harness (purged CV).
+  **First deliverable: backtest the EXISTING hand-weighted screen before any ML** — establishes
+  the baseline rank-IC that M5 must beat OOS (and "no signal" or "negative on cyclicals" are
+  equally actionable findings). Expectation-setting: institutional rank-ICs of 0.03-0.05 are good;
+  the backtest's job is to BOUND the claims research notes may make, not reveal a monster edge.
+- **Never backtestable: the LLM layer** — replaying the judge over 2018 is epistemically fake (the
+  model knows what happened). The honest edge claim is always the conjunction: screen = backtested,
+  judgment = prospective journal.
 
 ---
 
