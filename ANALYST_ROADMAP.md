@@ -272,6 +272,22 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 ### Phase 4 — The Analyst's Own Numbers (planned 2026-06-11)
 
+> **Status: 4.1 DONE (2026-06-11) — balance-sheet completion + accrue-now data.**
+> (a) **EDGAR tag map extended**: `total_debt` (composed LT-noncurrent + LT-current + ST
+> borrowings/CP, marked derived), `shares_outstanding` (instant count → weighted-diluted →
+> NI/EPS fallback), `stock_based_comp` + `buybacks` (YTD-differenced flows, new columns).
+> Verified live: META debt $28.8B→$58.7B across the AI-capex raise, share count shrinking
+> 2.61B→2.56B, SBC ~$5-6B/q. Watchlist backfilled (21-67 quarters each). Follow-up: AVGO files
+> debt under non-standard tags (3/14 rows) — extend candidates when 4.2 needs it.
+> (b) **`consensus_snapshots`** (migration `b7e5f3a1d290`): APPEND-only history per ingestion run —
+> the revisions time-series now accrues (upsert-in-place was destroying it).
+> (c) **SPY benchmark**: `ingest_benchmark_prices` in the pipeline (~10y backfilled, at most one
+> fetch/day); grading now writes `benchmark_return` + `excess_return` into the thesis outcome —
+> "BUY worked" means BEAT THE INDEX.
+> (d) **Segments persisted**: deterministic parse (`ingestion/segments.py`) of transcript-summary
+> breakouts → `segments` table (META FoA $55.9B +33% YoY; MU's 4 BUs). No new LLM calls anywhere
+> in 4.1. **Next: 4.2 (forecast model).**
+
 > **Goal:** stop re-packaging consensus. The system produces ITS OWN driver-based EPS forecasts, a
 > deterministic DCF, and a scenario-weighted 12-month price target — the defining artifacts of a
 > professional analyst. **Architecture rule (extends §4a):** every new number is deterministic code;

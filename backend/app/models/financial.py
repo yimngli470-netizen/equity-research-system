@@ -33,6 +33,10 @@ class Financial(Base):
     total_equity: Mapped[float | None] = mapped_column(Float)
     shares_outstanding: Mapped[float | None] = mapped_column(Float)
 
+    # Capital return / dilution flows (roadmap 4.1) — quarterly, YTD-differenced from EDGAR.
+    stock_based_comp: Mapped[float | None] = mapped_column(Float)
+    buybacks: Mapped[float | None] = mapped_column(Float)
+
     # Provenance (roadmap 0.3) — where this row came from, for auditability.
     source: Mapped[str | None] = mapped_column(String(20))       # "edgar" | "yfinance"
     source_url: Mapped[str | None] = mapped_column(String(300))  # filing / API URL

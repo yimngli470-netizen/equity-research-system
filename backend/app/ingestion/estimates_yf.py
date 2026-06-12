@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.estimate import AnalystEstimate
+from app.models.estimate import AnalystEstimate, ConsensusSnapshot
 from app.models.financial import Financial
 
 logger = logging.getLogger(__name__)
@@ -109,6 +109,23 @@ async def ingest_estimates_yf(db: AsyncSession, ticker: str) -> int:
         set_={c: getattr(stmt.excluded, c) for c in cols},
     )
     await db.execute(stmt)
+
+    # 4.1: APPEND a consensus snapshot per fetch — the upsert above keeps only the CURRENT view;
+    # this preserves the revisions time-series (one row per ticker/day/period, idempotent within
+    # a day). It's the raw material for revisions-momentum + the point-in-time panel.
+    snap = insert(ConsensusSnapshot).values([
+        {
+            "ticker": r["ticker"],
+            "as_of": r["as_of"],
+            "period_end_date": r["period_end_date"],
+            "eps_consensus": r["eps_consensus"],
+            "revenue_consensus": r["revenue_consensus"],
+            "num_analysts": r["number_of_analysts"],
+        }
+        for r in rows
+    ]).on_conflict_do_nothing(constraint="uq_consensus_snap")
+    await db.execute(snap)
+
     await db.commit()
-    logger.info("[estimates_yf] upserted %d consensus periods for %s", len(rows), ticker)
+    logger.info("[estimates_yf] upserted %d consensus periods for %s (+snapshots)", len(rows), ticker)
     return len(rows)

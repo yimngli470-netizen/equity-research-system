@@ -67,6 +67,17 @@ CONCEPT_TAGS: dict[str, list[str]] = {
         "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
     ],
     "cash_and_equivalents": ["CashAndCashEquivalentsAtCarryingValue"],
+    # debt components (instant; composed into total_debt — roadmap 4.1)
+    "debt_lt_noncurrent": ["LongTermDebtNoncurrent"],
+    "debt_lt_current": ["LongTermDebtCurrent"],
+    "debt_lt_total": ["LongTermDebt"],  # fallback when the nc/current split isn't filed
+    "debt_st_borrowings": ["ShortTermBorrowings", "CommercialPaper"],
+    # share counts (roadmap 4.1 — dilution awareness for the forecast model)
+    "shares_outstanding_instant": ["CommonStockSharesOutstanding", "CommonStockSharesIssued"],
+    "shares_diluted_wavg": ["WeightedAverageNumberOfDilutedSharesOutstanding"],
+    # capital-return / dilution flows (cumulative YTD, like cash flow)
+    "stock_based_comp": ["ShareBasedCompensation"],
+    "buybacks": ["PaymentsForRepurchaseOfCommonStock"],
 }
 
 _QTR_ORDER = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
@@ -89,6 +100,10 @@ class EdgarQuarter:
     total_assets: float | None = None
     total_equity: float | None = None
     cash_and_equivalents: float | None = None
+    total_debt: float | None = None
+    shares_outstanding: float | None = None
+    stock_based_comp: float | None = None
+    buybacks: float | None = None
     derived: list[str] = field(default_factory=list)  # which fields were computed, not filed
 
     @property
@@ -206,9 +221,9 @@ def _ytd_standalone(records: list[dict]) -> dict[tuple[int, str], dict]:
     return out
 
 
-def _instant_map(facts: dict, concept: str) -> dict[str, float]:
+def _instant_map(facts: dict, concept: str, unit: str = "USD") -> dict[str, float]:
     """{end_date: val} for point-in-time balance-sheet concepts (latest filed wins)."""
-    recs = _concept_facts(facts, concept, "USD")
+    recs = _concept_facts(facts, concept, unit)
     buckets: dict[str, list[dict]] = {}
     for r in recs:
         if r.get("start"):  # instant facts have no start
@@ -266,6 +281,15 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
     assets = _instant_map(facts, "total_assets")
     equity = _instant_map(facts, "total_equity")
     cash = _instant_map(facts, "cash_and_equivalents")
+    # 4.1: debt components, share counts, capital-return flows
+    debt_ltnc = _instant_map(facts, "debt_lt_noncurrent")
+    debt_ltc = _instant_map(facts, "debt_lt_current")
+    debt_lt_total = _instant_map(facts, "debt_lt_total")
+    debt_st = _instant_map(facts, "debt_st_borrowings")
+    shares_inst = _instant_map(facts, "shares_outstanding_instant", unit="shares")
+    shares_wavg = _flow_quarterly(facts, "shares_diluted_wavg", unit="shares", derive_q4=False)
+    sbc = _ytd_standalone(_concept_facts(facts, "stock_based_comp", "USD"))
+    buybacks = _ytd_standalone(_concept_facts(facts, "buybacks", "USD"))
 
     keys = set(rev) | set(ni) | set(eps) | set(oi)
     quarters: list[EdgarQuarter] = []
@@ -304,6 +328,33 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
         eq.total_assets = assets.get(end_s)
         eq.total_equity = equity.get(end_s)
         eq.cash_and_equivalents = cash.get(end_s)
+
+        # total_debt (4.1): prefer the explicit noncurrent + current split; fall back to the
+        # LongTermDebt total. Add short-term borrowings/CP when filed. Composed → marked derived.
+        ltnc, ltc = debt_ltnc.get(end_s), debt_ltc.get(end_s)
+        st = debt_st.get(end_s) or 0.0
+        if ltnc is not None:
+            eq.total_debt = ltnc + (ltc or 0.0) + st
+            eq.derived.append("total_debt")
+        elif (lt_tot := debt_lt_total.get(end_s)) is not None:
+            eq.total_debt = lt_tot + st
+            eq.derived.append("total_debt")
+
+        # shares_outstanding (4.1): instant count at the balance-sheet date when filed; else the
+        # quarter's weighted-average diluted count; else derived from NI/EPS (diluted, last resort).
+        sh = shares_inst.get(end_s)
+        if sh is None:
+            wv = shares_wavg.get((fy, fp))
+            sh = wv["val"] if wv else None
+            if sh is not None:
+                eq.derived.append("shares_outstanding")
+        if sh is None and eq.net_income and eq.eps:
+            sh = abs(eq.net_income / eq.eps)
+            eq.derived.append("shares_outstanding")
+        eq.shares_outstanding = sh
+
+        take(sbc, "stock_based_comp", "stock_based_comp")
+        take(buybacks, "buybacks", "buybacks")
         quarters.append(eq)
 
     # Collapse quarters that resolve to the same period_end_date — early/restated filings
@@ -323,15 +374,17 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
 
 
 # ── ingestion ─────────────────────────────────────────────────────────────────
-# NOTE: EDGAR is now the source of truth for the income-statement + cash-flow spine.
-# total_debt and shares_outstanding are NOT yet mapped (follow-up: add LongTermDebt /
-# dei:EntityCommonStockSharesOutstanding); EDGAR rows leave them NULL for now.
+# NOTE: EDGAR is the source of truth for the income-statement + cash-flow spine, and (4.1,
+# 2026-06-11) the balance-sheet completion: total_debt (composed from LT nc/current + ST
+# borrowings), shares_outstanding (instant → weighted-diluted → NI/EPS fallback), SBC and
+# buybacks (YTD-differenced flows, like OCF).
 
-# Fields scoring depends on — all covered by the EDGAR extraction.
+# Fields scoring/forecasting depend on — all covered by the EDGAR extraction.
 _EDGAR_FIELDS = (
     "revenue", "gross_profit", "operating_income", "net_income", "eps",
     "free_cash_flow", "operating_cash_flow", "total_assets", "total_equity",
-    "cash_and_equivalents",
+    "cash_and_equivalents", "total_debt", "shares_outstanding",
+    "stock_based_comp", "buybacks",
 )
 
 

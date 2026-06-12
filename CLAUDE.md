@@ -341,7 +341,7 @@ GET  /api/decision/calibration            # Brier score + reliability curve over
 ```
 
 ## Database
-- Key tables: `stocks`, `daily_prices`, `financials` (EDGAR + provenance), `valuations`, `documents`, `analysis_reports` (JSONB), `quant_features`, `stock_scores`, `stock_decisions`, `earnings_transcripts`, `analyst_estimates`, `earnings_events`, `segments`, `ticker_key_metrics` (KPI defs), `ticker_kpi_values` (extracted KPI values), `dev_ticker_bootstrap_status` (dev-only debug)
+- Key tables: `stocks`, `daily_prices` (incl. SPY benchmark rows), `financials` (EDGAR + provenance; 4.1 added total_debt/shares_outstanding population + stock_based_comp/buybacks), `valuations`, `documents`, `analysis_reports` (JSONB + input_fingerprint), `quant_features`, `stock_scores`, `stock_decisions`, `stock_theses` (journal; outcomes incl. excess_return vs SPY), `consensus_snapshots` (append-only revisions history), `earnings_transcripts`, `analyst_estimates`, `earnings_events`, `segments` (populated from transcript summaries, 4.1), `ticker_key_metrics` (KPI defs), `ticker_kpi_values` (extracted KPI values), `dev_ticker_bootstrap_status` (dev-only debug)
 - Migrations via Alembic: `docker compose exec backend alembic upgrade head`
 - Postgres on host port 5433 (5432 used by local Postgres)
 
@@ -373,5 +373,3 @@ The IR scraper needs a `sources.yaml` entry per ticker; for new tickers `bootstr
 - Scheduler wiring: auto-run agents + scoring + decision after daily ingestion
 - Document embeddings (pgvector) not yet active
 - Insider trades ingestion deferred (`InsiderTrade` model exists, unused)
-- Segment-row persistence (segments live in transcript summary JSONB, not the `segments` table yet)
-- `total_debt` / `shares_outstanding` not yet mapped from EDGAR (NULL on edgar rows)

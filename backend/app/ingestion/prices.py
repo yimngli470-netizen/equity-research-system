@@ -95,3 +95,23 @@ async def ingest_prices(
 
     logger.info("Upserted %d price rows for %s", len(rows), ticker)
     return len(rows)
+
+
+BENCHMARK_TICKER = "SPY"  # plain daily_prices rows; deliberately NOT in the stocks watchlist
+
+
+async def ingest_benchmark_prices(db: AsyncSession, lookback_days: int = 400) -> int:
+    """Keep the SPY benchmark history fresh (roadmap 4.1) so thesis grading can compute
+    benchmark-relative (excess) returns. Skips if today's/yesterday's bar is already present —
+    at most one yfinance call per day no matter how many tickers run."""
+    latest = (
+        await db.execute(
+            select(DailyPrice.date).where(DailyPrice.ticker == BENCHMARK_TICKER)
+            .order_by(DailyPrice.date.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if latest is not None and (date.today() - latest).days < 1:
+        return 0
+    # First run backfills ~10y so past theses/backtests have benchmark coverage.
+    lookback = lookback_days if latest is not None else 3700
+    return await ingest_prices(db, BENCHMARK_TICKER, lookback_days=lookback)

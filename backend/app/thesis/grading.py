@@ -79,6 +79,19 @@ def _grade_llm(thesis_date, predictions: list[tuple[int, dict]], context: str) -
     return json.loads(content.strip())
 
 
+async def _benchmark_close_at(db: AsyncSession, on: date) -> float | None:
+    """SPY close on/just before `on` (nearest prior trading day)."""
+    from app.ingestion.prices import BENCHMARK_TICKER
+    return (
+        await db.execute(
+            select(DailyPrice.close)
+            .where(DailyPrice.ticker == BENCHMARK_TICKER, DailyPrice.date <= on)
+            .order_by(DailyPrice.date.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def _context_since(db: AsyncSession, ticker: str, since: date, price_now: float | None,
                          price_at: float | None) -> str:
     """Quarterly financials reported around/after the thesis + the price move — the resolving data."""
@@ -159,6 +172,14 @@ async def grade_due_theses(db: AsyncSession, ticker: str) -> int:
         # Deterministic price + fair-value record.
         if th.price_at and price_now:
             outcome["realized_return"] = round(price_now / th.price_at - 1, 4)
+            # Benchmark-relative (4.1): "BUY worked" must mean BEAT THE INDEX over the window,
+            # not just "went up". SPY return over the same thesis window → excess return.
+            spy_then = await _benchmark_close_at(db, th.as_of)
+            spy_now = await _benchmark_close_at(db, today)
+            if spy_then and spy_now:
+                spy_ret = round(spy_now / spy_then - 1, 4)
+                outcome["benchmark_return"] = spy_ret
+                outcome["excess_return"] = round(outcome["realized_return"] - spy_ret, 4)
         if th.fair_value and th.price_at:
             outcome["fair_value_gap_at_thesis"] = round(th.fair_value / th.price_at - 1, 4)
         results = [v["result"] for v in graded.values()]

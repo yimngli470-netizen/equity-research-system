@@ -12,7 +12,7 @@ from app.ingestion.edgar import ingest_financials_edgar
 from app.ingestion.estimates_yf import ingest_estimates_yf
 from app.ingestion.fundamentals import ingest_financials, ingest_valuation
 from app.ingestion.news import ingest_news
-from app.ingestion.prices import ingest_prices
+from app.ingestion.prices import ingest_benchmark_prices, ingest_prices
 from app.models.stock import Stock
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,13 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
             logger.exception("Price ingestion failed for %s", ticker)
             result.errors.append(f"prices: {e}")
 
+        # Benchmark prices (roadmap 4.1): keep SPY history fresh so grading can score every thesis
+        # BENCHMARK-RELATIVE ("beat the index", not "went up"). At most once per day; best-effort.
+        try:
+            await ingest_benchmark_prices(db)
+        except Exception as e:
+            logger.warning("Benchmark (SPY) ingestion failed: %s", e)
+
         # Quarterly financials — EDGAR (authoritative filed XBRL, full history) is the
         # source of truth; yfinance is the fallback if EDGAR is unavailable (no CIK,
         # network, etc.). Both free. See ANALYST_ROADMAP.md 0.1-0.3.
@@ -154,6 +161,15 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
         except Exception as e:
             logger.exception("KPI extraction failed for %s", ticker)
             result.errors.append(f"kpi_extraction: {e}")
+
+        # Segment persistence (roadmap 4.1) — deterministic parse of the transcript summary's
+        # segment breakouts into the `segments` table (no LLM; the summarizer extracted once).
+        try:
+            from app.ingestion.segments import persist_segments
+            await persist_segments(db, ticker)
+        except Exception as e:
+            logger.exception("Segment persistence failed for %s", ticker)
+            result.warnings.append(f"segments: {e}")
 
         # Other FMP-only data (gated behind API key). Analyst estimates now come from
         # yfinance above; FMP is retained only for earnings surprises (its unique value-add).
