@@ -239,6 +239,25 @@ async def compute_price_target(db: AsyncSession, ticker: str,
                          for s in ("bull", "base", "bear"))
     pt_12m = fair_value_now * (1 + wacc.cost_of_equity)
 
+    # Street-method cross-check for cyclicals (user request, 2026-06-12): what OUR earnings are
+    # worth under the STREET's method (NTM EPS × the market's current forward multiple, no
+    # reversion assumed). Not blended into the PT — a triangulation anchor, so the reversion-
+    # anchored number is never read in isolation. Redundant for stable names (their multiple leg
+    # already IS forward-P/E-based).
+    forward_check: dict | None = None
+    if use_normalized:
+        base_ntm_eps = (forecast.projections.get("base") or {}).get("ntm_eps")
+        fwd_pe = (val.forward_pe if val and val.forward_pe and 0 < val.forward_pe < 200 else None) \
+            or await _peer_forward_pe(db, ticker)
+        if base_ntm_eps and fwd_pe:
+            fwd_pe = max(6.0, min(25.0, float(fwd_pe)))  # peak-cycle forward multiples compress
+            forward_check = {
+                "value": round(base_ntm_eps * fwd_pe, 2),
+                "ntm_eps": base_ntm_eps,
+                "fwd_pe": round(fwd_pe, 1),
+                "note": "our NTM EPS × market fwd P/E — the street's method applied to OUR earnings (no reversion)",
+            }
+
     base_qni = [q["net_income"] for q in forecast.projections["base"]["quarters"]]
     grid = sensitivity_grid(base_qni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
 
@@ -259,7 +278,8 @@ async def compute_price_target(db: AsyncSession, ticker: str,
         scenarios=scenarios,
         method={"w_dcf": w_dcf, "multiple_basis": multiple_basis,
                 "fcf_conversion": round(fcf_conv, 3), "fcf_conversion_source": fcf_conv_source,
-                "terminal_growth": terminal_g, "earnings_basis": ne.basis if ne else "unknown"},
+                "terminal_growth": terminal_g, "earnings_basis": ne.basis if ne else "unknown",
+                "forward_multiple_check": forward_check},
         wacc=wacc.to_dict(),
         sensitivity=grid,
         forecast_as_of=forecast.as_of,

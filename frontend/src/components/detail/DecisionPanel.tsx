@@ -142,23 +142,39 @@ function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> })
           {pt.street_target_mean != null && <>{' · street $'}{pt.street_target_mean.toFixed(0)}</>}
         </span>
       </div>
-      <p
-        style={{
-          flex: 1,
-          minWidth: 220,
-          fontSize: 12,
-          lineHeight: 1.6,
-          color: 'var(--color-ink-2)',
-          margin: 0,
-          fontFamily: 'var(--font-mono)',
-          textWrap: 'pretty' as const,
-        }}
-      >
-        P({probTxt}) · {pt.method?.w_dcf != null ? `${(pt.method.w_dcf * 100).toFixed(0)}% DCF / ${(100 - pt.method.w_dcf * 100).toFixed(0)}% multiples` : ''}
-        {pt.method?.multiple_basis ? ` · ${pt.method.multiple_basis}` : ''}
-        {typeof pt.wacc?.wacc === 'number' ? ` · WACC ${((pt.wacc.wacc as number) * 100).toFixed(1)}%` : ''}
-        {typeof pt.wacc?.beta === 'number' ? ` (β ${(pt.wacc.beta as number).toFixed(2)})` : ''}
-      </p>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <p
+          style={{
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: 'var(--color-ink-2)',
+            margin: 0,
+            fontFamily: 'var(--font-mono)',
+            textWrap: 'pretty' as const,
+          }}
+        >
+          P({probTxt}) · {pt.method?.w_dcf != null ? `${(pt.method.w_dcf * 100).toFixed(0)}% DCF / ${(100 - pt.method.w_dcf * 100).toFixed(0)}% multiples` : ''}
+          {pt.method?.multiple_basis ? ` · ${pt.method.multiple_basis}` : ''}
+          {typeof pt.wacc?.wacc === 'number' ? ` · WACC ${((pt.wacc.wacc as number) * 100).toFixed(1)}%` : ''}
+          {typeof pt.wacc?.beta === 'number' ? ` (β ${(pt.wacc.beta as number).toFixed(2)})` : ''}
+        </p>
+        {pt.method?.forward_multiple_check && (
+          <p
+            style={{
+              fontSize: 12,
+              lineHeight: 1.6,
+              color: 'var(--color-warn-fg, var(--color-ink-2))',
+              margin: '6px 0 0',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            street-method check: ${pt.method.forward_multiple_check.value.toFixed(0)}
+            {' '}(our NTM ${pt.method.forward_multiple_check.ntm_eps.toFixed(2)} × fwd P/E{' '}
+            {pt.method.forward_multiple_check.fwd_pe.toFixed(1)}, no reversion) — the PT assumes
+            mean reversion; this line shows our earnings on the street&apos;s method
+          </p>
+        )}
+      </div>
     </div>
   );
 }

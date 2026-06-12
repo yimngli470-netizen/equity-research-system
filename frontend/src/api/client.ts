@@ -101,7 +101,14 @@ export interface PriceTargetInfo {
   horizon_months: number;
   upside: number | null;
   probabilities: Record<string, number | string>;
-  method: { w_dcf: number; multiple_basis: string; terminal_growth: number; earnings_basis: string };
+  method: {
+    w_dcf: number;
+    multiple_basis: string;
+    terminal_growth: number;
+    earnings_basis: string;
+    // Cyclicals only: our NTM EPS × market fwd P/E — the street's method on OUR earnings.
+    forward_multiple_check?: { value: number; ntm_eps: number; fwd_pe: number; note: string } | null;
+  };
   wacc: Record<string, number | string>;
   street_target_mean: number | null;
 }
