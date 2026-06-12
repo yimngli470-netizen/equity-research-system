@@ -120,6 +120,7 @@ EVENT_NORMS: dict[str, tuple[float, float, bool]] = {
     "eps_beat_rate":           (0.0, 1.0, False),   # 0/4 to 4/4
     "avg_surprise_pct":       (-0.10, 0.10, False), # -10% to +10%
     "beat_trend":              (0.0, 1.0, False),   # already mapped 0-1
+    "model_vs_street":        (-0.15, 0.15, False), # our next-q EPS vs consensus (4.2), fraction
 }
 
 RISK_NORMS: dict[str, tuple[float, float, bool]] = {

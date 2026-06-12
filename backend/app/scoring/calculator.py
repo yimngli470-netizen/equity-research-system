@@ -97,6 +97,16 @@ async def calculate_score(
     hard = await extract_all_hard_features(db, ticker)
     ai = await extract_all_ai_features(db, ticker)
 
+    # Our forecast model vs street (roadmap 4.2): being above consensus on next-quarter EPS is an
+    # earnings-expectations signal (same family as avg_surprise) — joins the event category.
+    try:
+        from app.forecast.engine import _latest_forecast
+        f = await _latest_forecast(db, ticker)
+        if f is not None and f.eps_vs_street_next_q is not None:
+            ai.setdefault("event", {})["model_vs_street"] = f.eps_vs_street_next_q
+    except Exception:
+        pass  # forecast absent → feature simply missing
+
     # Step 2: Normalize
     norm_growth = normalize_features("growth", hard.get("growth", {}))
     norm_profit = normalize_features("profitability", hard.get("profitability", {}))

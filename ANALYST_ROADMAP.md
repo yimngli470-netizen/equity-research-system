@@ -288,6 +288,23 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > breakouts → `segments` table (META FoA $55.9B +33% YoY; MU's 4 BUs). No new LLM calls anywhere
 > in 4.1. **Next: 4.2 (forecast model).**
 
+> **Status: 4.2 DONE (2026-06-12) — the forecast model: our own numbers.** `app/forecast/`:
+> `drivers.py` (deterministic driver series + through-cycle medians = the reversion anchor) →
+> `assumptions.py` (**the ONE new Opus call**: 8-quarter bull/base/bear paths, every material
+> assumption basis-cited guidance|trend|judgment, archetype-conditioned — cyclicals MUST revert
+> toward the median, growers MUST fade; FRACTIONS only per the P8 lesson) → `model.py`
+> (deterministic compiler: YoY-anchored revenue carries seasonality; hygiene clamps on every LLM
+> number) → immutable `forecasts` rows (migration `c9a7d5e3f410`). Smart-cached by input
+> fingerprint (≈1 call/ticker/quarter); runs FIRST in the pipeline; valuation agent context gets
+> the OUR MODEL block + forecast-keyed fingerprint; `model_vs_street` feature joins the event
+> category; `grade_due_forecasts` (deterministic, on pipeline run) scores our EPS vs actual vs
+> street-at-forecast-time as quarters resolve — the densest calibration label stream. **Verified
+> live on MU:** the model auto-mean-reverted margins 81%→mid-30s per archetype ("supercycle peaks
+> Q3 FY26 then reverts"), NTM EPS base $27.8 / bull $34.2 / bear $20.4, next-q $7.47 vs street
+> $19.47 (−62%, SAME-quarter aligned after fixing a period-mismatch bug) — a bold falsifiable
+> divergence that grades when the May quarter files. e2e asserts the compiler's exact arithmetic
+> ($0.50/q from canned assumptions) + zero-LLM rerun. **Next: 4.3 (DCF + price target).**
+
 > **Goal:** stop re-packaging consensus. The system produces ITS OWN driver-based EPS forecasts, a
 > deterministic DCF, and a scenario-weighted 12-month price target — the defining artifacts of a
 > professional analyst. **Architecture rule (extends §4a):** every new number is deterministic code;

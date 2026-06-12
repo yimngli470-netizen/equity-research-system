@@ -76,12 +76,16 @@ class ValuationAgent(BaseAgent):
 
     async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
         from app.agents import fingerprints as fp
+        from app.forecast.engine import _latest_forecast
+        f = await _latest_forecast(db, ticker)
         return {
             "financials": await fp.financial_marker(db, ticker),
             "transcript": await fp.transcript_marker(db, ticker),
             "estimates": await fp.estimates_marker(db, ticker),
             "targets": await fp.price_targets_marker(db, ticker),
             "price": await fp.price_marker(db, ticker),
+            # A new forecast (4.2) re-anchors forward earnings power → re-run the valuation.
+            "forecast": f"{f.id}.{f.as_of}" if f is not None else None,
         }
 
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
@@ -171,6 +175,14 @@ class ValuationAgent(BaseAgent):
                 "[valuation] %s Q%d %d transcript has no summary — skipping transcript context",
                 ticker, transcript.quarter, transcript.year,
             )
+
+        # OUR MODEL (roadmap 4.2): the driver-based forecast — our own numbers, the primary
+        # anchor for forward earnings power. Triangulate: our model vs street vs your DCF.
+        from app.forecast.engine import _latest_forecast, summarize_forecast
+        f = await _latest_forecast(db, ticker)
+        if f is not None:
+            context += "\n\n--- OUR FORECAST MODEL (4.2; basis-cited, deterministic compile) ---\n"
+            context += summarize_forecast(f)
 
         return context
 

@@ -7,14 +7,15 @@ This project's canonical documentation for AI coding agents lives in **[`CLAUDE.
 Read those instead of a second copy here — a previous standalone copy of the docs in this file
 had drifted out of date, so it was replaced with this pointer to keep a single source of truth.
 
-## LLM surface (as of 2026-06-09)
+## LLM surface (as of 2026-06-12)
 
-**Per-pipeline LLM calls: 6** (was 8 — trimmed 2026-06-09). The orchestrated steps
-(`orchestrator.run_all_agents`): `news` (Sonnet), `earnings, industry, valuation` (Opus, analytical)
-→ the **bull/bear `debate`** (one Opus call in `agents/debate.py::DebateAgent` that produces BOTH the
-`bull` and `bear` report rows — was two calls) → `judge` (Opus) → `validation` (**deterministic-only,
-no LLM** — `agents/validation_agent.py` runs the pure-Python `decision/deterministic_validator`). So
-5 Opus + 1 Sonnet per run.
+**Per-pipeline LLM tasks: 7 max** — but **smart fingerprint caching (2026-06-11) means a quiet-day
+run costs ~0**: each task re-fires only when its inputs changed. The orchestrated steps
+(`orchestrator.run_all_agents`): **`forecast`** (Opus, 4.2 — `forecast/assumptions.py`, basis-cited
+assumption paths, ≈once per ticker per QUARTER) → `news` (Sonnet) → `earnings, industry, valuation`
+(Opus, analytical) → the **bull/bear `debate`** (one Opus call in `agents/debate.py::DebateAgent`
+that produces BOTH the `bull` and `bear` report rows — was two calls) → `judge` (Opus) →
+`validation` (**deterministic-only, no LLM** — the pure-Python `decision/deterministic_validator`).
 
 Why the trim: the bull and bear advocate the *same* evidence pack, so one dual-advocate call suffices
 (judge/UI/features still read two rows). And the validation LLM (semantic) pass confirmed ~95% of

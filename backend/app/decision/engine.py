@@ -416,6 +416,14 @@ async def run_decision(
     except Exception:
         logger.exception("[thesis] grading failed for %s", ticker)
 
+    # Grade resolved forecast quarters (4.2): our EPS vs actual vs street-at-the-time.
+    # Fully deterministic (no LLM); cheap no-op when nothing has resolved.
+    try:
+        from app.forecast.grading import grade_due_forecasts
+        await grade_due_forecasts(db, ticker)
+    except Exception:
+        logger.exception("[forecast] grading failed for %s", ticker)
+
     logger.info(
         "[decision] %s → raw=%s final=%s confidence=%s flags=%d",
         ticker, raw_signal, final_signal, confidence, len(flags),

@@ -121,6 +121,27 @@ _AGENT_REPORT = {
 }
 
 
+# Canned forecast assumptions (4.2): flat revenue (0% YoY), GM 40%, opex 20%, net factor 0.75,
+# no dilution. With the fixture's $5B/q revenue and 1.5B derived shares (NI/EPS), the deterministic
+# compiler must produce EPS = 5e9×0.20×0.75/1.5e9 = $0.50/q → base NTM EPS exactly $2.00.
+_FORECAST_ASSUMPTIONS = {
+    "ticker": TICKER,
+    "scenarios": {
+        s: {
+            "revenue_yoy_path": [0.0] * 8,
+            "gross_margin_path": [0.40] * 8,
+            "opex_ratio_path": [0.20] * 8,
+            "net_factor": 0.75,
+            "share_change_qoq": 0.0,
+            "rationale": f"{s}: flat continuation",
+        }
+        for s in ("base", "bull", "bear")
+    },
+    "assumption_bases": [{"assumption": "flat growth", "basis": "trend", "note": "fixture"}],
+    "key_swing_factors": ["none — canned"],
+}
+
+
 @pytest.fixture
 def patch_world(engine, monkeypatch):
     """Redirect the pipeline/agents to the test DB and fake every external boundary.
@@ -140,6 +161,8 @@ def patch_world(engine, monkeypatch):
                     # The bull/bear debate (DebateAgent) asks for both cases in one call → nest them.
                     if "DUAL ADVOCATE" in system:
                         payload = {"bull": _AGENT_REPORT, "bear": _AGENT_REPORT}
+                    elif "driver-based" in system:  # the forecast assumptions call (4.2)
+                        payload = _FORECAST_ASSUMPTIONS
                     else:
                         payload = _AGENT_REPORT
                     text = json.dumps(payload)
@@ -263,6 +286,17 @@ async def test_full_backend_workflow(db, client, patch_world):
     assert TICKER in all_user_prompts
     assert f"Forward P/E: {FWD_PE:.1f}x" in all_user_prompts          # from the Valuation row
     assert f"${Q_REVENUE / 1e9:.2f}B" in all_user_prompts            # quarterly revenue from EDGAR
+
+    # --- (b2) FORECAST (4.2): the deterministic compiler turned the canned assumptions into
+    # exact numbers — flat $5B/q × (40% GM − 20% opex) × 0.75 net factor / 1.5B shares = $0.50/q.
+    db.expire_all()
+    from app.models.forecast import Forecast
+    fc = (await db.execute(select(Forecast).where(Forecast.ticker == TICKER))).scalar_one()
+    assert fc.base_next_q_eps == pytest.approx(0.50, abs=0.001)
+    assert fc.base_ntm_eps == pytest.approx(2.00, abs=0.005)
+    assert fc.projections["base"]["quarters"][0]["revenue"] == pytest.approx(Q_REVENUE)
+    assert fc.status == "open"
+    assert fc.input_fingerprint is not None
 
     # --- (c) SMART CACHING: a second run with unchanged inputs makes ZERO LLM calls ---
     # Every agent stored an input fingerprint; nothing was re-ingested, so every fingerprint

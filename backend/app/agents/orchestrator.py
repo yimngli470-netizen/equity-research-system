@@ -52,8 +52,9 @@ class OrchestrationResult:
         return all(r.success for r in self.results)
 
 
-# Every pipeline step in canonical run order. bull+bear come from the single debate call.
-_ALL_STEPS = ["news", "earnings", "industry", "valuation", "bull", "bear", "judge", "validation"]
+# Every pipeline step in canonical run order. bull+bear come from the single debate call;
+# "forecast" (4.2) runs FIRST — the valuation agent reads our model's numbers.
+_ALL_STEPS = ["forecast", "news", "earnings", "industry", "valuation", "bull", "bear", "judge", "validation"]
 _ANALYTICAL = ["news", "earnings", "industry", "valuation"]
 
 
@@ -98,6 +99,31 @@ async def _run_single_agent(
             success=False,
             error=str(e),
         )
+
+
+async def _run_forecast(ticker: str, mode: str) -> AgentResult:
+    """The driver-based forecast (4.2): one smart-cached Opus call → the `forecasts` row the
+    valuation agent (and later the DCF) consume. Thin history degrades to a clean no-op."""
+    from app.forecast.engine import ensure_forecast, summarize_forecast
+
+    try:
+        async with async_session() as db:
+            row, cached = await ensure_forecast(db, ticker, mode=mode if mode != "cache" else "smart")
+        if row is None:
+            return AgentResult(agent_type="forecast", success=True,
+                               report={"skipped": "history too thin to model"}, cached=False)
+        return AgentResult(
+            agent_type="forecast",
+            success=True,
+            report={"as_of": row.as_of.isoformat(), "base_ntm_eps": row.base_ntm_eps,
+                    "base_next_q_eps": row.base_next_q_eps,
+                    "eps_vs_street_next_q": row.eps_vs_street_next_q,
+                    "summary": summarize_forecast(row)},
+            cached=cached,
+        )
+    except Exception as e:
+        logger.exception("[forecast] failed for %s", ticker)
+        return AgentResult(agent_type="forecast", success=False, error=str(e))
 
 
 async def _run_debate(ticker: str, mode: str) -> list[AgentResult]:
@@ -148,14 +174,22 @@ async def run_all_agents(
     # dialectic reads their reports), then the bull/bear debate (one call), then the judge, then
     # validation (deterministic, depends on fresh agent outputs).
     analytical = [t for t in _ANALYTICAL if t in requested]
+    run_forecast = "forecast" in requested
     run_debate = ("bull" in requested) or ("bear" in requested)
     run_judge = "judge" in requested
     run_validation = "validation" in requested
 
-    logger.info("Running for %s: analytical=%s debate=%s judge=%s validation=%s (mode=%s)",
-                ticker, analytical, run_debate, run_judge, run_validation, mode)
+    logger.info("Running for %s: forecast=%s analytical=%s debate=%s judge=%s validation=%s (mode=%s)",
+                ticker, run_forecast, analytical, run_debate, run_judge, run_validation, mode)
 
     result = OrchestrationResult(ticker=ticker)
+
+    # Forecast first (4.2): the valuation agent's context includes our model's numbers.
+    if run_forecast:
+        agent_result = await _run_forecast(ticker, mode)
+        result.results.append(agent_result)
+        status = "cached" if agent_result.cached else ("ok" if agent_result.success else "FAILED")
+        logger.info("[forecast] %s → %s", ticker, status)
 
     for agent_type in analytical:
         agent_result = await _run_single_agent(agent_type, ticker, mode)
