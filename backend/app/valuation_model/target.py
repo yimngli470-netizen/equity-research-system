@@ -205,11 +205,15 @@ async def compute_price_target(db: AsyncSession, ticker: str,
         d = run_dcf(q_ni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
         excess_ps = None
         if use_normalized:
-            # Through-cycle value = mid-cycle EPS × through-cycle P/E PLUS the PV of the cash the
-            # SCENARIO earns above mid-cycle run-rate before reversion — the boom years are real
-            # money, and this is also what makes the cyclical multiple leg scenario-dependent.
+            # Through-cycle value = mid-cycle EPS × through-cycle P/E PLUS the PV of ALL the cash
+            # the SCENARIO earns above mid-cycle run-rate before full reversion: the 8 modeled
+            # quarters AND the DCF's fade years 3-5 (which are still above mid-cycle on the way
+            # down). Truncating the credit at year 2 ignored real boom money — user-spotted.
             norm_q_ni = ne.normalized_net_income / 4.0
             excess = sum((ni - norm_q_ni) / (1 + coe_q) ** (i + 1) for i, ni in enumerate(q_ni))
+            norm_annual = ne.normalized_net_income
+            for yr_idx, ni_y in enumerate(d.ni_years[2:], start=3):  # fade years 3-5
+                excess += (ni_y - norm_annual) / (1 + wacc.cost_of_equity) ** yr_idx
             excess_ps = excess / shares
             mult_value = normalized_eps * pe + excess_ps
         else:

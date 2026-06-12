@@ -42,6 +42,7 @@ class DcfResult:
     equity_value: float | None
     fcf_conversion: float
     fcf_years: list[float] = field(default_factory=list)   # explicit-period annual FCF
+    ni_years: list[float] = field(default_factory=list)    # the earnings path behind it
     terminal_growth: float = DEFAULT_TERMINAL_G
     notes: list[str] = field(default_factory=list)
 
@@ -52,6 +53,7 @@ class DcfResult:
             "equity_value": round(self.equity_value, 0) if self.equity_value else None,
             "fcf_conversion": round(self.fcf_conversion, 3),
             "fcf_years": [round(f, 0) for f in self.fcf_years],
+            "ni_years": [round(n, 0) for n in self.ni_years],
             "terminal_growth": self.terminal_growth,
             "notes": self.notes,
         }
@@ -120,7 +122,7 @@ def run_dcf(
         notes.append("negative equity value — debt exceeds DCF enterprise value")
         fvps = 0.0
     return DcfResult(fair_value_per_share=fvps, enterprise_value=ev, equity_value=equity,
-                     fcf_conversion=fcf_conversion, fcf_years=fcf_years,
+                     fcf_conversion=fcf_conversion, fcf_years=fcf_years, ni_years=ni_years,
                      terminal_growth=terminal_growth, notes=notes)
 
 
