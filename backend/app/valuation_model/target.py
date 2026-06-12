@@ -47,6 +47,21 @@ PE_BOUNDS_GROWTH = (8.0, 45.0)
 HORIZON_MONTHS = 12
 
 
+def scenario_summary(scenarios: dict | None) -> dict:
+    """Slim per-scenario legs for API/UI: the DCF value, the multiple value, and the blend —
+    the spread between the legs is the expectations gap and belongs on screen, not buried in JSONB."""
+    out: dict = {}
+    for name, s in (scenarios or {}).items():
+        if not isinstance(s, dict):
+            continue
+        out[name] = {
+            "dcf": (s.get("dcf") or {}).get("fair_value_per_share"),
+            "multiple": s.get("multiple_value"),
+            "blended": s.get("blended"),
+        }
+    return out
+
+
 def scenario_probabilities(judge_report: dict | None) -> tuple[dict[str, float], str]:
     """The judge's rubric-anchored probabilities; normalized to sum 1. Fallback: a deterministic
     mapping from leaning + conviction (for cached judge reports predating the schema)."""

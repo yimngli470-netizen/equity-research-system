@@ -101,6 +101,8 @@ export interface PriceTargetInfo {
   horizon_months: number;
   upside: number | null;
   probabilities: Record<string, number | string>;
+  // Per-scenario legs: the DCF value vs the multiple value (the spread = the expectations gap).
+  scenarios?: Record<string, { dcf: number | null; multiple: number | null; blended: number | null }>;
   method: {
     w_dcf: number;
     multiple_basis: string;

@@ -134,6 +134,7 @@ async def get_latest_decision(ticker: str, db: AsyncSession = Depends(get_db)):
 
 async def _latest_price_target(db: AsyncSession, ticker: str) -> dict | None:
     from app.models.price_target import PriceTarget
+    from app.valuation_model.target import scenario_summary
 
     pt = (
         await db.execute(
@@ -149,6 +150,7 @@ async def _latest_price_target(db: AsyncSession, ticker: str) -> dict | None:
         "horizon_months": pt.horizon_months,
         "upside": pt.upside,
         "probabilities": pt.probabilities,
+        "scenarios": scenario_summary(pt.scenarios),
         "method": pt.method,
         "wacc": pt.wacc,
         "street_target_mean": pt.street_target_mean,

@@ -87,6 +87,66 @@ export default function DecisionPanel({ decision }: Props) {
   );
 }
 
+const SCENARIO_ORDER = ['bear', 'base', 'bull'] as const;
+
+function ScenarioLegsTable({
+  scenarios,
+  probabilities,
+}: {
+  scenarios: NonNullable<NonNullable<Decision['price_target']>['scenarios']>;
+  probabilities: Record<string, number | string>;
+}) {
+  const cols = SCENARIO_ORDER.filter((s) => scenarios[s]);
+  if (cols.length === 0) return null;
+  const fmt = (v: number | null | undefined) => (v != null ? `$${v.toFixed(0)}` : '—');
+  const cell: React.CSSProperties = {
+    padding: '2px 10px 2px 0',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11.5,
+    textAlign: 'right',
+  };
+  const label: React.CSSProperties = { ...cell, textAlign: 'left', color: 'var(--color-ink-3)' };
+  return (
+    <table style={{ borderCollapse: 'collapse', margin: '8px 0 0' }}>
+      <thead>
+        <tr>
+          <th style={label} />
+          {cols.map((s) => (
+            <th key={s} style={{ ...cell, color: 'var(--color-ink-3)', fontWeight: 600, textTransform: 'capitalize' }}>
+              {s}
+              {typeof probabilities?.[s] === 'number' && (
+                <span style={{ fontWeight: 400 }}> {((probabilities[s] as number) * 100).toFixed(0)}%</span>
+              )}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style={label}>DCF</td>
+          {cols.map((s) => (
+            <td key={s} style={cell}>{fmt(scenarios[s]?.dcf)}</td>
+          ))}
+        </tr>
+        <tr>
+          <td style={label}>Multiple</td>
+          {cols.map((s) => (
+            <td key={s} style={cell}>{fmt(scenarios[s]?.multiple)}</td>
+          ))}
+        </tr>
+        <tr>
+          <td style={{ ...label, color: 'var(--color-ink-2)' }}>Blended</td>
+          {cols.map((s) => (
+            <td key={s} style={{ ...cell, fontWeight: 600, color: 'var(--color-ink)' }}>
+              {fmt(scenarios[s]?.blended)}
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> }) {
   if (pt.price_target == null) return null;
   const p = pt.probabilities || {};
@@ -158,6 +218,7 @@ function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> })
           {typeof pt.wacc?.wacc === 'number' ? ` · WACC ${((pt.wacc.wacc as number) * 100).toFixed(1)}%` : ''}
           {typeof pt.wacc?.beta === 'number' ? ` (β ${(pt.wacc.beta as number).toFixed(2)})` : ''}
         </p>
+        {pt.scenarios && <ScenarioLegsTable scenarios={pt.scenarios} probabilities={pt.probabilities} />}
         {pt.method?.forward_multiple_check && (
           <p
             style={{

@@ -323,7 +323,7 @@ async def run_decision(
     # judge's probabilities. Best-effort; None when no forecast exists (we don't conjure numbers).
     price_target: dict | None = None
     try:
-        from app.valuation_model.target import compute_price_target
+        from app.valuation_model.target import compute_price_target, scenario_summary
         pt_row = await compute_price_target(db, ticker, judge_report)
         if pt_row is not None:
             price_target = {
@@ -332,6 +332,7 @@ async def run_decision(
                 "horizon_months": pt_row.horizon_months,
                 "upside": pt_row.upside,
                 "probabilities": pt_row.probabilities,
+                "scenarios": scenario_summary(pt_row.scenarios),
                 "method": pt_row.method,
                 "wacc": pt_row.wacc,
                 "street_target_mean": pt_row.street_target_mean,
