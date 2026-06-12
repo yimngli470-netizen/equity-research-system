@@ -28,6 +28,10 @@ TERMINAL_G = {
 DEFAULT_TERMINAL_G = 0.025
 FCF_CONVERSION_BOUNDS = (0.40, 1.20)
 FCF_CONVERSION_FALLBACK = 0.85
+# Steady state: capex ≈ D&A, so terminal conversion approaches ~0.85. Applying a boom-time
+# conversion (heavy build-cycle capex) FOREVER retains earnings into eternity while crediting only
+# terminal-g growth for them — internally inconsistent and it annihilates terminal value.
+TERMINAL_FCF_CONVERSION = 0.85
 EXPLICIT_YEARS = 5  # 2 from the forecast model + 3 faded
 
 
@@ -88,17 +92,23 @@ def run_dcf(
         wacc = terminal_growth + 0.005
         notes.append("WACC floored to terminal g + 0.5% (Gordon stability)")
 
-    y1 = sum(quarterly_net_income[:4]) * fcf_conversion
-    y2 = sum(quarterly_net_income[4:8]) * fcf_conversion
-    growth_exit = (y2 / y1 - 1) if y1 > 0 else terminal_growth
+    # Earnings path: 2 modeled years, then growth fades into the terminal rate.
+    ni_years = [sum(quarterly_net_income[:4]), sum(quarterly_net_income[4:8])]
+    growth_exit = (ni_years[1] / ni_years[0] - 1) if ni_years[0] > 0 else terminal_growth
     growth_exit = max(-0.5, min(1.0, growth_exit))
-
-    # Years 3-5: fade the exit growth linearly into the terminal rate.
-    fcf_years = [y1, y2]
     g = growth_exit
     for i in range(3):
         g = g + (terminal_growth - g) * (i + 1) / 3
-        fcf_years.append(fcf_years[-1] * (1 + g))
+        ni_years.append(ni_years[-1] * (1 + g))
+
+    # FCF conversion: measured (boom-time) in year 1, fading linearly to steady state by year 5 —
+    # the terminal economics use TERMINAL_FCF_CONVERSION, not the build-cycle capex burden.
+    term_conv = (TERMINAL_FCF_CONVERSION if fcf_conversion < TERMINAL_FCF_CONVERSION
+                 else min(fcf_conversion, 0.95))
+    fcf_years = [
+        ni * (fcf_conversion + (term_conv - fcf_conversion) * i / (EXPLICIT_YEARS - 1))
+        for i, ni in enumerate(ni_years)
+    ]
 
     pv = sum(f / (1 + wacc) ** (i + 1) for i, f in enumerate(fcf_years))
     tv = fcf_years[-1] * (1 + terminal_growth) / (wacc - terminal_growth)

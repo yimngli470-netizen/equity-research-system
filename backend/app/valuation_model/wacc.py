@@ -23,7 +23,10 @@ EQUITY_RISK_PREMIUM = 0.05
 DEBT_SPREAD = 0.015
 TAX_RATE = 0.21
 RISK_FREE_FALLBACK = 0.042
-BETA_BOUNDS = (0.5, 2.5)
+# Raw regression betas on momentum-y price series measure the runup, not systematic risk.
+# Blume-adjust toward 1 (the standard mean-reversion correction), THEN clamp.
+BLUME_WEIGHT = 0.67
+BETA_BOUNDS = (0.8, 2.0)
 BENCHMARK = "SPY"
 
 
@@ -96,9 +99,13 @@ async def build_wacc(db: AsyncSession, ticker: str,
     rf_source = "^TNX" if rf is not None else "fallback"
     rf = rf if rf is not None else RISK_FREE_FALLBACK
 
-    beta = await compute_beta(db, ticker)
-    beta_source = "regression" if beta is not None else "fallback"
-    beta = max(BETA_BOUNDS[0], min(BETA_BOUNDS[1], beta)) if beta is not None else 1.0
+    beta_raw = await compute_beta(db, ticker)
+    beta_source = "regression(Blume-adj)" if beta_raw is not None else "fallback"
+    if beta_raw is not None:
+        beta = BLUME_WEIGHT * beta_raw + (1 - BLUME_WEIGHT) * 1.0
+        beta = max(BETA_BOUNDS[0], min(BETA_BOUNDS[1], beta))
+    else:
+        beta = 1.0
 
     coe = rf + beta * EQUITY_RISK_PREMIUM
     cod = (rf + DEBT_SPREAD) * (1 - TAX_RATE)

@@ -38,6 +38,11 @@ RULES:
 - Emit 8-quarter paths for revenue YoY growth, gross margin, and opex ratio per scenario.
   revenue_yoy_path[i] is growth vs the same quarter one year earlier (seasonality is handled by
   the compiler — do not re-seasonalize).
+- QUARTER 1 IS USUALLY ALREADY GUIDED (it is the in-progress or just-ended, not-yet-reported
+  quarter). Anchor q1 tightly to management guidance and near-term consensus in ALL scenarios —
+  guidance for an ending quarter is rarely off by more than a few percent. Your cycle/fade view
+  belongs in quarters 2-8, NOT in q1. A thesis about the future must not rewrite a quarter that
+  has effectively already happened.
 - ARCHETYPE CONDITIONING:
   * cyclical-commodity / deep-value-turnaround: margins MUST trend toward the through-cycle median
     over the horizon unless specific guidance says otherwise — peak margins are not a plateau.

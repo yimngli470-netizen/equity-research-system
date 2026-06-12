@@ -316,10 +316,22 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > older reports) → `price_targets` rows (migration `d2c8e6f4a510`) with the FULL derivation
 > persisted. Wired into `run_decision` + API + DecisionPanel. **Live MU: PT(12m) $106 vs price
 > ~$900 vs street $789** — every input visible: β 2.5 (clamped), WACC 16.9%, FCF conversion 0.40
-> (floor; memory capex), w_dcf 0.30, normalized-EPS × through-cycle P/E 14. **Known bias logged
-> (4.3 follow-up):** the cyclical multiple leg values pure mid-cycle and gives NO credit for the
-> boom-period cash flows between now and reversion — stacked with the punishing WACC it compounds
-> into max-bearishness; consider adding the PV of near-term excess earnings to the normalized leg.
+> (floor; memory capex), w_dcf 0.30, normalized-EPS × through-cycle P/E 14.
+> **4.3b same-day fixes (user-spotted: "$106 is too far away"):** decomposing the persisted row
+> exposed four real flaws — (1) FCF conversion applied to the TERMINAL value (retaining 60% of
+> earnings forever while crediting 2% growth — internally inconsistent; now fades to 0.85 steady
+> state), (2) the cyclical multiple leg was scenario-INDEPENDENT (116.86 in bull/base/bear — 70%
+> of the blend ignored the judge's probabilities; now adds the PV of each scenario's excess
+> earnings over mid-cycle run-rate, the boom-cash credit), (3) raw regression beta on a parabolic
+> series (now Blume-adjusted, clamp [0.8, 2.0] → MU 2.5→2.0, CoE 17%→14.5%), (4) the assumptions
+> prompt let the LLM rewrite the ALREADY-GUIDED q1 (front-loading its downturn thesis into an
+> ended quarter — q1 $7.47 vs street $19.47; new rule: q1 anchors to guidance, the thesis lives in
+> q2-8 → q1 $12.86, NTM base $27.8→$42.8). **MU PT: $106 → $164** (scenarios $105/$139/$173).
+> The remaining gap vs price ~$900 / street $789 is THESIS, not mechanics: the model's 2-year
+> margin reversion + the 2010-2026 median-margin mid-cycle anchor. **Logged for M3b:** whether the
+> consolidated/HBM-era mid-cycle margin is structurally above the 16-year median is THE central
+> analytical question on this name — exactly what the regime models should estimate and what the
+> bull scenario probability is for. q1 grades vs actuals in ~2 weeks.
 > e2e asserts PT + probabilities + pinned-WACC determinism + the 3×3 grid.
 
 > **Goal:** stop re-packaging consensus. The system produces ITS OWN driver-based EPS forecasts, a

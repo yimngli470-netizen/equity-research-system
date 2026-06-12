@@ -196,14 +196,22 @@ async def compute_price_target(db: AsyncSession, ticker: str,
 
     scenarios: dict[str, dict] = {}
     blended_values: dict[str, float] = {}
+    coe_q = (1 + wacc.cost_of_equity) ** 0.25 - 1  # quarterly discount for the excess-cash credit
     for name in ("base", "bull", "bear"):
         proj = (forecast.projections or {}).get(name) or {}
         q_ni = [q.get("net_income") for q in (proj.get("quarters") or [])]
         if len(q_ni) < 8 or any(v is None for v in q_ni):
             continue
         d = run_dcf(q_ni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
+        excess_ps = None
         if use_normalized:
-            mult_value = normalized_eps * pe
+            # Through-cycle value = mid-cycle EPS × through-cycle P/E PLUS the PV of the cash the
+            # SCENARIO earns above mid-cycle run-rate before reversion — the boom years are real
+            # money, and this is also what makes the cyclical multiple leg scenario-dependent.
+            norm_q_ni = ne.normalized_net_income / 4.0
+            excess = sum((ni - norm_q_ni) / (1 + coe_q) ** (i + 1) for i, ni in enumerate(q_ni))
+            excess_ps = excess / shares
+            mult_value = normalized_eps * pe + excess_ps
         else:
             ntm_eps = proj.get("ntm_eps")
             mult_value = (ntm_eps * pe) if ntm_eps else None
@@ -216,6 +224,7 @@ async def compute_price_target(db: AsyncSession, ticker: str,
         blended_values[name] = blended
         scenarios[name] = {"dcf": d.to_dict(),
                            "multiple_value": round(mult_value, 2) if mult_value else None,
+                           "excess_earnings_ps": round(excess_ps, 2) if excess_ps is not None else None,
                            "blended": round(blended, 2)}
 
     if "base" not in blended_values:
