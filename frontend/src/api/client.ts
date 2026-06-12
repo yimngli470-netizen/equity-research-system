@@ -95,6 +95,13 @@ export interface Decision {
   price_target: PriceTargetInfo | null;
 }
 
+export interface ResearchNote {
+  ticker: string;
+  as_of: string;
+  note_md: string;
+  changes: string[] | null;
+}
+
 export interface PriceTargetInfo {
   fair_value: number | null;
   price_target: number | null;
@@ -253,6 +260,14 @@ export const api = {
         body: JSON.stringify({ ticker }),
       }),
     latest: (ticker: string) => request<Decision | null>(`/decision/${ticker}/latest`),
+  },
+  notes: {
+    latest: (ticker: string) => request<ResearchNote | null>(`/notes/${ticker}/latest`),
+    build: (ticker: string) =>
+      request<ResearchNote>('/notes/build', {
+        method: 'POST',
+        body: JSON.stringify({ ticker }),
+      }),
   },
   ingestion: {
     run: (tickers?: string[]) =>

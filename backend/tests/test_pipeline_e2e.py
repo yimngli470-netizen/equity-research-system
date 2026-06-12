@@ -366,6 +366,15 @@ async def test_full_backend_workflow(db, client, patch_world):
     pt_row = (await db.execute(select(PriceTarget).where(PriceTarget.ticker == TICKER))).scalar_one()
     assert pt_row.sensitivity and len(pt_row.sensitivity) == 3  # 3×3 WACC × terminal-g grid
 
+    # research note (5.1): the deliverable compiles deterministically from this run's artifacts.
+    from app.models.research_note import ResearchNote
+    note = (await db.execute(select(ResearchNote).where(ResearchNote.ticker == TICKER))).scalar_one()
+    assert dec.final_signal in note.note_md            # rating up top
+    assert "Kill criteria" not in note.note_md or "by **" in note.note_md
+    assert "Our numbers vs street" in note.note_md     # forecast section present
+    assert note.payload["summary"]["rating"] == dec.final_signal
+    assert note.changes == []                          # first note → no diff
+
     # position sizing (3.4): a capped-to-HOLD/REDUCE decision commits no new capital — the sizer
     # returns a 0% target with a non-accumulate action.
     sizing = dec.position_sizing

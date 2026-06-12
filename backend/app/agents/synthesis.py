@@ -98,10 +98,13 @@ async def build_evidence_pack(db: AsyncSession, ticker: str) -> str:
 
 
 async def build_judge_context(db: AsyncSession, ticker: str) -> str:
-    """The bull case + the bear case the judge must reconcile (plus a short data anchor)."""
+    """The bull case + the bear case the judge must reconcile (plus a short data anchor), and the
+    judge's OWN PRIOR RECORD on this name (5.3) — each fresh verdict is written knowing how the
+    last one scored."""
     bull = await _latest_report(db, ticker, "bull")
     bear = await _latest_report(db, ticker, "bear")
     meta = await _archetype_and_screen(db, ticker)
+    record = await _own_track_record(db, ticker)
 
     sections = []
     if meta:
@@ -110,4 +113,41 @@ async def build_judge_context(db: AsyncSession, ticker: str) -> str:
     sections.append(json.dumps(bull, indent=2, default=str) if bull else "[bull case unavailable]")
     sections.append("\n=== BEAR CASE ===")
     sections.append(json.dumps(bear, indent=2, default=str) if bear else "[bear case unavailable]")
+    if record:
+        sections.append("\n=== YOUR PRIOR RECORD ON THIS NAME (graded — calibrate against it) ===")
+        sections.append(record)
     return "\n".join(sections)
+
+
+async def _own_track_record(db: AsyncSession, ticker: str) -> str | None:
+    """The judge's previous calls on this ticker: graded kill-criteria outcomes + the standing open
+    call. Deterministic context, no LLM cost — accountability feeding back into judgment."""
+    from app.models.thesis import StockThesis
+
+    theses = (
+        await db.execute(
+            select(StockThesis).where(StockThesis.ticker == ticker)
+            .order_by(StockThesis.as_of.desc()).limit(4)
+        )
+    ).scalars().all()
+    if not theses:
+        return None
+    lines: list[str] = []
+    for th in theses:
+        head = (f"- {th.as_of}: leaning={th.leaning} conviction={th.conviction} "
+                f"decision={th.decision_signal} (price then ${th.price_at:.2f})" if th.price_at else
+                f"- {th.as_of}: leaning={th.leaning} conviction={th.conviction} decision={th.decision_signal}")
+        lines.append(head)
+        outcome = th.outcome or {}
+        if th.status == "graded" or outcome.get("predictions"):
+            for idx, p in sorted((outcome.get("predictions") or {}).items()):
+                kc = (th.kill_criteria or [])
+                pred_txt = kc[int(idx)].get("prediction", "?")[:90] if int(idx) < len(kc) else "?"
+                lines.append(f"    [{p.get('result', '?').upper()}] \"{pred_txt}\"")
+            if outcome.get("realized_return") is not None:
+                xr = outcome.get("excess_return")
+                lines.append(f"    return {outcome['realized_return']:+.1%}"
+                             + (f" (vs SPY {xr:+.1%})" if xr is not None else ""))
+        else:
+            lines.append("    [still open — not yet graded]")
+    return "\n".join(lines)

@@ -24,13 +24,26 @@ class JudgeAgent(BaseAgent):
         return await build_judge_context(db, ticker)
 
     async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
+        from sqlalchemy import select
+
         from app.agents import fingerprints as fp
-        # The judge's only inputs are the bull and bear cases: identical cases ⇒ identical verdict.
-        # Re-running on unchanged inputs adds conviction NOISE, not information — caching here makes
-        # the decision more reproducible, not just cheaper.
+        from app.models.thesis import StockThesis
+
+        # The judge's inputs: the bull/bear cases (identical cases ⇒ identical verdict — re-running
+        # on unchanged inputs adds conviction NOISE) plus, since 5.3, its own prior record. Only a
+        # GRADED outcome is new information to the judge (it authored the open theses itself), so
+        # the marker keys on grading state — a new snapshot alone must not churn the cache.
+        graded = (
+            await db.execute(
+                select(StockThesis.id, StockThesis.graded_at)
+                .where(StockThesis.ticker == ticker, StockThesis.outcome.is_not(None))
+                .order_by(StockThesis.as_of.desc()).limit(1)
+            )
+        ).first()
         return {
             "bull": await fp.report_marker(db, ticker, "bull"),
             "bear": await fp.report_marker(db, ticker, "bear"),
+            "record": f"{graded.id}.{graded.graded_at}" if graded else None,
         }
 
     def postprocess_report(self, report: dict, ticker: str) -> dict:

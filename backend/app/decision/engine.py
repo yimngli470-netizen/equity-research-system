@@ -446,6 +446,14 @@ async def run_decision(
     except Exception:
         logger.exception("[forecast] grading failed for %s", ticker)
 
+    # Research note (5.1): compile the professional deliverable from everything this run produced.
+    # Deterministic assembly, zero LLM; best-effort.
+    try:
+        from app.notes.builder import build_research_note
+        await build_research_note(db, ticker)
+    except Exception:
+        logger.exception("[note] build failed for %s", ticker)
+
     logger.info(
         "[decision] %s → raw=%s final=%s confidence=%s flags=%d",
         ticker, raw_signal, final_signal, confidence, len(flags),

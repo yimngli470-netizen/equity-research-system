@@ -15,6 +15,7 @@ import DecisionPanel from '../components/detail/DecisionPanel';
 import DetailHeader from '../components/detail/DetailHeader';
 import FinancialsTable from '../components/detail/FinancialsTable';
 import PriceChart from '../components/detail/PriceChart';
+import ResearchNotePanel from '../components/detail/ResearchNotePanel';
 import RiskFlagsPanel from '../components/detail/RiskFlagsPanel';
 import ScoreBreakdownPanel from '../components/detail/ScoreBreakdownPanel';
 import ScreenRankBar from '../components/detail/ScreenRankBar';
@@ -197,6 +198,10 @@ export default function StockDetail() {
           <DecisionPanel decision={decision} />
         </ErrorBoundary>
       )}
+
+      <ErrorBoundary label="Research note">
+        <ResearchNotePanel ticker={ticker} refreshKey={dataRefreshKey} />
+      </ErrorBoundary>
 
       {screenRank && (
         <ErrorBoundary label="Screen rank">

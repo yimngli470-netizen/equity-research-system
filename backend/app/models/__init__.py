@@ -16,6 +16,7 @@ from app.models.peer import PeerWeight
 from app.models.thesis import StockThesis
 from app.models.forecast import Forecast
 from app.models.price_target import PriceTarget
+from app.models.research_note import ResearchNote
 from app.models.estimate import ConsensusSnapshot
 
 __all__ = [
@@ -40,5 +41,6 @@ __all__ = [
     "StockThesis",
     "Forecast",
     "PriceTarget",
+    "ResearchNote",
     "ConsensusSnapshot",
 ]

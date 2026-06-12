@@ -351,6 +351,23 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 ### Phase 5 — Deliverable & Track Record (planned 2026-06-11)
 
+> **Status: 5.1 + 5.3 DONE (2026-06-12).**
+> **5.1 — research-note builder**: `app/notes/builder.py` compiles the professional deliverable
+> from artifacts the run already produced (ZERO new analysis LLM calls): rating + PT header, judge
+> verdict pull-quote, **what-changed diff vs the prior note** (field-level: rating/PT/conviction/
+> NTM/composite/sizing/reliability), investment thesis + scenario probabilities, our-numbers-vs-
+> street table (with assumption-basis counts), the PT decomposition (DCF/multiple/blended ×
+> bear/base/bull + WACC + street-method check), the debate (top bull/bear points + judge tally),
+> dated kill-criteria checklist, risk flags, position guidance, the name's own graded track
+> record, an 8-quarter EDGAR appendix, and a provenance footer. Immutable `research_notes` rows
+> (migration `e4b2c8d6f130`); built automatically at the end of every `run_decision`;
+> `/api/notes/*` + a StockDetail panel (read + download .md). Verified live on MU — the note
+> surfaces the structural-vs-cyclical HBM debate as its stated central question.
+> **5.3 — judge sees its own record**: `build_judge_context` appends the ticker's prior theses
+> with graded kill-criteria outcomes + returns (vs SPY); judge fingerprint keys on GRADING state
+> only (a fresh snapshot of its own verdict is not news to it — no cache churn).
+> **Next: 5.2 (track-record UI).**
+
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 5.1 | **Research-note builder** — `app/notes/`: deterministic assembler compiles rating, PT, estimates-vs-street table, thesis, dated kill-criteria, risks, valuation, financials appendix from existing DB artifacts (no new analysis LLM call); immutable `research_notes` snapshots; deterministic diff vs prior note ("what changed") | M | exportable research note | a professional note per ticker per run, archived + diffable |
@@ -366,6 +383,15 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 6.3 | **Backtest the screen** (= the evaluator over the M4 panel; see "Backtest ≠ model" in §4a) — walk-forward over EDGAR filed-date-gated history + historical index constituents; rank-IC vs forward returns. **First deliverable: baseline the EXISTING hand-weighted screen before any ML** (M5 must then beat it OOS; "no signal" is equally actionable). **Honesty rule: validates the deterministic SCREEN only; the LLM layer's record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | hand-screen baseline rank-IC measured, then M5 vs baseline OOS; claims bounded by what's proven |
 
 ### Cross-cutting
+- **PT↔decision divergence guard (logged 2026-06-12, not top priority — per user).** The 4.3 price
+  target is a display artifact, NOT a decision input (the signal = screen + flags + judge gate +
+  validation gate). Observed on UBER: PT +57% upside alongside a momentum-flag REDUCE, silently.
+  Planned guard: when |PT upside| > ~25% and points AGAINST the final signal, append an explicit
+  divergence note to the decision reasoning + a WATCH flag (`pt_decision_divergence`). Deliberately
+  NOT a signal input — gates only ever lower; the PT earns signal power only after forecast grading
+  (4.2) builds a track record. Related observation, fixed by 6.1: with a 13-name watchlist the peer
+  pool gives UBER semiconductor "comps" (top similarity weight only 0.47) — peer-multiple legs for
+  watchlist oddballs are suspect until the universe ingest provides real comps + M1 embeddings.
 - **Smart fingerprint caching (2026-06-11, per user).** Run Full Pipeline no longer forces all 6 LLM
   calls: each report stores an **input fingerprint** (latest filing/transcript/estimates hash/price
   ±5% band/news marker + system-prompt hash, `agents/fingerprints.py`) and `mode:"smart"` re-runs an
