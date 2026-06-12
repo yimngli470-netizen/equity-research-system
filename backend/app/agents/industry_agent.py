@@ -19,6 +19,16 @@ class IndustryAgent(BaseAgent):
     max_age_days = 7  # refresh weekly
     model = "claude-opus-4-20250514"
 
+    async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
+        from app.agents import fingerprints as fp
+        # Industry view re-runs on a new quarter, new transcript (competitive commentary), or a
+        # re-classified archetype — not on daily price noise.
+        return {
+            "financials": await fp.financial_marker(db, ticker),
+            "transcript": await fp.transcript_marker(db, ticker),
+            "archetype": await fp.archetype_marker(db, ticker),
+        }
+
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         # Get the stock's sector/industry info
         stock = await db.get(Stock, ticker)

@@ -1,12 +1,22 @@
 """Base agent class for Claude API-powered research agents.
 
 Each agent:
-1. Checks if a cached report exists and is still fresh
-2. If fresh, returns the cached report
-3. If stale or missing, calls Claude API with structured output
-4. Saves the result to analysis_reports table
+1. Checks the cache (three modes — see `run`)
+2. On a hit, returns the cached report
+3. Otherwise calls Claude API with structured output
+4. Saves the result (+ its input fingerprint) to analysis_reports
+
+Run modes (2026-06-11 smart caching):
+- "force": always call the LLM (the old force=True).
+- "cache": time-based — reuse a report younger than `max_age_days` (the old force=False).
+- "smart": INPUT-based — recompute the agent's input fingerprint (cheap DB reads + prompt hash);
+  if it matches the last report's, the inputs haven't changed, so reuse the report regardless of
+  age (up to `smart_max_age_days`, a safety ceiling on the LLM's world-knowledge staleness).
+  New earnings/transcript/estimates auto-invalidate — this FIXES the documented gotcha where a
+  time-based cache could serve a stale earnings report for up to 30 days after a new quarter.
 """
 
+import hashlib
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -23,12 +33,42 @@ from app.models.financial import Financial
 logger = logging.getLogger(__name__)
 
 
+def compare_fingerprints(old: dict | None, new: dict | None,
+                         tolerances: dict[str, tuple[str, float]] | None = None) -> bool:
+    """True if fingerprints are equivalent. Keys listed in `tolerances` compare numerically with a
+    ("rel"|"abs", threshold) band (e.g. price within ±5% ⇒ unchanged); all other keys compare
+    exactly. Missing/None fingerprints never match."""
+    if not old or not new:
+        return False
+    if set(old.keys()) != set(new.keys()):
+        return False
+    tolerances = tolerances or {}
+    for k, new_v in new.items():
+        old_v = old.get(k)
+        if k in tolerances and isinstance(old_v, (int, float)) and isinstance(new_v, (int, float)):
+            kind, thr = tolerances[k]
+            delta = abs(new_v - old_v)
+            if kind == "rel":
+                if old_v != 0 and delta / abs(old_v) > thr:
+                    return False
+                if old_v == 0 and delta > 0:
+                    return False
+            elif delta > thr:
+                return False
+        elif old_v != new_v:
+            return False
+    return True
+
+
 class BaseAgent(ABC):
     """Abstract base class for all research agents."""
 
     # Subclasses must set these
     agent_type: str = ""  # e.g. "news", "earnings", "industry", "valuation"
-    max_age_days: int = 1  # how many days before cache is stale
+    max_age_days: int = 1  # how many days before the time-based cache is stale
+    smart_max_age_days: int = 35  # smart-cache ceiling: re-run even on unchanged inputs after this
+    # Numeric fingerprint keys compared with a tolerance band instead of exact equality.
+    fingerprint_tolerances: dict[str, tuple[str, float]] = {}
     model: str = "claude-sonnet-4-20250514"
 
     def __init__(self):
@@ -39,18 +79,30 @@ class BaseAgent(ABC):
         db: AsyncSession,
         ticker: str,
         force: bool = False,
+        mode: str | None = None,
     ) -> dict:
-        """Run the agent: check cache first, then call Claude if needed.
+        """Run the agent: check cache per `mode`, then call Claude if needed.
 
         Args:
             db: Database session.
             ticker: Stock ticker.
-            force: If True, skip cache and always call Claude.
+            force: Legacy flag — force=True ⇒ mode "force", else "cache" (ignored if mode given).
+            mode: "force" | "cache" | "smart" (see module docstring).
 
         Returns:
             The analysis report as a dict.
         """
-        if not force:
+        mode = mode or ("force" if force else "cache")
+
+        fingerprint: dict | None = None
+        if mode == "smart":
+            fingerprint = await self._full_fingerprint(db, ticker)
+            cached = await self._get_smart_cached(db, ticker, fingerprint)
+            if cached is not None:
+                logger.info("[%s] %s: inputs unchanged since %s — smart-cache hit (no LLM)",
+                            self.agent_type, ticker, cached.run_date)
+                return cached.report
+        elif mode == "cache":
             cached = await self._get_cached(db, ticker)
             if cached is not None:
                 logger.info(
@@ -72,10 +124,53 @@ class BaseAgent(ABC):
         report = await asyncio.to_thread(self._call_claude, system_prompt, user_prompt)
         report = self.postprocess_report(report, ticker)
 
-        # Save to DB
-        await self._save_report(db, ticker, report)
+        # Save to DB with the input fingerprint (compute it if we didn't already).
+        if fingerprint is None:
+            fingerprint = await self._full_fingerprint(db, ticker)
+        await self._save_report(db, ticker, report, fingerprint=fingerprint)
 
         return report
+
+    # ── Smart cache (input fingerprints) ─────────────────────────────────────
+
+    async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict | None:
+        """A deterministic snapshot of the DATA this agent's context is built from (cheap DB reads,
+        no LLM). None = this agent doesn't support smart caching (smart mode then always runs).
+        Subclasses override; the prompt hash is appended automatically."""
+        return None
+
+    async def _full_fingerprint(self, db: AsyncSession, ticker: str) -> dict | None:
+        """Agent's data fingerprint + a hash of the system prompt, so ANY prompt/schema change
+        auto-invalidates every cached report generated under the old prompt."""
+        fp = await self.compute_fingerprint(db, ticker)
+        if fp is None:
+            return None
+        fp = dict(fp)
+        fp["prompt"] = hashlib.sha256(self.get_system_prompt().encode()).hexdigest()[:12]
+        return fp
+
+    async def _get_smart_cached(
+        self, db: AsyncSession, ticker: str, fingerprint: dict | None
+    ) -> AnalysisReport | None:
+        """Latest report if its stored fingerprint matches the current one (within tolerances) and
+        it's younger than the smart ceiling. None ⇒ caller must run the LLM."""
+        if fingerprint is None:
+            return None
+        row = (
+            await db.execute(
+                select(AnalysisReport)
+                .where(AnalysisReport.ticker == ticker, AnalysisReport.agent_type == self.agent_type)
+                .order_by(AnalysisReport.run_date.desc(), AnalysisReport.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not row or not isinstance(row.report, dict) or "error" in row.report:
+            return None
+        if (date.today() - row.run_date).days > self.smart_max_age_days:
+            return None
+        if not compare_fingerprints(row.input_fingerprint, fingerprint, self.fingerprint_tolerances):
+            return None
+        return row
 
     async def _augment_user_prompt(self, db: AsyncSession, ticker: str, user_prompt: str) -> str:
         """Prepend deterministic, real-time anchors to a user prompt (shared by all agents and the
@@ -206,11 +301,13 @@ class BaseAgent(ABC):
         )
         return result.scalar_one_or_none()
 
-    async def _save_report(self, db: AsyncSession, ticker: str, report: dict):
+    async def _save_report(self, db: AsyncSession, ticker: str, report: dict,
+                           fingerprint: dict | None = None):
         """Save or update this agent's report in the database."""
-        await self._save_report_as(db, ticker, self.agent_type, report)
+        await self._save_report_as(db, ticker, self.agent_type, report, fingerprint=fingerprint)
 
-    async def _save_report_as(self, db: AsyncSession, ticker: str, agent_type: str, report: dict):
+    async def _save_report_as(self, db: AsyncSession, ticker: str, agent_type: str, report: dict,
+                              fingerprint: dict | None = None):
         """Upsert an analysis report under an explicit agent_type. Lets one LLM call persist more
         than one report row (e.g. the bull/bear debate writes both `bull` and `bear` from one call)."""
         existing = await db.execute(
@@ -225,6 +322,7 @@ class BaseAgent(ABC):
         if row:
             row.report = report
             row.version += 1
+            row.input_fingerprint = fingerprint
         else:
             db.add(
                 AnalysisReport(
@@ -233,6 +331,7 @@ class BaseAgent(ABC):
                     run_date=date.today(),
                     report=report,
                     version=1,
+                    input_fingerprint=fingerprint,
                 )
             )
 

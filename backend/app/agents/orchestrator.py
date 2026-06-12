@@ -60,7 +60,7 @@ _ANALYTICAL = ["news", "earnings", "industry", "valuation"]
 async def _run_single_agent(
     agent_type: str,
     ticker: str,
-    force: bool,
+    mode: str,
 ) -> AgentResult:
     """Run a single agent with its own DB session."""
     agent_cls = AGENTS[agent_type]
@@ -68,9 +68,15 @@ async def _run_single_agent(
 
     try:
         async with async_session() as db:
-            # Check cache first to report whether we used it
-            cached = await agent._get_cached(db, ticker)
-            if cached and not force:
+            # Pre-check the cache so the result reports whether it was used (run() re-checks; the
+            # duplicate check is a few indexed reads).
+            cached = None
+            if mode == "cache":
+                cached = await agent._get_cached(db, ticker)
+            elif mode == "smart":
+                fp = await agent._full_fingerprint(db, ticker)
+                cached = await agent._get_smart_cached(db, ticker, fp)
+            if cached is not None:
                 return AgentResult(
                     agent_type=agent_type,
                     success=True,
@@ -78,7 +84,7 @@ async def _run_single_agent(
                     cached=True,
                 )
 
-            report = await agent.run(db, ticker, force=force)
+            report = await agent.run(db, ticker, mode=mode)
             return AgentResult(
                 agent_type=agent_type,
                 success="error" not in report,
@@ -94,15 +100,16 @@ async def _run_single_agent(
         )
 
 
-async def _run_debate(ticker: str, force: bool) -> list[AgentResult]:
+async def _run_debate(ticker: str, mode: str) -> list[AgentResult]:
     """One Opus call → both the bull and bear rows. Returns an AgentResult for each side."""
     from app.agents.debate import DebateAgent
 
     try:
         async with async_session() as db:
-            pair = await DebateAgent().run(db, ticker, force=force)
+            pair = await DebateAgent().run(db, ticker, mode=mode)
+        was_cached = bool(pair.get("cached"))
         return [
-            AgentResult(agent_type=side, success="error" not in rep, report=rep, cached=False)
+            AgentResult(agent_type=side, success="error" not in rep, report=rep, cached=was_cached)
             for side, rep in (("bull", pair["bull"]), ("bear", pair["bear"]))
         ]
     except Exception as e:
@@ -114,6 +121,7 @@ async def run_all_agents(
     ticker: str,
     agent_types: list[str] | None = None,
     force: bool = False,
+    mode: str | None = None,
 ) -> OrchestrationResult:
     """Run multiple agents for a ticker.
 
@@ -123,8 +131,12 @@ async def run_all_agents(
     Args:
         ticker: Stock ticker.
         agent_types: Specific agents to run. None = all agents.
-        force: Skip cache and re-run all agents.
+        force: Legacy flag — True ⇒ mode "force", else "cache" (ignored if mode given).
+        mode: "force" | "cache" | "smart" — smart re-runs an agent only when its INPUTS changed
+            (new filing/transcript/estimates/material news), so a quiet-day pipeline run costs
+            ~0 LLM calls while scoring/decision still recompute fresh.
     """
+    mode = mode or ("force" if force else "cache")
     requested = set(agent_types or _ALL_STEPS)
 
     # Validate requested steps
@@ -140,31 +152,33 @@ async def run_all_agents(
     run_judge = "judge" in requested
     run_validation = "validation" in requested
 
-    logger.info("Running for %s: analytical=%s debate=%s judge=%s validation=%s (force=%s)",
-                ticker, analytical, run_debate, run_judge, run_validation, force)
+    logger.info("Running for %s: analytical=%s debate=%s judge=%s validation=%s (mode=%s)",
+                ticker, analytical, run_debate, run_judge, run_validation, mode)
 
     result = OrchestrationResult(ticker=ticker)
 
     for agent_type in analytical:
-        agent_result = await _run_single_agent(agent_type, ticker, force)
+        agent_result = await _run_single_agent(agent_type, ticker, mode)
         result.results.append(agent_result)
         status = "cached" if agent_result.cached else ("ok" if agent_result.success else "FAILED")
         logger.info("[%s] %s → %s", agent_type, ticker, status)
 
     if run_debate:
-        for agent_result in await _run_debate(ticker, force):
+        for agent_result in await _run_debate(ticker, mode):
             result.results.append(agent_result)
-            logger.info("[%s] %s → %s", agent_result.agent_type, ticker,
-                        "ok" if agent_result.success else "FAILED")
+            status = "cached" if agent_result.cached else ("ok" if agent_result.success else "FAILED")
+            logger.info("[%s] %s → %s", agent_result.agent_type, ticker, status)
 
     if run_judge:
-        agent_result = await _run_single_agent("judge", ticker, force)
+        agent_result = await _run_single_agent("judge", ticker, mode)
         result.results.append(agent_result)
-        logger.info("[judge] %s → %s", ticker, "ok" if agent_result.success else "FAILED")
+        status = "cached" if agent_result.cached else ("ok" if agent_result.success else "FAILED")
+        logger.info("[judge] %s → %s", ticker, status)
 
-    # Run validation last — always force since it depends on fresh agent outputs
+    # Run validation last — always force: it's deterministic (no LLM), so it's free to re-verify
+    # the (possibly cached) reports against the freshly-ingested data every run.
     if run_validation:
-        agent_result = await _run_single_agent("validation", ticker, force=True)
+        agent_result = await _run_single_agent("validation", ticker, mode="force")
         result.results.append(agent_result)
         logger.info("[validation] %s → %s", ticker, "ok" if agent_result.success else "FAILED")
 

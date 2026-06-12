@@ -65,7 +65,10 @@ export function runPipeline(ticker: string): Promise<void> {
         warnings,
       });
 
-      const agentResult = await api.analysis.run(ticker, { force: true, ingestFirst: false });
+      // Smart mode (2026-06-11): each agent re-runs ONLY if its inputs changed since its last
+      // report (new filing/transcript/estimates/material news — just-ingested above). A quiet-day
+      // run costs ~0 LLM calls; an earnings day cascades the full re-run automatically.
+      const agentResult = await api.analysis.run(ticker, { mode: 'smart', ingestFirst: false });
       const agentFailures = agentResult.results.filter((r) => !r.success);
       if (agentFailures.length > 0) {
         const detail = agentFailures
@@ -73,7 +76,12 @@ export function runPipeline(ticker: string): Promise<void> {
           .join(' · ');
         throw new Error(`Agent refresh failed (${detail})`);
       }
-      const agentSummary = agentResult.results.map((r) => `${r.agent_type}=ok`).join(' · ');
+      const cachedCount = agentResult.results.filter((r) => r.cached).length;
+      const freshCount = agentResult.results.length - cachedCount;
+      const agentSummary =
+        cachedCount > 0
+          ? `${freshCount} re-ran · ${cachedCount} reused (inputs unchanged)`
+          : `${freshCount} agents re-ran`;
       setState(ticker, {
         running: true,
         message: `Agents done (${agentSummary}). Calculating score…`,

@@ -22,11 +22,23 @@ class EarningsAgent(BaseAgent):
     max_age_days = 30  # refresh monthly or when new quarter drops
     model = "claude-opus-4-20250514"
 
-    async def run(self, db: AsyncSession, ticker: str, force: bool = False) -> dict:
+    async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
+        from app.agents import fingerprints as fp
+        # Everything this agent's context reads: a new quarter, transcript, surprise print, KPI
+        # extraction, or consensus revision re-runs the deep-dive; otherwise the analysis stands.
+        return {
+            "financials": await fp.financial_marker(db, ticker),
+            "transcript": await fp.transcript_marker(db, ticker),
+            "surprises": await fp.surprise_marker(db, ticker),
+            "kpis": await fp.kpi_marker(db, ticker),
+            "estimates": await fp.estimates_marker(db, ticker),
+        }
+
+    async def run(self, db: AsyncSession, ticker: str, force: bool = False, mode: str | None = None) -> dict:
         """Run the LLM agent, then overwrite the beat/miss NUMBERS with deterministic ones computed
         from `earnings_events` (the LLM emitted `avg_surprise_pct` in ambiguous units — see
         `quant/earnings_surprise.py`). Keeps the LLM's narrative; fixes only the measured figures."""
-        report = await super().run(db, ticker, force=force)
+        report = await super().run(db, ticker, force=force, mode=mode)
         if not isinstance(report, dict) or "error" in report:
             return report
 

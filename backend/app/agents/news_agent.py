@@ -12,6 +12,12 @@ from app.models.document import Document
 class NewsAgent(BaseAgent):
     agent_type = "news"
     max_age_days = 1  # refresh daily
+    smart_max_age_days = 3  # news context goes stale fast even when no new articles land
+
+    async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
+        from app.agents.fingerprints import news_marker
+        # Any new article invalidates; no new articles = nothing new to analyze.
+        return {"news": await news_marker(db, ticker)}
 
     def postprocess_report(self, report: dict, ticker: str) -> dict:
         """Keep report metadata deterministic instead of model-generated."""

@@ -304,6 +304,17 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 6.3 | **Backtest the screen** (= the evaluator over the M4 panel; see "Backtest ≠ model" in §4a) — walk-forward over EDGAR filed-date-gated history + historical index constituents; rank-IC vs forward returns. **First deliverable: baseline the EXISTING hand-weighted screen before any ML** (M5 must then beat it OOS; "no signal" is equally actionable). **Honesty rule: validates the deterministic SCREEN only; the LLM layer's record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | hand-screen baseline rank-IC measured, then M5 vs baseline OOS; claims bounded by what's proven |
 
 ### Cross-cutting
+- **Smart fingerprint caching (2026-06-11, per user).** Run Full Pipeline no longer forces all 6 LLM
+  calls: each report stores an **input fingerprint** (latest filing/transcript/estimates hash/price
+  ±5% band/news marker + system-prompt hash, `agents/fingerprints.py`) and `mode:"smart"` re-runs an
+  agent only when its inputs changed. Cascade is automatic (new quarter → earnings → debate → judge,
+  via upstream report-id fingerprints); news re-litigates the dialectic only via a **materiality
+  trigger** (sentiment swing >0.3 / new high-impact report — user choice); judge caching is
+  deliberate (identical cases ⇒ identical verdict; re-rolling adds conviction noise); 35d safety
+  ceiling; `snapshot_thesis` dedups unchanged verdicts (no calibration pseudo-replication). Cost:
+  quiet day ≈ 0 LLM calls, news day ≈ 1, earnings day ≈ 6 (auto-detected). Also FIXES the documented
+  staleness gotcha (stale earnings report surviving ≤30d post-release). e2e asserts the second smart
+  run makes zero LLM calls; verified live (META news: fresh → cached).
 - **Industry agent archetype-conditioned (2026-06-09)** — user-spotted over-correction: after the MU
   fixes, the industry prompt forced EVERY stock into a cycle label (META: "mid-cycle internet
   services" — filler). Same disease as the 2.2 normalized-earnings bug, on the reasoning side: one

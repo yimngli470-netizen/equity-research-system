@@ -88,6 +88,27 @@ async def snapshot_thesis(db: AsyncSession, ticker: str, decision_signal: str | 
         "status": "open",
     }
 
+    # Dedup vs the latest existing thesis (smart caching, 2026-06-11): with cheap daily pipeline
+    # runs, an unchanged judge verdict must NOT journal a new identical thesis each day — that's
+    # pseudo-replication (one opinion counted 30×) and it poisons calibration. Only journal when
+    # the OPINION changed: leaning/conviction/verdict/kill-criteria/fair value/binding signal.
+    latest = (
+        await db.execute(
+            select(StockThesis).where(StockThesis.ticker == ticker)
+            .order_by(StockThesis.as_of.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if latest is not None and latest.as_of != date.today():
+        same_opinion = all(
+            getattr(latest, k) == values[k]
+            for k in ("leaning", "conviction", "verdict_summary", "fair_value",
+                      "decision_signal", "kill_criteria")
+        )
+        if same_opinion:
+            logger.info("[thesis] %s: verdict unchanged since %s — not journaling a duplicate",
+                        ticker, latest.as_of)
+            return latest
+
     # Upsert today's thesis. Don't clobber grading already done for today.
     stmt = insert(StockThesis).values(**values).on_conflict_do_update(
         constraint="uq_thesis_ticker_asof",

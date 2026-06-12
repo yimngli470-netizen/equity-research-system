@@ -23,6 +23,16 @@ class JudgeAgent(BaseAgent):
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         return await build_judge_context(db, ticker)
 
+    async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
+        from app.agents import fingerprints as fp
+        # The judge's only inputs are the bull and bear cases: identical cases ⇒ identical verdict.
+        # Re-running on unchanged inputs adds conviction NOISE, not information — caching here makes
+        # the decision more reproducible, not just cheaper.
+        return {
+            "bull": await fp.report_marker(db, ticker, "bull"),
+            "bear": await fp.report_marker(db, ticker, "bear"),
+        }
+
     def postprocess_report(self, report: dict, ticker: str) -> dict:
         """Hygiene only (the rubric in the prompt does the real anchoring): coerce conviction to a
         float in [0,1] and the bear-point counts to non-negative ints, so the decision gate, the

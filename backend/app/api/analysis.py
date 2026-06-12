@@ -10,7 +10,10 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 class AnalysisRequest(BaseModel):
     ticker: str
     agent_types: list[str] | None = None  # None = all agents
-    force: bool = False  # skip cache
+    force: bool = False  # legacy: True ⇒ mode "force" (ignored when mode is set)
+    # "smart": re-run an agent only when its INPUTS changed (new filing/transcript/estimates/
+    # material news) — a quiet-day run costs ~0 LLM. "force": always re-run. "cache": time-based.
+    mode: str | None = None
     ingest_first: bool = True  # refresh market/fundamental/news data before agents
 
 
@@ -69,6 +72,7 @@ async def run_analysis(request: AnalysisRequest):
         ticker=ticker,
         agent_types=request.agent_types,
         force=request.force,
+        mode=request.mode,
     )
     return AnalysisRunResponse(
         ticker=result.ticker,

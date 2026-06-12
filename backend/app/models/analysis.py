@@ -16,4 +16,8 @@ class AnalysisReport(Base):
     run_date: Mapped[date] = mapped_column(Date, index=True)
     report: Mapped[dict] = mapped_column(JSONB)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    # Smart-cache fingerprint: a deterministic snapshot of the INPUTS this report was generated
+    # from (data identities + prompt hash). On a smart-mode run the agent recomputes it; a match
+    # means "nothing this agent reads has changed" → reuse the report, skip the LLM call.
+    input_fingerprint: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -35,9 +35,10 @@ class ValidationAgent(BaseAgent):
         # validation runs even without an API key).
         self._deterministic_checks: list[dict] = []
 
-    async def run(self, db: AsyncSession, ticker: str, force: bool = False) -> dict:
-        """Deterministic-only validation — no LLM call. Re-derive numeric claims against the DB and
-        assemble the report + summary, then save. (Overrides BaseAgent.run, which would call Claude.)"""
+    async def run(self, db: AsyncSession, ticker: str, force: bool = False,
+                  mode: str | None = None) -> dict:
+        """Deterministic-only validation — no LLM call, so `mode` is irrelevant: always re-runs
+        (free) against freshly-ingested data. (Overrides BaseAgent.run, which would call Claude.)"""
         agent_reports = await self._fetch_agent_reports(db, ticker)
         if not agent_reports:
             report = self.postprocess_report({"checks": []}, ticker)

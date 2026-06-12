@@ -264,6 +264,17 @@ async def test_full_backend_workflow(db, client, patch_world):
     assert f"Forward P/E: {FWD_PE:.1f}x" in all_user_prompts          # from the Valuation row
     assert f"${Q_REVENUE / 1e9:.2f}B" in all_user_prompts            # quarterly revenue from EDGAR
 
+    # --- (c) SMART CACHING: a second run with unchanged inputs makes ZERO LLM calls ---
+    # Every agent stored an input fingerprint; nothing was re-ingested, so every fingerprint
+    # matches → all LLM agents report cached. Validation (deterministic, free) always re-runs.
+    llm_calls_before = len(captured_prompts)
+    rerun = await run_all_agents(TICKER, mode="smart")
+    assert rerun.all_succeeded
+    assert len(captured_prompts) == llm_calls_before, "smart rerun must not call the LLM"
+    for r in rerun.results:
+        if r.agent_type != "validation":
+            assert r.cached, f"{r.agent_type} should be smart-cache hit"
+
     # ========== 3) SCORE → AI features from agent reports feed the composite ==========
     db.expire_all()
     from app.scoring.calculator import calculate_score

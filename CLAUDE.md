@@ -156,10 +156,19 @@ frontend/
 ```
 
 ### Agent Caching Strategy
-Each agent has a `max_age_days` setting. When triggered:
-- If a report exists in `analysis_reports` within that window → return cached (no API call)
-- Else → call Claude, save new report
-- `force=true` bypasses cache
+Three run modes (`/analysis/run` `mode` param; `agents/base.py`):
+- **`smart` (default for the pipeline button, 2026-06-11)** — INPUT-fingerprint caching: each report
+  stores a fingerprint of the data it was built from (`agents/fingerprints.py`: latest filing,
+  transcript, estimates hash, price ±5% band, news marker… + a hash of the system prompt, so prompt
+  edits auto-invalidate). Re-run only if the fingerprint changed; otherwise reuse, zero LLM. Cascade
+  is automatic: new quarter → earnings re-runs → debate fingerprint (upstream report ids) breaks →
+  judge re-runs. News only re-litigates the debate via a **materiality trigger** (sentiment swing
+  >0.3 or a new high-impact report). Safety ceiling `smart_max_age_days` (35d; news 3d).
+- **`cache`** — legacy time-based `max_age_days` window.
+- **`force`** — always call the LLM.
+Caching the judge is deliberate: identical bull/bear inputs ⇒ identical verdict; re-rolling adds
+conviction noise, not information. `snapshot_thesis` also dedups — an unchanged verdict doesn't
+journal a duplicate thesis (would poison calibration with pseudo-replication).
 
 | Agent | Model | Refresh | Purpose | Data Sources |
 |-------|-------|---------|---------|-------------|
@@ -174,10 +183,10 @@ Each agent has a `max_age_days` setting. When triggered:
 ### Refresh Strategy
 The system has two trigger paths with deliberately different cache semantics:
 
-- **"Run Full Pipeline" button (frontend, `state/pipelineTracker.ts`)** — runs the WHOLE chain for the ticker: `/ingestion/run` (incl. bootstrap, EDGAR financials, consensus, transcript fetch, KPI extraction) → `/analysis/run` with `force=true` (5 agents) → `/scoring/run` → `/decision/run`. The user-facing **hard refresh**; use it after earnings/news. Cost: several Claude calls (agents + transcript summarizer + KPI extraction; bootstrap KPI-gen only the first time for a new ticker).
-- **Daily scheduler (`ingestion/scheduler.py`, 21:30 UTC)** — runs ingestion for all active stocks. Agent/scoring/decision wiring is **not yet hooked up** ("What's Not Yet Built" item). When wired, it should run **cache-aware** (no `force`) so news refreshes daily but Opus agents only re-run when their windows lapse.
+- **"Run Full Pipeline" button (frontend, `state/pipelineTracker.ts`)** — runs the WHOLE chain for the ticker: `/ingestion/run` (incl. bootstrap, EDGAR financials, consensus, transcript fetch, KPI extraction) → `/analysis/run` with **`mode: "smart"`** → `/scoring/run` → `/decision/run`. Quiet day: ~0 LLM calls (cached agents reused; scoring/decision still recompute fresh from daily prices). News day: ~1 Sonnet. Earnings day: the new filing auto-invalidates the cascade (~6 calls). The UI shows "N re-ran · M reused (inputs unchanged)".
+- **Daily scheduler (`ingestion/scheduler.py`, 21:30 UTC)** — runs ingestion for all active stocks. Agent/scoring/decision wiring is **not yet hooked up** ("What's Not Yet Built" item). When wired, it should run `mode: "smart"` — same input-driven semantics as the button.
 
-**Known staleness gotcha:** time-based caching alone can return a stale earnings report for up to 30 days after a new quarterly release (the cache window is exactly long enough to span an entire quarter). Mitigation by design: the user clicks the button after earnings. We rejected event-aware cache invalidation as overkill — the button's existence makes it unnecessary.
+**The old staleness gotcha is FIXED by smart mode:** time-based caching could return a stale earnings report for up to 30 days after a new quarterly release; fingerprint invalidation re-runs the earnings agent the moment a new filing/transcript is ingested, no button-clicking discipline required.
 
 ### Transcript Fallback Chain (BUILT)
 FMP free-tier coverage is sparse outside the largest names. The earnings/industry/valuation agents are transcript-hungry, so missing transcripts silently degrade analysis quality. The fallback chain lives in `ingestion/transcripts.py`:

@@ -70,6 +70,19 @@ class ValuationAgent(BaseAgent):
     agent_type = "valuation"
     max_age_days = 7  # refresh weekly
     model = "claude-opus-4-20250514"
+    # Price compared with a ±5% relative band: daily wiggles don't change a valuation thesis;
+    # a real move does (and multiples scale with price, so the band covers them too).
+    fingerprint_tolerances = {"price": ("rel", 0.05)}
+
+    async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
+        from app.agents import fingerprints as fp
+        return {
+            "financials": await fp.financial_marker(db, ticker),
+            "transcript": await fp.transcript_marker(db, ticker),
+            "estimates": await fp.estimates_marker(db, ticker),
+            "targets": await fp.price_targets_marker(db, ticker),
+            "price": await fp.price_marker(db, ticker),
+        }
 
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         snapshot = await get_computed_metrics(db, ticker)

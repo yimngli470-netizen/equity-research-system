@@ -175,13 +175,21 @@ export const api = {
     },
     run: (
       ticker: string,
-      options: { force?: boolean; ingestFirst?: boolean; agentTypes?: string[] } = {},
+      options: {
+        force?: boolean;
+        // 'smart' re-runs an agent only when its inputs changed (new filing/transcript/estimates/
+        // material news) — quiet-day pipeline runs cost ~0 LLM calls.
+        mode?: 'smart' | 'force' | 'cache';
+        ingestFirst?: boolean;
+        agentTypes?: string[];
+      } = {},
     ) =>
       request<AnalysisRunResult>('/analysis/run', {
         method: 'POST',
         body: JSON.stringify({
           ticker,
           force: options.force ?? false,
+          mode: options.mode,
           ingest_first: options.ingestFirst ?? true,
           agent_types: options.agentTypes,
         }),
