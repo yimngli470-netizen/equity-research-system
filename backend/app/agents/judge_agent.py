@@ -52,6 +52,17 @@ class JudgeAgent(BaseAgent):
             if isinstance(v, (int, float)):
                 report[k] = max(0, int(v))
 
+        # scenario_probabilities (4.3): clamp to [0,1] and normalize to sum exactly 1, so the
+        # price-target EV math downstream never sees broken weights.
+        sp = report.get("scenario_probabilities")
+        if isinstance(sp, dict):
+            vals = {k: max(0.0, min(1.0, float(sp.get(k, 0) or 0))) for k in ("bull", "base", "bear")}
+            total = sum(vals.values())
+            if total > 0:
+                report["scenario_probabilities"] = {k: round(v / total, 3) for k, v in vals.items()}
+            else:
+                report.pop("scenario_probabilities", None)
+
         # Visibility only — surface a rubric/count mismatch, don't clamp (rubric-anchored by choice).
         unresolved = report.get("unresolved_bear_points")
         conv = report.get("conviction")
@@ -97,6 +108,12 @@ HOW TO SET CONVICTION — do this in ORDER, do not skip steps:
        0.20-0.35  a CORE (high-severity) bear point is CONCEDED, or the bull case structurally fails
      Conviction is your confidence in the CALL regardless of direction (a high-conviction `bear` is
      as valid as a high-conviction `bull`). If a case is marked unavailable, drop one band.
+  4. Set `scenario_probabilities` — P(bull case plays out) / P(base) / P(bear), summing to 1.0.
+     These weight the price-target scenarios, so they must be ANCHORED, not vibes:
+     start from 0.25/0.50/0.25 and shift weight toward the side whose points survived your
+     adjudication (each material surviving point ≈ 0.05-0.10 of probability mass); a side whose
+     core argument you CONCEDED gets at least 0.30. Round numbers like 0.33/0.33/0.33 are a
+     non-answer — commit, and make the tilt consistent with your leaning.
 
 Respond with valid JSON only, this exact schema:
 {
@@ -114,6 +131,7 @@ Respond with valid JSON only, this exact schema:
   "unresolved_bear_points": 0,       // integer: count of bear points assessed conceded OR partial
   "total_bear_points": 0,            // integer: how many bear points there were
   "conviction": 0.0-1.0,            // pick from the band above that matches your unresolved count
+  "scenario_probabilities": {"bull": 0.0-1.0, "base": 0.0-1.0, "bear": 0.0-1.0},  // sum to 1.0; see rubric
   "decisive_factors": ["string — what actually drove your leaning"],
   "kill_criteria": [
     {"prediction": "string — a specific, FALSIFIABLE, observable event that would flip/break the call",

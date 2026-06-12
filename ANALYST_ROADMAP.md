@@ -305,6 +305,23 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > divergence that grades when the May quarter files. e2e asserts the compiler's exact arithmetic
 > ($0.50/q from canned assumptions) + zero-LLM rerun. **Next: 4.3 (DCF + price target).**
 
+> **Status: 4.3 DONE (2026-06-12) — deterministic DCF + scenario-weighted price target. PHASE 4
+> COMPLETE.** `app/valuation_model/`: `wacc.py` (live ^TNX risk-free + OUR regression beta vs SPY
+> + declared 5% ERP — every component measured or stated), `dcf.py` (FCF = forecast NI × measured
+> historical FCF/NI conversion; years 3-5 fade to archetype-bounded terminal g; Gordon TV; 3×3
+> sensitivity grid as a first-class output), `target.py` (multiple leg: cyclical basis → normalized
+> mid-cycle EPS × own through-cycle median P/E, else scenario NTM EPS × peer-median fwd P/E;
+> archetype method blend w_dcf 0.3 cyclicals … 0.6 growers; judge-emitted rubric-anchored
+> `scenario_probabilities` weight the scenarios, deterministic leaning/conviction fallback for
+> older reports) → `price_targets` rows (migration `d2c8e6f4a510`) with the FULL derivation
+> persisted. Wired into `run_decision` + API + DecisionPanel. **Live MU: PT(12m) $106 vs price
+> ~$900 vs street $789** — every input visible: β 2.5 (clamped), WACC 16.9%, FCF conversion 0.40
+> (floor; memory capex), w_dcf 0.30, normalized-EPS × through-cycle P/E 14. **Known bias logged
+> (4.3 follow-up):** the cyclical multiple leg values pure mid-cycle and gives NO credit for the
+> boom-period cash flows between now and reversion — stacked with the punishing WACC it compounds
+> into max-bearishness; consider adding the PV of near-term excess earnings to the normalized leg.
+> e2e asserts PT + probabilities + pinned-WACC determinism + the 3×3 grid.
+
 > **Goal:** stop re-packaging consensus. The system produces ITS OWN driver-based EPS forecasts, a
 > deterministic DCF, and a scenario-weighted 12-month price target — the defining artifacts of a
 > professional analyst. **Architecture rule (extends §4a):** every new number is deterministic code;

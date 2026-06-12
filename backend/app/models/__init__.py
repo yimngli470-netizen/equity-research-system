@@ -15,6 +15,7 @@ from app.models.onboarding import DevTickerBootstrapStatus
 from app.models.peer import PeerWeight
 from app.models.thesis import StockThesis
 from app.models.forecast import Forecast
+from app.models.price_target import PriceTarget
 from app.models.estimate import ConsensusSnapshot
 
 __all__ = [
@@ -38,5 +39,6 @@ __all__ = [
     "PeerWeight",
     "StockThesis",
     "Forecast",
+    "PriceTarget",
     "ConsensusSnapshot",
 ]

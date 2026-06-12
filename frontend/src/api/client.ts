@@ -92,6 +92,18 @@ export interface Decision {
   judge_leaning: string | null;
   judge_conviction: number | null;
   position_sizing: PositionSizing | null;
+  price_target: PriceTargetInfo | null;
+}
+
+export interface PriceTargetInfo {
+  fair_value: number | null;
+  price_target: number | null;
+  horizon_months: number;
+  upside: number | null;
+  probabilities: Record<string, number | string>;
+  method: { w_dcf: number; multiple_basis: string; terminal_growth: number; earnings_basis: string };
+  wacc: Record<string, number | string>;
+  street_target_mean: number | null;
 }
 
 export interface PositionSizing {

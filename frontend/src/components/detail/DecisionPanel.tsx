@@ -81,8 +81,85 @@ export default function DecisionPanel({ decision }: Props) {
       >
         {decision.reasoning}
       </p>
+      {decision.price_target && <PriceTargetBlock pt={decision.price_target} />}
       {decision.position_sizing && <SizingBlock sizing={decision.position_sizing} />}
     </Card>
+  );
+}
+
+function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> }) {
+  if (pt.price_target == null) return null;
+  const p = pt.probabilities || {};
+  const probTxt = ['bull', 'base', 'bear']
+    .map((k) => `${k} ${typeof p[k] === 'number' ? ((p[k] as number) * 100).toFixed(0) : '—'}%`)
+    .join(' / ');
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        paddingTop: 16,
+        borderTop: '1px solid var(--color-rule-soft)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 18,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>
+        <span
+          style={{
+            fontSize: 10,
+            letterSpacing: '.06em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+            color: 'var(--color-ink-3)',
+          }}
+        >
+          Price target · {pt.horizon_months}mo
+        </span>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 22,
+            fontWeight: 700,
+            color:
+              pt.upside != null
+                ? pt.upside >= 0
+                  ? 'var(--color-pos-fg)'
+                  : 'var(--color-neg-fg)'
+                : 'var(--color-ink)',
+          }}
+        >
+          ${pt.price_target.toFixed(0)}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
+          {pt.upside != null && (
+            <>
+              {pt.upside >= 0 ? '+' : ''}
+              {(pt.upside * 100).toFixed(1)}% vs price
+            </>
+          )}
+          {pt.street_target_mean != null && <>{' · street $'}{pt.street_target_mean.toFixed(0)}</>}
+        </span>
+      </div>
+      <p
+        style={{
+          flex: 1,
+          minWidth: 220,
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: 'var(--color-ink-2)',
+          margin: 0,
+          fontFamily: 'var(--font-mono)',
+          textWrap: 'pretty' as const,
+        }}
+      >
+        P({probTxt}) · {pt.method?.w_dcf != null ? `${(pt.method.w_dcf * 100).toFixed(0)}% DCF / ${(100 - pt.method.w_dcf * 100).toFixed(0)}% multiples` : ''}
+        {pt.method?.multiple_basis ? ` · ${pt.method.multiple_basis}` : ''}
+        {typeof pt.wacc?.wacc === 'number' ? ` · WACC ${((pt.wacc.wacc as number) * 100).toFixed(1)}%` : ''}
+        {typeof pt.wacc?.beta === 'number' ? ` (β ${(pt.wacc.beta as number).toFixed(2)})` : ''}
+      </p>
+    </div>
   );
 }
 

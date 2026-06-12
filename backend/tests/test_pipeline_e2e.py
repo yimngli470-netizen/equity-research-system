@@ -118,6 +118,8 @@ _AGENT_REPORT = {
     "conviction": 0.3,
     "unresolved_bear_points": 3,
     "total_bear_points": 4,
+    # Scenario probabilities (4.3): weight the price-target scenarios.
+    "scenario_probabilities": {"bull": 0.2, "base": 0.5, "bear": 0.3},
 }
 
 
@@ -180,6 +182,10 @@ def patch_world(engine, monkeypatch):
     # EDGAR — keep the real parser, fake the HTTP.
     monkeypatch.setattr("app.ingestion.edgar.get_cik", lambda t: 1)
     monkeypatch.setattr("app.ingestion.edgar.fetch_companyfacts", lambda cik: _fake_companyfacts())
+
+    # WACC (4.3) — the ^TNX risk-free fetch is network; pin it. Beta falls back to 1.0 (no SPY
+    # rows in the fixture), so cost of equity = 0.04 + 1.0×0.05 = 0.09, deterministic.
+    monkeypatch.setattr("app.valuation_model.wacc._fetch_risk_free", lambda: 0.04)
 
     # Archetype — keep the real grounding/scoring, fake the LLM + the yfinance company lookup.
     monkeypatch.setattr("app.ingestion.archetype._company_info",
@@ -347,6 +353,18 @@ async def test_full_backend_workflow(db, client, patch_world):
     assert th.decision_signal == dec.final_signal
     assert th.fair_value == 120.0          # from the canned valuation target mid
     assert th.status == "open"
+
+    # price target (4.3): the deterministic DCF + multiple blend, weighted by the judge's
+    # probabilities (0.2/0.5/0.3) — identical canned scenarios ⇒ a single defined PT.
+    pt = dec.price_target
+    assert pt is not None
+    assert pt["price_target"] and pt["price_target"] > 0
+    assert pt["probabilities"]["bull"] == pytest.approx(0.2)
+    assert pt["probabilities"]["source"] == "judge"
+    assert pt["wacc"]["cost_of_equity"] == pytest.approx(0.09, abs=0.001)  # pinned rf + fallback beta
+    from app.models.price_target import PriceTarget
+    pt_row = (await db.execute(select(PriceTarget).where(PriceTarget.ticker == TICKER))).scalar_one()
+    assert pt_row.sensitivity and len(pt_row.sensitivity) == 3  # 3×3 WACC × terminal-g grid
 
     # position sizing (3.4): a capped-to-HOLD/REDUCE decision commits no new capital — the sizer
     # returns a 0% target with a non-accumulate action.

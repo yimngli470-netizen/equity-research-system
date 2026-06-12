@@ -37,6 +37,7 @@ class DecisionResponse(BaseModel):
     judge_leaning: str | None = None
     judge_conviction: float | None = None
     position_sizing: dict | None = None
+    price_target: dict | None = None
 
 
 @router.post("/run", response_model=DecisionResponse)
@@ -68,6 +69,7 @@ async def run_decision_endpoint(
         judge_leaning=result.judge_leaning,
         judge_conviction=result.judge_conviction,
         position_sizing=result.position_sizing,
+        price_target=result.price_target,
     )
 
 
@@ -126,4 +128,28 @@ async def get_latest_decision(ticker: str, db: AsyncSession = Depends(get_db)):
         judge_leaning=decision.judge_leaning,
         judge_conviction=decision.judge_conviction,
         position_sizing=decision.position_sizing,
+        price_target=await _latest_price_target(db, decision.ticker),
     )
+
+
+async def _latest_price_target(db: AsyncSession, ticker: str) -> dict | None:
+    from app.models.price_target import PriceTarget
+
+    pt = (
+        await db.execute(
+            select(PriceTarget).where(PriceTarget.ticker == ticker)
+            .order_by(PriceTarget.as_of.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if pt is None:
+        return None
+    return {
+        "fair_value": pt.fair_value,
+        "price_target": pt.price_target,
+        "horizon_months": pt.horizon_months,
+        "upside": pt.upside,
+        "probabilities": pt.probabilities,
+        "method": pt.method,
+        "wacc": pt.wacc,
+        "street_target_mean": pt.street_target_mean,
+    }

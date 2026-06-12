@@ -207,6 +207,7 @@ class DecisionResult:
     judge_leaning: str | None = None
     judge_conviction: float | None = None
     position_sizing: dict | None = None
+    price_target: dict | None = None
 
 
 async def run_decision(
@@ -317,6 +318,26 @@ async def run_decision(
     final_signal, val_ceiling, val_notes = _apply_validation_gate(final_signal, validation_report)
     confidence = _min_confidence(confidence, val_ceiling)
     adjustments += val_notes
+
+    # Price target (roadmap 4.3): deterministic DCF + multiple blend, scenario-weighted by the
+    # judge's probabilities. Best-effort; None when no forecast exists (we don't conjure numbers).
+    price_target: dict | None = None
+    try:
+        from app.valuation_model.target import compute_price_target
+        pt_row = await compute_price_target(db, ticker, judge_report)
+        if pt_row is not None:
+            price_target = {
+                "fair_value": pt_row.fair_value,
+                "price_target": pt_row.price_target,
+                "horizon_months": pt_row.horizon_months,
+                "upside": pt_row.upside,
+                "probabilities": pt_row.probabilities,
+                "method": pt_row.method,
+                "wacc": pt_row.wacc,
+                "street_target_mean": pt_row.street_target_mean,
+            }
+    except Exception:
+        logger.exception("[decision] price target failed for %s", ticker)
 
     # Position sizing (roadmap 3.4): translate the binding signal into a target weight, conditioned
     # on conviction + data confidence + risk flags + sector concentration + the calibration shrink
@@ -442,4 +463,5 @@ async def run_decision(
         judge_leaning=judge_leaning,
         judge_conviction=judge_conviction,
         position_sizing=position_sizing,
+        price_target=price_target,
     )
