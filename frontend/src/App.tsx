@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import StockDetail from './pages/StockDetail';
+import TrackRecord from './pages/TrackRecord';
 
 function BrandMark() {
   return (
@@ -175,7 +176,16 @@ function TopBar({ dark, toggleTheme }: { dark: boolean; toggleTheme: () => void 
             {ticker}
           </Link>
         )}
-        <span style={{ color: 'var(--color-ink-3)', cursor: 'not-allowed' }}>Compare</span>
+        <Link
+          to="/track-record"
+          style={{
+            color: location.pathname === '/track-record' ? 'var(--color-ink)' : 'var(--color-ink-2)',
+            fontWeight: location.pathname === '/track-record' ? 500 : 400,
+            textDecoration: 'none',
+          }}
+        >
+          Track Record
+        </Link>
         <span style={{ color: 'var(--color-ink-3)', cursor: 'not-allowed' }}>Settings</span>
         <ThemeToggle dark={dark} onToggle={toggleTheme} />
       </nav>
@@ -193,6 +203,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/stock/:ticker" element={<StockDetail />} />
+            <Route path="/track-record" element={<TrackRecord />} />
           </Routes>
         </div>
       </div>

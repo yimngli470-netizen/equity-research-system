@@ -366,7 +366,16 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > **5.3 — judge sees its own record**: `build_judge_context` appends the ticker's prior theses
 > with graded kill-criteria outcomes + returns (vs SPY); judge fingerprint keys on GRADING state
 > only (a fresh snapshot of its own verdict is not news to it — no cache churn).
-> **Next: 5.2 (track-record UI).**
+
+> **Status: 5.2 DONE (2026-06-13) — track-record UI. PHASE 5 COMPLETE.** `/api/track-record/*`
+> (theses ledger, forecast accuracy, calibration, summary — read-only over the journal + forecast
+> grading) + a new **Analyst Track Record** page (nav link, `pages/TrackRecord.tsx`): headline
+> strip (graded/total, mean excess return vs SPY, hit rate, forecast MAPE), the conviction
+> calibration table (said-vs-actually-right per bucket + over/under-confidence gap), the thesis
+> ledger (leaning/conviction/decision/status/return/excess-vs-SPY), and forecast accuracy (our
+> next-q EPS vs street, Δ, MAPE, beat-street rate). Reads mostly "open/pending" by design — the
+> loop is wired and accruing; the page is where it surfaces as kill-criteria dates pass and
+> forecast quarters file. Headless-render verified; e2e green.
 
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|

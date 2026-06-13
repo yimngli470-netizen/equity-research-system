@@ -95,6 +95,75 @@ export interface Decision {
   price_target: PriceTargetInfo | null;
 }
 
+export interface TrackRecordSummary {
+  theses_total: number;
+  theses_open: number;
+  theses_graded: number;
+  mean_excess_return: number | null;
+  mean_hit_rate: number | null;
+  forecasts_total: number;
+  forecasts_graded: number;
+  forecast_mape: number | null;
+  note: string;
+}
+
+export interface ThesisRow {
+  ticker: string;
+  as_of: string;
+  archetype: string | null;
+  leaning: string | null;
+  conviction: number | null;
+  decision_signal: string | null;
+  price_at: number | null;
+  status: string;
+  graded_at: string | null;
+  hit_rate: number | null;
+  realized_return: number | null;
+  excess_return: number | null;
+  n_kill_criteria: number;
+  n_graded_predictions: number;
+}
+
+export interface ForecastRow {
+  ticker: string;
+  as_of: string;
+  archetype: string | null;
+  base_ntm_eps: number | null;
+  base_next_q_eps: number | null;
+  street_next_q_eps: number | null;
+  eps_vs_street_next_q: number | null;
+  status: string;
+  mape: number | null;
+  n_quarters_resolved: number;
+  beat_street: number | null;
+}
+
+export interface CalibrationBucket {
+  lo: number;
+  hi: number;
+  n: number;
+  mean_conviction: number | null;
+  mean_hit_rate: number | null;
+  mean_directional: number | null;
+}
+
+export interface CalibrationSegment {
+  segment: string;
+  n_graded: number;
+  brier_hit: number | null;
+  brier_directional: number | null;
+  mean_conviction: number | null;
+  mean_directional: number | null;
+  overconfidence_gap: number | null;
+  buckets: CalibrationBucket[];
+}
+
+export interface CalibrationReport {
+  overall: CalibrationSegment;
+  by_archetype: CalibrationSegment[];
+  note: string;
+}
+
 export interface ResearchNote {
   ticker: string;
   as_of: string;
@@ -260,6 +329,12 @@ export const api = {
         body: JSON.stringify({ ticker }),
       }),
     latest: (ticker: string) => request<Decision | null>(`/decision/${ticker}/latest`),
+  },
+  trackRecord: {
+    summary: () => request<TrackRecordSummary>('/track-record/summary'),
+    theses: () => request<ThesisRow[]>('/track-record/theses'),
+    forecasts: () => request<ForecastRow[]>('/track-record/forecasts'),
+    calibration: () => request<CalibrationReport>('/track-record/calibration'),
   },
   notes: {
     latest: (ticker: string) => request<ResearchNote | null>(`/notes/${ticker}/latest`),
