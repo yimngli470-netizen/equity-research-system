@@ -216,3 +216,15 @@ UBER:
     entry cannot succeed; UBER transcripts must come from FMP.
     URL updated to /financials/default.aspx because /financials/quarterly-results/
     now 404s. The strategy is retained so a future headless renderer can use it.
+
+FIG:
+  ir_url: https://investor.figma.com/overview/default.aspx
+  strategy:
+    type: link_regex
+    pattern: "(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)"
+  artifact_type: press_release
+  notes: |
+    Figma (IPO 2025) IR site is Q4 Inc-hosted (same default.aspx platform as
+    UBER), so the quarterly artifact list is likely JS-rendered and may need a
+    headless fetcher to succeed; FMP is the primary transcript source until then.
+    ir_url set per user to /overview/default.aspx (2026-06-12).
