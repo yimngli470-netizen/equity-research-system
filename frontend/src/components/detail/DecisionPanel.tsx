@@ -241,13 +241,22 @@ function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> })
 }
 
 function SizingBlock({ sizing }: { sizing: NonNullable<Decision['position_sizing']> }) {
-  const accumulate = sizing.action === 'accumulate';
   const actionLabel: Record<string, string> = {
     accumulate: 'Accumulate',
     hold: 'Hold — no new capital',
     trim: 'Trim',
     exit: 'Exit',
   };
+  const delta = sizing.delta_pct ?? 0;
+  const isAdd = delta > 0.25;
+  const isTrim = delta < -0.25;
+  // Headline = the action against the current holding: +add / −trim, else the target weight.
+  const headline = isAdd
+    ? `+${delta.toFixed(1)}%`
+    : isTrim
+      ? `−${Math.abs(delta).toFixed(1)}%`
+      : `${sizing.target_weight_pct.toFixed(1)}%`;
+  const headColor = isAdd ? 'var(--color-pos-fg)' : isTrim ? 'var(--color-neg-fg)' : 'var(--color-ink-3)';
   return (
     <div
       style={{
@@ -260,7 +269,7 @@ function SizingBlock({ sizing }: { sizing: NonNullable<Decision['position_sizing
         flexWrap: 'wrap',
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 96 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>
         <span
           style={{
             fontSize: 10,
@@ -270,28 +279,16 @@ function SizingBlock({ sizing }: { sizing: NonNullable<Decision['position_sizing
             color: 'var(--color-ink-3)',
           }}
         >
-          Position size
+          {isAdd ? 'Add' : isTrim ? 'Trim' : 'Position size'}
         </span>
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 22,
-            fontWeight: 700,
-            color: accumulate ? 'var(--color-ink)' : 'var(--color-ink-3)',
-          }}
-        >
-          {accumulate ? `${sizing.target_weight_pct.toFixed(1)}%` : '—'}
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, fontWeight: 700, color: headColor }}>
+          {headline}
         </span>
         <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
           {actionLabel[sizing.action] ?? sizing.action}
-          {accumulate && (
-            <>
-              {' · '}
-              <span style={{ textTransform: 'capitalize' }}>{sizing.tier}</span>
-              {' · cap '}
-              {sizing.max_weight_pct.toFixed(0)}%
-            </>
-          )}
+          {' · target '}{sizing.target_weight_pct.toFixed(1)}%
+          {' · now '}{(sizing.current_weight_pct ?? 0).toFixed(1)}%
+          {' · cap '}{sizing.max_weight_pct.toFixed(0)}%
         </span>
       </div>
       <p

@@ -349,16 +349,12 @@ async def run_decision(
             await db.execute(select(Stock).where(Stock.ticker == ticker))
         ).scalar_one_or_none()
         archetype = stock.archetype if stock else None
-        sector = stock.sector if stock else None
-        sector_peers = 1
-        if sector:
-            sector_peers = (
-                await db.execute(
-                    select(func.count())
-                    .select_from(Stock)
-                    .where(Stock.sector == sector, Stock.active.is_(True))
-                )
-            ).scalar_one() or 1
+
+        # Concentration + current holding from the REAL book (6.2): how much of total capital is
+        # already in this name's sector, how correlated it is with the rest of the book, and what we
+        # hold today. Empty book ⇒ neutral concentration + zero current weight (the target IS the add).
+        from app.portfolio.service import book_concentration
+        bc = await book_concentration(db, ticker)
 
         from app.thesis.calibration import calibration_shrink
         cal_factor, cal_note = await calibration_shrink(db, archetype)
@@ -368,7 +364,9 @@ async def run_decision(
             confidence=confidence,
             conviction=judge_conviction,
             risk_flags=[f.to_dict() for f in flags],
-            sector_peers=sector_peers,
+            sector_weight=bc.sector_weight,
+            corr_with_book=bc.corr_with_book,
+            current_weight_pct=round(bc.held_weight * 100, 2),
             calibration_factor=cal_factor,
             calibration_note=cal_note,
         ).to_dict()

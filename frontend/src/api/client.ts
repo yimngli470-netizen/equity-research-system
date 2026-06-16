@@ -194,10 +194,43 @@ export interface PriceTargetInfo {
 export interface PositionSizing {
   action: string;               // accumulate | hold | trim | exit
   target_weight_pct: number;
+  current_weight_pct: number;   // what you hold today (6.2)
+  delta_pct: number;            // target − current: +add / −trim
   max_weight_pct: number;
   tier: string;                 // none | starter | half | full | max
   multipliers: Record<string, number>;
   rationale: string;
+}
+
+export interface BookPosition {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  archetype: string | null;
+  shares: number;
+  cost_basis: number | null;
+  last_price: number | null;
+  market_value: number | null;
+  weight: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+  beta: number | null;
+  opened_date: string | null;
+  notes: string | null;
+}
+
+export interface Book {
+  positions: BookPosition[];
+  cash: number;
+  total_invested: number;
+  total_book: number;
+  cash_pct: number;
+  n_positions: number;
+  sector_weights: Record<string, number>;
+  portfolio_beta: number | null;
+  top_correlations: { a: string; b: string; corr: number }[];
+  total_unrealized_pnl: number | null;
+  as_of: string | null;
 }
 
 export interface ScreenRow {
@@ -387,6 +420,21 @@ export const api = {
       request<{ status: string; ticker: string; note: string }>(`/universe/promote/${ticker}`, {
         method: 'POST',
       }),
+  },
+  portfolio: {
+    book: () => request<Book>('/portfolio/book'),
+    upsertPosition: (
+      ticker: string,
+      body: { shares: number; cost_basis?: number | null; opened_date?: string | null; notes?: string | null },
+    ) =>
+      request<{ ticker: string; removed?: boolean }>(`/portfolio/positions/${ticker}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    deletePosition: (ticker: string) =>
+      request<{ ticker: string; removed: boolean }>(`/portfolio/positions/${ticker}`, { method: 'DELETE' }),
+    setCash: (cash: number) =>
+      request<{ cash: number }>('/portfolio/cash', { method: 'PUT', body: JSON.stringify({ cash }) }),
   },
   notes: {
     latest: (ticker: string) => request<ResearchNote | null>(`/notes/${ticker}/latest`),

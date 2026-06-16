@@ -8,10 +8,14 @@ signal-keyed base weight — no LLM, fully auditable, every factor shown in the 
     target = base(signal) × conviction × confidence × risk × concentration × calibration   (capped)
 
 Conditioned on (per the roadmap): **conviction** (the judge's calibrated probability), **concentration**
-(a correlation-with-the-book proxy: how many watchlist names already share this sector), and the
-**calibration** trust-shrink from 3.3 (shrink when this archetype's stated conviction has historically
-run ahead of realized success). Risk flags and data confidence gate it further. It only ever sizes a
-position the decision already supports — a HOLD/REDUCE/SELL is about trimming, not adding.
+(from the REAL book, 6.2: how much of total capital already sits in this name's sector, and how
+correlated the name is with the rest of the holdings), and the **calibration** trust-shrink from 3.3
+(shrink when this archetype's stated conviction has historically run ahead of realized success). Risk
+flags and data confidence gate it further. It only ever sizes a position the decision already supports.
+
+The output is target-vs-CURRENT: given what you actually hold (6.2), it reports the delta — "add 2%"
+or "trim 1.5%" — not just an abstract target. Until a portfolio is entered the book is empty, so
+concentration is neutral and the current weight is 0 (the target IS the add).
 """
 
 from dataclasses import asdict, dataclass, field
@@ -47,15 +51,25 @@ def _risk_mult(risk_flags: list[dict]) -> tuple[float, str | None]:
     return 1.0, None
 
 
-def _concentration_mult(sector_peers: int) -> tuple[float, str | None]:
-    """Correlation-with-the-book proxy: names already in this sector on the watchlist are a coarse
-    stand-in for correlation (no returns-covariance needed). Each extra same-sector name shrinks the
-    add — 1/(1+0.25·(k−1)). One name in the sector (this one) ⇒ no discount."""
-    k = max(sector_peers, 1)
-    if k <= 1:
+def _concentration_mult(sector_weight: float, corr_with_book: float | None) -> tuple[float, str | None]:
+    """Concentration discount from the REAL book (6.2). Two overlapping risks, blended:
+      • SECTOR weight — the share of total capital already in this name's sector. 1/(1+w): an empty
+        sleeve ⇒ no discount; a book already 50% in the sector ⇒ ×0.67.
+      • CORRELATION with the rest of the book — a name that co-moves with what you own adds risk, not
+        diversification: ×(1 − 0.2·max(corr,0)). A negative-correlation diversifier gets no penalty.
+    Empty/unknown book ⇒ neutral (1.0)."""
+    sector_factor = 1.0 / (1.0 + max(sector_weight, 0.0))
+    corr_factor = 1.0 - 0.2 * max(corr_with_book or 0.0, 0.0)
+    factor = round(sector_factor * corr_factor, 3)
+    if factor >= 0.999:
         return 1.0, None
-    factor = round(1.0 / (1.0 + 0.25 * (k - 1)), 3)
-    return factor, f"{k} watchlist names in this sector → concentration ×{factor}"
+    bits = []
+    if sector_weight > 0.001:
+        bits.append(f"book {sector_weight * 100:.0f}% in-sector")
+    if corr_with_book is not None and corr_with_book > 0.05:
+        bits.append(f"corr-with-book {corr_with_book:+.2f}")
+    note = f"concentration ×{factor}" + (f" ({', '.join(bits)})" if bits else "")
+    return factor, note
 
 
 def _tier(weight_pct: float) -> str:
@@ -73,7 +87,9 @@ def _tier(weight_pct: float) -> str:
 @dataclass
 class SizingResult:
     action: str               # 'accumulate' | 'hold' | 'trim' | 'exit'
-    target_weight_pct: float  # suggested portfolio weight for the position
+    target_weight_pct: float  # recommended TOTAL portfolio weight for the position
+    current_weight_pct: float # what you hold today (0 if no position / no book)
+    delta_pct: float          # target − current: +add / −trim
     max_weight_pct: float     # the single-name cap in force
     tier: str                 # none | starter | half | full | max
     multipliers: dict = field(default_factory=dict)
@@ -83,39 +99,60 @@ class SizingResult:
         return asdict(self)
 
 
+def _delta_phrase(delta: float, current: float) -> str:
+    """Human action against the current holding: 'add 2.0%', 'trim 1.5%', or 'hold 3.0%'."""
+    if delta > 0.25:
+        return f"add {delta:.1f}%"
+    if delta < -0.25:
+        return f"trim {abs(delta):.1f}%"
+    return f"hold {current:.1f}%" if current > 0.05 else "no position"
+
+
 def compute_position_size(
     final_signal: str,
     confidence: str,
     conviction: float | None,
     risk_flags: list[dict],
-    sector_peers: int = 1,
+    sector_weight: float = 0.0,
+    corr_with_book: float | None = None,
+    current_weight_pct: float = 0.0,
     calibration_factor: float = 1.0,
     calibration_note: str | None = None,
 ) -> SizingResult:
-    """Deterministic size guidance for the binding decision. See module docstring for the stack."""
-    signal = (final_signal or "HOLD").upper()
+    """Deterministic size guidance for the binding decision. See module docstring for the stack.
 
-    # Non-buys: sizing is about exiting/trimming/holding, not adding.
+    `sector_weight`/`corr_with_book`/`current_weight_pct` come from the real book (6.2); all default
+    to the empty-book case (no concentration, no holding) so this works before a portfolio exists.
+    """
+    signal = (final_signal or "HOLD").upper()
+    cur = round(max(current_weight_pct, 0.0), 2)
+
+    # Non-buys: trim/exit/hold the EXISTING position (target is relative to what's held).
     if signal in {"SELL", "REDUCE", "HOLD"}:
+        target = {"SELL": 0.0, "REDUCE": round(cur * 0.5, 2), "HOLD": cur}[signal]
         action = {"SELL": "exit", "REDUCE": "trim", "HOLD": "hold"}[signal]
-        rationale = {
-            "SELL": "Exit / do not hold — the decision is SELL.",
+        delta = round(target - cur, 2)
+        base_txt = {
+            "SELL": "Exit — the decision is SELL.",
             "REDUCE": "Trim toward a smaller position — the decision is REDUCE.",
             "HOLD": "Hold existing; commit no new capital — the decision is HOLD.",
         }[signal]
-        return SizingResult(action=action, target_weight_pct=0.0, max_weight_pct=MAX_POSITION_PCT,
-                            tier="none", multipliers={}, rationale=rationale)
+        rationale = f"{base_txt} {_delta_phrase(delta, cur)}" + (f" (hold {cur:.1f}%)." if cur > 0.05 else ".")
+        return SizingResult(action=action, target_weight_pct=target, current_weight_pct=cur,
+                            delta_pct=delta, max_weight_pct=MAX_POSITION_PCT,
+                            tier=_tier(target), multipliers={}, rationale=rationale)
 
-    # Buys: stack the multipliers.
+    # Buys: stack the multipliers into a target TOTAL weight, then diff against what's held.
     base = _BASE_PCT.get(signal, 0.0)
     conv_m = _conviction_mult(conviction)
     conf_m = _CONF_MULT.get(confidence, 0.8)
     risk_m, risk_note = _risk_mult(risk_flags)
-    conc_m, conc_note = _concentration_mult(sector_peers)
+    conc_m, conc_note = _concentration_mult(sector_weight, corr_with_book)
     cal_m = max(min(calibration_factor, 1.0), 0.0)
 
     target = base * conv_m * conf_m * risk_m * conc_m * cal_m
     target = round(min(target, MAX_POSITION_PCT), 2)
+    delta = round(target - cur, 2)
 
     multipliers = {
         "base_pct": base,
@@ -134,11 +171,14 @@ def compute_position_size(
         + (f" × risk {risk_m}" if risk_m != 1.0 else "")
         + (f" × concentration {conc_m}" if conc_m != 1.0 else "")
         + (f" × calibration {cal_m}" if cal_m != 1.0 else "")
-        + f" → {target:.2f}% (cap {MAX_POSITION_PCT:.0f}%)."
+        + f" → target {target:.2f}% (cap {MAX_POSITION_PCT:.0f}%); {_delta_phrase(delta, cur)}"
+        + (f" from {cur:.1f}%." if cur > 0.05 else ".")
     )
     if notes:
         rationale += " " + " ".join(notes)
 
-    action = "accumulate" if target > 0 else "hold"
-    return SizingResult(action=action, target_weight_pct=target, max_weight_pct=MAX_POSITION_PCT,
+    # A BUY thesis can still mean TRIM if you're overweight vs the target the thesis supports.
+    action = "accumulate" if delta > 0.25 else "trim" if delta < -0.25 else "hold"
+    return SizingResult(action=action, target_weight_pct=target, current_weight_pct=cur,
+                        delta_pct=delta, max_weight_pct=MAX_POSITION_PCT,
                         tier=_tier(target), multipliers=multipliers, rationale=rationale[:800])

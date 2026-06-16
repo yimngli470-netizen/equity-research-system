@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import StockDetail from './pages/StockDetail';
 import TrackRecord from './pages/TrackRecord';
 import Universe from './pages/Universe';
+import Portfolio from './pages/Portfolio';
 
 function BrandMark() {
   return (
@@ -188,6 +189,16 @@ function TopBar({ dark, toggleTheme }: { dark: boolean; toggleTheme: () => void 
           Universe
         </Link>
         <Link
+          to="/portfolio"
+          style={{
+            color: location.pathname === '/portfolio' ? 'var(--color-ink)' : 'var(--color-ink-2)',
+            fontWeight: location.pathname === '/portfolio' ? 500 : 400,
+            textDecoration: 'none',
+          }}
+        >
+          Portfolio
+        </Link>
+        <Link
           to="/track-record"
           style={{
             color: location.pathname === '/track-record' ? 'var(--color-ink)' : 'var(--color-ink-2)',
@@ -215,6 +226,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/stock/:ticker" element={<StockDetail />} />
             <Route path="/universe" element={<Universe />} />
+            <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/track-record" element={<TrackRecord />} />
           </Routes>
         </div>

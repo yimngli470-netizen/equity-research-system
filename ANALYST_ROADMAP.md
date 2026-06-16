@@ -408,6 +408,22 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > "Universe") — status strip, filter chips, ranked table with composite bars + signal pills + "prov"
 > badges + Promote. e2e + 6 archetype unit tests green; tsc + vite clean.
 
+> **Status: 6.2 DONE (2026-06-15) — portfolio object + book-aware sizing.** Sizing no longer fakes
+> its concentration input (a count of same-sector watchlist names) — it reads the REAL book. New
+> `portfolio_positions` + `portfolio_account` (cash singleton; migration `a1f4b7c9e230`), manual CRUD,
+> no brokerage link. `portfolio/service.py::compute_book` turns holdings + cash into honest weights
+> of TOTAL capital, sector exposure, unrealized P&L, a portfolio beta vs SPY (reusing `wacc.compute_beta`,
+> cash as beta-drag), and a holdings return-correlation matrix. `book_concentration(ticker)` feeds the
+> sizer: **actual in-sector book weight** (1/(1+w)) × **correlation-with-book** (1−0.2·max(corr,0); a
+> negative-correlation diversifier gets no penalty) — both default neutral on an empty book.
+> `sizing.py` now emits **target-vs-current**: `current_weight_pct` + `delta_pct`, so a decision says
+> "add 2%" / "trim 1.5%", and a BUY you're overweight in correctly reads TRIM (META: BUY but 16% held
+> vs a 2.2% target → trim 13.9%). `api/portfolio.py` (CRUD + `/book`); `pages/Portfolio.tsx` (nav
+> "Portfolio") — book summary (total/invested/cash/β/P&L), holdings table w/ weight+P&L+β, add/remove,
+> sector-exposure bars, correlation matrix; `DecisionPanel` headlines the add/trim delta. e2e (empty-book
+> path) + unit tests green; tsc + vite clean. NOTE 6.2 didn't change WHO decides — sizing stays
+> deterministic; the book is just a better-grounded input.
+
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **S&P 500 + NASDAQ-100** (~520 unique names; per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked SPX+NDX screen; promote-to-watchlist flow |

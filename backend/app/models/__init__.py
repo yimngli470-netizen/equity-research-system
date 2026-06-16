@@ -18,6 +18,7 @@ from app.models.forecast import Forecast
 from app.models.price_target import PriceTarget
 from app.models.research_note import ResearchNote
 from app.models.estimate import ConsensusSnapshot
+from app.models.portfolio import PortfolioPosition, PortfolioAccount
 
 __all__ = [
     "Stock",
@@ -43,4 +44,6 @@ __all__ = [
     "PriceTarget",
     "ResearchNote",
     "ConsensusSnapshot",
+    "PortfolioPosition",
+    "PortfolioAccount",
 ]
