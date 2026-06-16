@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class JudgeAgent(BaseAgent):
     agent_type = "judge"
     max_age_days = 1
-    model = "claude-opus-4-20250514"
+    tier = "opus"
 
     async def build_context(self, db: AsyncSession, ticker: str) -> str:
         return await build_judge_context(db, ticker)

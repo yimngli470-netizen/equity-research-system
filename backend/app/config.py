@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     env: str = "development"
     log_level: str = "INFO"
 
+    # LLM model selection — TWO tiers, set in ONE place (override per-env via OPUS_MODEL / SONNET_MODEL
+    # in .env, no code change). Anthropic retires dated snapshots periodically (a retired id returns
+    # 404 not_found_error and every agent fails), so keep these current — see the latest ids in
+    # CLAUDE.md / the claude-api skill. opus = deep analysis (agents, judge, forecast); sonnet = fast
+    # tasks (news, summaries, archetype, KPI, IR repair, grading).
+    opus_model: str = "claude-opus-4-8"
+    sonnet_model: str = "claude-sonnet-4-6"
+
     # Sync database URL for Alembic (replaces asyncpg with psycopg2)
     @property
     def database_url_sync(self) -> str:

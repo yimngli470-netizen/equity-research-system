@@ -24,7 +24,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-SUMMARIZER_MODEL = "claude-sonnet-4-20250514"
+SUMMARIZER_MODEL = settings.sonnet_model
 MAX_INPUT_CHARS = 120_000  # ~30K tokens — Sonnet handles this comfortably
 MAX_OUTPUT_TOKENS = 4096
 

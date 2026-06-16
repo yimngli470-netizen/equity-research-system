@@ -69,7 +69,17 @@ class BaseAgent(ABC):
     smart_max_age_days: int = 35  # smart-cache ceiling: re-run even on unchanged inputs after this
     # Numeric fingerprint keys compared with a tolerance band instead of exact equality.
     fingerprint_tolerances: dict[str, tuple[str, float]] = {}
-    model: str = "claude-sonnet-4-20250514"
+    # Model TIER, not a hardcoded id: "opus" (deep analysis) | "sonnet" (fast). The actual model id
+    # is resolved from config (one place to update / an env override) — see Settings.opus_model.
+    tier: str = "sonnet"
+    # Output token ceiling. The judge/debate emit large structured JSON (bear points, kill-criteria,
+    # synthesis, two advocate cases); 4096 truncated them mid-string. A ceiling only caps; you pay for
+    # tokens actually generated, so a generous default is free insurance against truncated JSON.
+    max_output_tokens: int = 8192
+
+    @property
+    def model(self) -> str:
+        return settings.opus_model if self.tier == "opus" else settings.sonnet_model
 
     def __init__(self):
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -237,7 +247,7 @@ class BaseAgent(ABC):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=4096,
+                max_tokens=self.max_output_tokens,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
             )

@@ -31,7 +31,7 @@ from app.models.stock import Stock
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = settings.sonnet_model
 _UA = "Mozilla/5.0 (research) equity-research-personal yimngli470@gmail.com"
 
 

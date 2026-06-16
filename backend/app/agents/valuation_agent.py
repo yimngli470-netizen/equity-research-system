@@ -69,7 +69,7 @@ def _format_normalized_earnings(archetype: str | None, ne, market_cap: float | N
 class ValuationAgent(BaseAgent):
     agent_type = "valuation"
     max_age_days = 7  # refresh weekly
-    model = "claude-opus-4-20250514"
+    tier = "opus"
     # Price compared with a ±5% relative band: daily wiggles don't change a valuation thesis;
     # a real move does (and multiples scale with price, so the band covers them too).
     fingerprint_tolerances = {"price": ("rel", 0.05)}

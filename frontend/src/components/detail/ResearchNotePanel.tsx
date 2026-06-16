@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import type { ResearchNote } from '../../api/client';
 import Card from '../primitives/Card';
+import Markdown from '../primitives/Markdown';
 
 /** The professional deliverable (5.1): the per-run research note, rendered as-is (it's Markdown
  * compiled deterministically by the backend) with a download. Collapsed by default — the panels
@@ -86,23 +87,18 @@ export default function ResearchNotePanel({ ticker, refreshKey }: { ticker: stri
         </ul>
       )}
       {open && (
-        <pre
+        <div
           style={{
             marginTop: 14,
-            padding: 16,
+            padding: '4px 20px 16px',
             background: 'var(--color-surface-2)',
             borderRadius: 6,
-            fontSize: 12.5,
-            lineHeight: 1.65,
-            whiteSpace: 'pre-wrap',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--color-ink)',
-            maxHeight: 640,
+            maxHeight: 680,
             overflowY: 'auto',
           }}
         >
-          {note.note_md}
-        </pre>
+          <Markdown source={note.note_md} />
+        </div>
       )}
     </Card>
   );

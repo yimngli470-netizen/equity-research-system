@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class IndustryAgent(BaseAgent):
     agent_type = "industry"
     max_age_days = 7  # refresh weekly
-    model = "claude-opus-4-20250514"
+    tier = "opus"
 
     async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
         from app.agents import fingerprints as fp

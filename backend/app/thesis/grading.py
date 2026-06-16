@@ -24,7 +24,7 @@ from app.models.thesis import StockThesis
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = settings.sonnet_model
 
 _FQ = re.compile(r"Q([1-4])\s*FY\s*'?(\d{2,4})", re.I)
 _QEND = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}

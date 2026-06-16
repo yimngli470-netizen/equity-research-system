@@ -26,7 +26,7 @@ class DebateAgent(BaseAgent):
 
     agent_type = "debate"          # for logging only; it writes `bull` and `bear`, not `debate`
     max_age_days = 1
-    model = "claude-opus-4-20250514"
+    tier = "opus"
 
     # News enters the fingerprint ONLY through the materiality trigger (user decision 2026-06-11):
     # routine articles must not re-litigate the debate (sentiment ±0.3 band; a NEW high-impact news

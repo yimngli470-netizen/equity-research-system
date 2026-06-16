@@ -24,7 +24,7 @@ from app.models.transcript import EarningsTranscript
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-4-20250514"
+MODEL = settings.opus_model
 
 SYSTEM_PROMPT = """You are a senior equity analyst building the ASSUMPTIONS for a driver-based
 quarterly forecast model. Code will compile your assumptions into an EPS path — you set the inputs,

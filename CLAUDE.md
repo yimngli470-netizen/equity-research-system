@@ -10,7 +10,7 @@ A 6-layer AI-augmented equity research platform for personal stock analysis. Tra
 - **Database:** PostgreSQL 16 + pgvector (vector search for documents)
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
 - **Infrastructure:** Docker Compose (local), 5 services: db, redis, backend, frontend, scheduler
-- **AI:** Claude API (Anthropic SDK) — Opus 4 for deep analysis, Sonnet 4 for daily tasks
+- **AI:** Claude API (Anthropic SDK) — two tiers: **opus** (deep analysis: agents, judge, forecast) and **sonnet** (fast tasks: news, summaries, archetype, KPI, IR repair, grading). Model ids are set in **ONE place** — `config.py` (`opus_model` / `sonnet_model`), overridable via `OPUS_MODEL` / `SONNET_MODEL` env vars. Agents declare a `tier`, never a model string. Update these when Anthropic retires a dated snapshot (a retired id → 404 not_found_error → every agent fails).
 
 ## How to Run
 ```bash

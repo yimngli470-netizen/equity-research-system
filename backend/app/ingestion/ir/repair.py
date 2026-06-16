@@ -16,7 +16,7 @@ from app.ingestion.ir.registry import DiscoveryStrategy, IRSource
 
 logger = logging.getLogger(__name__)
 
-REPAIR_MODEL = "claude-sonnet-4-20250514"
+REPAIR_MODEL = settings.sonnet_model
 
 _SYSTEM_PROMPT = """You are a web-scraping repair assistant. The user's pre-configured
 strategy for finding an earnings transcript link on an investor-relations page has

@@ -26,7 +26,7 @@ from app.models.transcript import EarningsTranscript
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = settings.sonnet_model
 MAX_INPUT_CHARS = 120_000
 
 SYSTEM_PROMPT = """You extract specific KPI values from an earnings call transcript / IR document.

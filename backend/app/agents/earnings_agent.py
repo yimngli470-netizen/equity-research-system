@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class EarningsAgent(BaseAgent):
     agent_type = "earnings"
     max_age_days = 30  # refresh monthly or when new quarter drops
-    model = "claude-opus-4-20250514"
+    tier = "opus"
 
     async def compute_fingerprint(self, db: AsyncSession, ticker: str) -> dict:
         from app.agents import fingerprints as fp

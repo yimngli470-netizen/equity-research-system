@@ -28,7 +28,7 @@ from app.models.stock import Stock
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = settings.sonnet_model
 
 # The 6 archetypes. Keep in sync with the roadmap; the classifier must return exactly one.
 ARCHETYPES = (
