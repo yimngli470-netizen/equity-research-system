@@ -424,6 +424,25 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > path) + unit tests green; tsc + vite clean. NOTE 6.2 didn't change WHO decides — sizing stays
 > deterministic; the book is just a better-grounded input.
 
+> **Status: 6.3 DONE (2026-06-15) — PHASE 6 COMPLETE. Screen backtest as a separate offline harness.**
+> Per user, the backtest is NOT part of the live app — it's an offline evaluation harness
+> (`backend/app/backtest/`, run via `python -m app.backtest.run`, never imported by the decision
+> path), writing timestamped runs to `backtest_runs` (migration `b3e8c1a7f240`). Prerequisite:
+> backfilled ~10yr daily prices for all 519 names (universe ingest had only ~1yr; financials already
+> went back 60+q). Pieces: `panel.py` point-in-time (fundamentals gated by a **75-day reporting lag**
+> so a quarter isn't visible before its 10-Q would be public; prices ≤ as-of, forward returns strictly
+> after — each ticker's series loaded once, features computed in-memory); `screen.py` reproduces the
+> live screen's HARD-feature signal as cross-sectional percentiles (peer-relative by construction,
+> valuation inverted; AI categories excluded by the honesty rule); `evaluate.py` walk-forward
+> Spearman rank-IC of screen vs forward EXCESS return vs SPY, rebalancing on the benchmark's
+> trading-day index (rebalance + horizon both trading-day units). **Baseline result** (3mo horizon,
+> quarterly, 36 periods, ~474 names): mean rank-IC **+0.017** (t-stat 1.14 — weak, not significant),
+> IC hit-rate 56%, **top-minus-bottom decile spread +4.2%/yr** excess. Consistent at 6mo (IC +0.027,
+> hit-rate 61%). A modest-but-real edge concentrated in the deciles — exactly the honest baseline ML
+> (M5) must beat OOS; if it had shown IC 0.15 that'd signal lookahead. Caveats surfaced in the report:
+> reporting-lag (not exact filed dates — M4 refinement) + survivorship (current constituents only).
+> 8 backtest unit tests pin the no-lookahead gating + scorer + Spearman; full suite 15 green.
+
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **S&P 500 + NASDAQ-100** (~520 unique names; per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked SPX+NDX screen; promote-to-watchlist flow |

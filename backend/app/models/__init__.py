@@ -19,6 +19,7 @@ from app.models.price_target import PriceTarget
 from app.models.research_note import ResearchNote
 from app.models.estimate import ConsensusSnapshot
 from app.models.portfolio import PortfolioPosition, PortfolioAccount
+from app.models.backtest import BacktestRun
 
 __all__ = [
     "Stock",
@@ -46,4 +47,5 @@ __all__ = [
     "ConsensusSnapshot",
     "PortfolioPosition",
     "PortfolioAccount",
+    "BacktestRun",
 ]
