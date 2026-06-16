@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import Dashboard from './pages/Dashboard';
 import StockDetail from './pages/StockDetail';
 import TrackRecord from './pages/TrackRecord';
+import Universe from './pages/Universe';
 
 function BrandMark() {
   return (
@@ -177,6 +178,16 @@ function TopBar({ dark, toggleTheme }: { dark: boolean; toggleTheme: () => void 
           </Link>
         )}
         <Link
+          to="/universe"
+          style={{
+            color: location.pathname === '/universe' ? 'var(--color-ink)' : 'var(--color-ink-2)',
+            fontWeight: location.pathname === '/universe' ? 500 : 400,
+            textDecoration: 'none',
+          }}
+        >
+          Universe
+        </Link>
+        <Link
           to="/track-record"
           style={{
             color: location.pathname === '/track-record' ? 'var(--color-ink)' : 'var(--color-ink-2)',
@@ -203,6 +214,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/stock/:ticker" element={<StockDetail />} />
+            <Route path="/universe" element={<Universe />} />
             <Route path="/track-record" element={<TrackRecord />} />
           </Routes>
         </div>

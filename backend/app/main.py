@@ -11,6 +11,7 @@ from app.api.notes import router as notes_router
 from app.api.track_record import router as track_record_router
 from app.api.scoring import router as scoring_router
 from app.api.stocks import router as stocks_router
+from app.api.universe import router as universe_router
 from app.config import settings
 
 # Configure app-level logging so logger.info() calls in app.* modules
@@ -54,6 +55,7 @@ app.include_router(scoring_router)
 app.include_router(decision_router)
 app.include_router(notes_router)
 app.include_router(track_record_router)
+app.include_router(universe_router)
 
 
 @app.get("/api/health")

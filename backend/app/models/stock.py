@@ -17,10 +17,19 @@ class Stock(Base):
     added_date: Mapped[date] = mapped_column(Date, default=date.today)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Business-model archetype (roadmap 1.1) — a grounded-LLM label that conditions peer-relative
+    # Coverage tier (roadmap 6.1) — the two-tier universe. "watchlist" names get the full pull-model
+    # pipeline (agents, forecast, PT, journal) and show on Coverage. "universe" names are batch
+    # tier-1: EDGAR + prices + rule-based archetype + the hard-feature screen only, ~zero LLM. A
+    # universe name is *promoted* to watchlist on demand (sets active=True + runs the full pipeline).
+    coverage_tier: Mapped[str] = mapped_column(String(20), default="watchlist", server_default="watchlist")
+
+    # Business-model archetype (roadmap 1.1) — a grounded label that conditions peer-relative
     # normalization (1.3) and archetype weight profiles (1.4). Grounded on `archetype_features`
     # (the measured quant profile) so the label is auditable, not a guess. Re-runnable.
     archetype: Mapped[str | None] = mapped_column(String(40))
+    # How the label was assigned: "llm" (grounded-LLM, watchlist) or "rules" (deterministic tier-1,
+    # 6.1b). Promotion upgrades a "rules" label to "llm". Lets the screen flag provisional labels.
+    archetype_source: Mapped[str | None] = mapped_column(String(10))
     archetype_features: Mapped[dict | None] = mapped_column(JSONB)   # the QuantProfile it was grounded on
     archetype_rationale: Mapped[str | None] = mapped_column(String(1000))
     archetype_as_of: Mapped[date | None] = mapped_column(Date)

@@ -385,6 +385,29 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 
 ### Phase 6 — Scale & Proof (planned 2026-06-11)
 
+> **Status: 6.1 DONE (2026-06-15) — two-tier universe screen.** The watchlist of ~13 became a
+> screening universe of ~520. Tier-1 ingest (`ingestion/universe.py`) runs a deliberately slim,
+> ~zero-LLM path per name — prices + EDGAR financials + valuation snapshot + a **rule-based
+> provisional archetype** — and nothing else (no bootstrap/transcripts/KPI/agents). The rule
+> classifier (`measurement/archetype_rules.py`) encodes the grounded-LLM prompt's discriminators
+> into a deterministic decision tree and reproduces **10/11** of the watchlist's LLM labels (unit
+> test pins the thresholds; the lone miss — MRVL, a GAAP-negative growth semi — is a world-knowledge
+> call). Two discriminators carried the signal: durable >25% avg growth overrides cyclicality +
+> loss-history (NVDA/UBER), and platforms are separated from high-margin staples by ultra-stable
+> margins + sector. Names land as `coverage_tier="universe"`, `archetype_source="rules"`
+> (migration `f8d3a1b9c620`); the existing peer/normalizer/scoring machinery is reused unchanged, so
+> a universe name simply has neutral AI categories + a real **peer-relative** hard-feature score —
+> and with ~520 names the peer pools finally became meaningful (the "UBER gets semiconductor comps"
+> problem dissolved). Constituents come from a committed Wikipedia snapshot
+> (`universe/constituents.py`, reproducible for the 6.3 backtest; live refresh on demand). API
+> (`api/universe.py`): `/screen` (ranked, archetype/tier filters, overall + per-archetype rank),
+> `/status`, `/refresh` (background tier-1 batch, resumable via skip-fresh-financials), `/promote`
+> (background tier-2 — flips to watchlist + runs the FULL pipeline, **upgrading the rule label to a
+> grounded-LLM one**; this is the only place tier-1 spends LLM, and only on the one name asked for).
+> Pull model intact: nothing screens or promotes itself. Frontend `pages/Universe.tsx` (nav
+> "Universe") — status strip, filter chips, ranked table with composite bars + signal pills + "prov"
+> badges + Promote. e2e + 6 archetype unit tests green; tsc + vite clean.
+
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **S&P 500 + NASDAQ-100** (~520 unique names; per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked SPX+NDX screen; promote-to-watchlist flow |

@@ -200,6 +200,38 @@ export interface PositionSizing {
   rationale: string;
 }
 
+export interface ScreenRow {
+  ticker: string;
+  name: string;
+  sector: string | null;
+  archetype: string | null;
+  archetype_source: string | null;   // "rules" (provisional) | "llm" (confirmed)
+  coverage_tier: string;             // "universe" | "watchlist"
+  composite_score: number;
+  signal: string;
+  as_of: string;
+  rank: number;
+  total: number;
+  archetype_rank: number;
+  archetype_total: number;
+}
+
+export interface UniverseStatus {
+  total_names: number;
+  watchlist: number;
+  universe: number;
+  scored: number;
+  constituents_as_of: string | null;
+  refresh_job: {
+    running: boolean;
+    started_at: string | null;
+    finished_at: string | null;
+    summary: Record<string, number | string> | null;
+    error_count?: number;
+  };
+  promotions: Record<string, { running: boolean; started_at: string | null; finished_at: string | null }>;
+}
+
 export interface IngestionResult {
   ticker: string;
   prices: number;
@@ -335,6 +367,26 @@ export const api = {
     theses: () => request<ThesisRow[]>('/track-record/theses'),
     forecasts: () => request<ForecastRow[]>('/track-record/forecasts'),
     calibration: () => request<CalibrationReport>('/track-record/calibration'),
+  },
+  universe: {
+    screen: (opts: { archetype?: string; tier?: string; limit?: number } = {}) => {
+      const p = new URLSearchParams();
+      if (opts.archetype) p.set('archetype', opts.archetype);
+      if (opts.tier) p.set('tier', opts.tier);
+      if (opts.limit) p.set('limit', String(opts.limit));
+      const qs = p.toString();
+      return request<ScreenRow[]>(`/universe/screen${qs ? `?${qs}` : ''}`);
+    },
+    status: () => request<UniverseStatus>('/universe/status'),
+    refresh: (body: { refresh_constituents?: boolean; skip_fresh_days?: number; max_names?: number } = {}) =>
+      request<{ status: string; note: string }>('/universe/refresh', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    promote: (ticker: string) =>
+      request<{ status: string; ticker: string; note: string }>(`/universe/promote/${ticker}`, {
+        method: 'POST',
+      }),
   },
   notes: {
     latest: (ticker: string) => request<ResearchNote | null>(`/notes/${ticker}/latest`),

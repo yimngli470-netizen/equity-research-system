@@ -151,6 +151,7 @@ async def classify_archetype(db: AsyncSession, ticker: str, force: bool = False)
     await db.execute(
         update(Stock).where(Stock.ticker == ticker).values(
             archetype=archetype,
+            archetype_source="llm",   # grounded-LLM label (upgrades any provisional "rules" label, 6.1)
             archetype_features=profile.to_dict(),
             archetype_rationale=rationale,
             archetype_as_of=date.today(),
