@@ -6,10 +6,14 @@ projections deterministically, so two runs with the same assumptions produce byt
 the already-forecast quarter 4 back (i ≥ 5) — which carries seasonality through for free.
 
     revenue_i = base_{i-4} × (1 + yoy_i)
-    op_income_i = revenue_i × (gm_i − opex_i)
+    op_income_i = revenue_i × operating_margin_i      (← primary; falls back to gm_i − opex_i)
     net_income_i = op_income_i × net_factor
     shares_i = shares_0 × (1 + share_change_qoq)^i
     eps_i = net_income_i / shares_i
+
+Operating margin is projected DIRECTLY (operating_income/revenue is always filed), not decomposed
+into gross_margin − opex_ratio — that decomposition silently collapses for names that don't file a
+gross-profit line (UBER: gm/opex NULL → a guessed ~5% op margin vs the actual ~14%).
 """
 
 import calendar
@@ -21,6 +25,7 @@ HORIZON = 8
 # Hygiene clamps (the P8 lesson: every LLM-emitted number gets bounds enforced in code).
 _CLAMPS = {
     "revenue_yoy": (-0.90, 3.00),
+    "operating_margin": (-0.50, 0.60),
     "gross_margin": (0.0, 1.0),
     "opex_ratio": (0.0, 1.0),
     "net_factor": (0.0, 1.5),
@@ -43,37 +48,51 @@ def _add_months(d: date, n: int) -> date:
 class ScenarioPath:
     """One scenario's assumption paths, post-hygiene. Arrays are length HORIZON."""
     revenue_yoy: list[float]
-    gross_margin: list[float]
-    opex_ratio: list[float]
+    operating_margin: list[float]    # PRIMARY profitability driver
     net_factor: float
     share_change_qoq: float
+    gross_margin: list[float] | None = None   # optional context (may be absent)
+    opex_ratio: list[float] | None = None
     rationale: str = ""
 
     @classmethod
     def from_llm(cls, raw: dict, defaults: dict) -> "ScenarioPath":
         """Parse + clamp one scenario from the LLM payload; pad/truncate paths to HORIZON.
         Missing values fall back to the driver-history medians (`defaults`)."""
-        def path(key: str, default: float | None) -> list[float]:
-            xs = raw.get(key) or []
+        def path(key: str, clamp_key: str, default: float | None) -> list[float] | None:
+            xs = raw.get(key)
+            if xs is None:
+                return None
             xs = [x for x in xs if isinstance(x, (int, float))]
             if not xs:
                 xs = [default if default is not None else 0.0]
             xs = (xs + [xs[-1]] * HORIZON)[:HORIZON]
-            clamp_key = {"revenue_yoy_path": "revenue_yoy",
-                         "gross_margin_path": "gross_margin",
-                         "opex_ratio_path": "opex_ratio"}[key]
             return [_clamp(x, clamp_key) for x in xs]
+
+        rev = path("revenue_yoy_path", "revenue_yoy", defaults.get("revenue_yoy")) or [0.0] * HORIZON
+        gm = path("gross_margin_path", "gross_margin", defaults.get("gross_margin"))
+        opx = path("opex_ratio_path", "opex_ratio", defaults.get("opex_ratio"))
+        # Operating margin is primary. If the LLM didn't emit it (older schema), derive from the
+        # gm − opex decomposition; if THAT is also missing, fall back to the historical median.
+        om = path("operating_margin_path", "operating_margin", defaults.get("operating_margin"))
+        if om is None:
+            if gm is not None and opx is not None:
+                om = [_clamp(gm[i] - opx[i], "operating_margin") for i in range(HORIZON)]
+            else:
+                base = defaults.get("operating_margin") or 0.0
+                om = [_clamp(base, "operating_margin")] * HORIZON
 
         nf = raw.get("net_factor")
         nf = _clamp(nf, "net_factor") if isinstance(nf, (int, float)) else (defaults.get("net_factor") or 0.8)
         sc = raw.get("share_change_qoq")
         sc = _clamp(sc, "share_change_qoq") if isinstance(sc, (int, float)) else 0.0
         return cls(
-            revenue_yoy=path("revenue_yoy_path", defaults.get("revenue_yoy")),
-            gross_margin=path("gross_margin_path", defaults.get("gross_margin")),
-            opex_ratio=path("opex_ratio_path", defaults.get("opex_ratio")),
+            revenue_yoy=rev,
+            operating_margin=om,
             net_factor=nf,
             share_change_qoq=sc,
+            gross_margin=gm,
+            opex_ratio=opx,
             rationale=str(raw.get("rationale") or "")[:1500],
         )
 
@@ -90,8 +109,8 @@ def compile_scenario(
     for i in range(HORIZON):
         base = actual_revenue_last4[i] if i < 4 else revenues[i - 4]
         rev = base * (1.0 + path.revenue_yoy[i])
-        gm, opx = path.gross_margin[i], path.opex_ratio[i]
-        oi = rev * (gm - opx)
+        op_margin = path.operating_margin[i]
+        oi = rev * op_margin
         ni = oi * path.net_factor
         shares = shares_0 * (1.0 + path.share_change_qoq) ** (i + 1)
         eps = (ni / shares) if shares else None
@@ -102,7 +121,8 @@ def compile_scenario(
             "end_approx": end.isoformat(),
             "revenue": round(rev, 0),
             "revenue_yoy": round(path.revenue_yoy[i], 4),
-            "gross_margin": round(gm, 4),
+            "operating_margin": round(op_margin, 4),
+            "gross_margin": round(path.gross_margin[i], 4) if path.gross_margin else None,
             "operating_income": round(oi, 0),
             "net_income": round(ni, 0),
             "eps": round(eps, 3) if eps is not None else None,

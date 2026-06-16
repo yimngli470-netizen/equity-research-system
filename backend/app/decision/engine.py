@@ -333,6 +333,7 @@ async def run_decision(
                 "upside": pt_row.upside,
                 "probabilities": pt_row.probabilities,
                 "scenarios": scenario_summary(pt_row.scenarios),
+                "modes": pt_row.modes,   # GAAP vs operating (non-GAAP) dual basis
                 "method": pt_row.method,
                 "wacc": pt_row.wacc,
                 "street_target_mean": pt_row.street_target_mean,

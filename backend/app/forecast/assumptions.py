@@ -34,15 +34,22 @@ You will receive: the company's driver history with THROUGH-CYCLE MEDIANS (your 
 its business-model archetype, management guidance excerpts, and street consensus.
 
 RULES:
-- ALL numbers are FRACTIONS, not percents (gross margin 0.58, NOT 58; revenue YoY +0.12, NOT 12).
-- Emit 8-quarter paths for revenue YoY growth, gross margin, and opex ratio per scenario.
+- ALL numbers are FRACTIONS, not percents (operating margin 0.14, NOT 14; revenue YoY +0.12, NOT 12).
+- Emit 8-quarter paths for revenue YoY growth and OPERATING MARGIN per scenario.
   revenue_yoy_path[i] is growth vs the same quarter one year earlier (seasonality is handled by
   the compiler — do not re-seasonalize).
+- OPERATING MARGIN is the primary profitability driver: code computes operating income =
+  revenue × operating_margin (it does NOT decompose gross margin minus opex). Anchor operating_margin
+  to the company's RECENT ACTUAL operating margin in the driver table, then project operating leverage
+  (margin expansion as it scales, or compression in the bear) per guidance/trend. Do NOT let it drift
+  far from recent actuals without an explicit driver — a name running a 14% operating margin does not
+  collapse to 5% in the base case. (You MAY also emit gross_margin_path as optional context, but it is
+  not used to compute operating income.)
 - QUARTER 1 IS USUALLY ALREADY GUIDED (it is the in-progress or just-ended, not-yet-reported
-  quarter). Anchor q1 tightly to management guidance and near-term consensus in ALL scenarios —
-  guidance for an ending quarter is rarely off by more than a few percent. Your cycle/fade view
-  belongs in quarters 2-8, NOT in q1. A thesis about the future must not rewrite a quarter that
-  has effectively already happened.
+  quarter). Anchor q1 revenue AND operating margin tightly to management guidance and the most recent
+  actual in ALL scenarios — guidance for an ending quarter is rarely off by more than a few percent.
+  Your cycle/fade view belongs in quarters 2-8, NOT in q1. A thesis about the future must not rewrite
+  a quarter that has effectively already happened.
 - ARCHETYPE CONDITIONING:
   * cyclical-commodity / deep-value-turnaround: margins MUST trend toward the through-cycle median
     over the horizon unless specific guidance says otherwise — peak margins are not a plateau.
@@ -64,8 +71,8 @@ Respond with valid JSON only, this exact schema:
   "scenarios": {
     "base": {
       "revenue_yoy_path": [8 fractions],
-      "gross_margin_path": [8 fractions],
-      "opex_ratio_path": [8 fractions],
+      "operating_margin_path": [8 fractions],
+      "gross_margin_path": [8 fractions]  (OPTIONAL context; omit if not filed),
       "net_factor": fraction,
       "share_change_qoq": fraction,
       "rationale": "string — the 2-3 sentence story of this path"

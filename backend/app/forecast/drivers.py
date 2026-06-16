@@ -26,8 +26,11 @@ class DriverQuarter:
     end: date
     revenue: float | None
     revenue_yoy: float | None        # vs the quarter 4 back (fraction)
-    gross_margin: float | None       # fraction
-    opex_ratio: float | None         # (gross_profit − operating_income) / revenue
+    operating_margin: float | None   # operating_income / revenue — the PRIMARY profitability driver
+                                     # (always available; gross_margin/opex are NULL for names like
+                                     # UBER that don't file a gross-profit line)
+    gross_margin: float | None       # fraction (context; may be None)
+    opex_ratio: float | None         # (gross_profit − operating_income) / revenue (context; may be None)
     net_factor: float | None         # net_income / operating_income (taxes + below-the-line)
     eps: float | None
     shares: float | None             # diluted shares outstanding
@@ -83,11 +86,13 @@ async def build_driver_history(db: AsyncSession, ticker: str, lookback: int = 24
             yoy = r.revenue / rows[i - 4].revenue - 1
         oi, ni = r.operating_income, r.net_income
         net_factor = (ni / oi) if (oi and oi > 0 and ni is not None) else None
+        op_margin = _ratio(oi, r.revenue)
         by_idx.append(DriverQuarter(
             period=r.period,
             end=r.period_end_date,
             revenue=r.revenue,
             revenue_yoy=round(yoy, 4) if yoy is not None else None,
+            operating_margin=round(op_margin, 4) if op_margin is not None else None,
             gross_margin=round(_ratio(r.gross_profit, r.revenue), 4) if _ratio(r.gross_profit, r.revenue) is not None else None,
             opex_ratio=round(_ratio((r.gross_profit - oi) if (r.gross_profit is not None and oi is not None) else None, r.revenue), 4)
             if (r.gross_profit is not None and oi is not None and r.revenue) else None,
@@ -99,6 +104,7 @@ async def build_driver_history(db: AsyncSession, ticker: str, lookback: int = 24
 
     hist = DriverHistory(ticker=ticker.upper(), quarters=by_idx)
     hist.medians = {
+        "operating_margin": _median([q.operating_margin for q in by_idx]),
         "gross_margin": _median([q.gross_margin for q in by_idx]),
         "opex_ratio": _median([q.opex_ratio for q in by_idx]),
         "net_factor": _median([q.net_factor for q in by_idx]),
@@ -111,7 +117,7 @@ async def build_driver_history(db: AsyncSession, ticker: str, lookback: int = 24
 def format_drivers_for_llm(h: DriverHistory) -> str:
     """A compact driver table + the through-cycle anchors, for the assumptions prompt."""
     lines = ["--- DRIVER HISTORY (EDGAR-derived; chronological) ---",
-             "period | revenue | rev YoY | gross margin | opex ratio | net factor | EPS | dil. shares"]
+             "period | revenue | rev YoY | OP MARGIN | gross margin | opex ratio | net factor | EPS | dil. shares"]
     for q in h.last_n(12):
         def f(v, pct=False, money=False, big=False):
             if v is None:
@@ -123,16 +129,26 @@ def format_drivers_for_llm(h: DriverHistory) -> str:
             return f"{v:+.1%}" if pct else f"{v:.3f}"
         lines.append(
             f"{q.period} | {f(q.revenue, money=True)} | {f(q.revenue_yoy, pct=True)} | "
-            f"{f(q.gross_margin)} | {f(q.opex_ratio)} | {f(q.net_factor)} | "
+            f"{f(q.operating_margin)} | {f(q.gross_margin)} | {f(q.opex_ratio)} | {f(q.net_factor)} | "
             f"{('$' + format(q.eps, '.2f')) if q.eps is not None else 'n/a'} | {f(q.shares, big=True)}"
         )
     m = h.medians
     lines.append("")
     lines.append("--- THROUGH-CYCLE MEDIANS (your reversion anchor — justify any deviation) ---")
+    om = m.get("operating_margin")
     lines.append(
-        f"gross margin {m['gross_margin']:.3f} | opex ratio {m['opex_ratio']:.3f} | "
-        f"net factor {m['net_factor']:.3f} | revenue YoY {m['revenue_yoy']:+.1%}"
-        if all(m.get(k) is not None for k in ("gross_margin", "opex_ratio", "net_factor", "revenue_yoy"))
-        else f"medians (partial): {m}"
+        (f"OPERATING MARGIN {om:.3f}" if om is not None else "operating margin n/a")
+        + f" | net factor {f3(m.get('net_factor'))} | revenue YoY {fpct(m.get('revenue_yoy'))}"
+        + (f" | gross margin {m['gross_margin']:.3f} | opex ratio {m['opex_ratio']:.3f}"
+           if m.get("gross_margin") is not None and m.get("opex_ratio") is not None
+           else " | (gross margin / opex not filed — use OPERATING MARGIN as the profitability anchor)")
     )
     return "\n".join(lines)
+
+
+def f3(v: float | None) -> str:
+    return f"{v:.3f}" if v is not None else "n/a"
+
+
+def fpct(v: float | None) -> str:
+    return f"{v:+.1%}" if v is not None else "n/a"

@@ -178,7 +178,13 @@ export interface PriceTargetInfo {
   upside: number | null;
   probabilities: Record<string, number | string>;
   // Per-scenario legs: the DCF value vs the multiple value (the spread = the expectations gap).
-  scenarios?: Record<string, { dcf: number | null; multiple: number | null; blended: number | null }>;
+  // Operating (non-GAAP) variants present when an operating DCF was computed.
+  scenarios?: Record<string, {
+    dcf: number | null; multiple: number | null; blended: number | null;
+    dcf_operating?: number | null; multiple_operating?: number | null; blended_operating?: number | null;
+  }>;
+  // Dual-basis price targets — GAAP vs operating (non-GAAP, NOPAT). Toggle in the UI.
+  modes?: Record<string, { fair_value: number | null; price_target: number | null; upside: number | null }> | null;
   method: {
     w_dcf: number;
     multiple_basis: string;

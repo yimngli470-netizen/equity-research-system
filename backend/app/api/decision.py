@@ -151,6 +151,7 @@ async def _latest_price_target(db: AsyncSession, ticker: str) -> dict | None:
         "upside": pt.upside,
         "probabilities": pt.probabilities,
         "scenarios": scenario_summary(pt.scenarios),
+        "modes": pt.modes,   # GAAP vs operating (non-GAAP) dual basis
         "method": pt.method,
         "wacc": pt.wacc,
         "street_target_mean": pt.street_target_mean,

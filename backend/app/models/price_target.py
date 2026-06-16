@@ -31,6 +31,9 @@ class PriceTarget(Base):
 
     probabilities: Mapped[dict] = mapped_column(JSONB)          # P(bull/base/bear) + source
     scenarios: Mapped[dict] = mapped_column(JSONB)              # per-scenario DCF + multiple + blend
+    # Dual-basis price targets (GAAP vs operating/non-GAAP) — same scenarios, different earnings base.
+    # {"gaap": {fair_value, price_target, upside}, "operating": {...}}. Scalar fields above = GAAP.
+    modes: Mapped[dict | None] = mapped_column(JSONB)
     method: Mapped[dict] = mapped_column(JSONB)                 # w_dcf, multiple basis, terminal g…
     wacc: Mapped[dict] = mapped_column(JSONB)                   # rf/beta/ERP/CoE + sources
     sensitivity: Mapped[dict] = mapped_column(JSONB)            # WACC × terminal-g grid

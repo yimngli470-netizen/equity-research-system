@@ -34,6 +34,14 @@ FCF_CONVERSION_FALLBACK = 0.85
 TERMINAL_FCF_CONVERSION = 0.85
 EXPLICIT_YEARS = 5  # 2 from the forecast model + 3 faded
 
+# Normalized tax on operating income for the OPERATING (non-GAAP) DCF. GAAP net income can be
+# corrupted by below-the-operating-line noise — most visibly mark-to-market gains/losses on equity
+# stakes (UBER's Aurora/Didi/Grab swing NI from $0.3B to $6.9B on flat revenue). The operating DCF
+# values the core business: after-tax operating income (NOPAT), bypassing that noise. A blanket ~21%
+# is a deliberate normalization (we don't store per-quarter tax); net debt is still subtracted in the
+# DCF, so this is a clean pre-financing earnings base, not a free pass on leverage.
+NORMALIZED_TAX_RATE = 0.21
+
 
 @dataclass
 class DcfResult:
@@ -77,6 +85,29 @@ async def historical_fcf_conversion(db: AsyncSession, ticker: str) -> tuple[floa
     med = ratios[len(ratios) // 2]
     lo, hi = FCF_CONVERSION_BOUNDS
     return max(lo, min(hi, med)), f"median of {len(ratios)} quarters"
+
+
+async def operating_fcf_conversion(db: AsyncSession, ticker: str,
+                                   tax_rate: float = NORMALIZED_TAX_RATE) -> tuple[float, str]:
+    """Median FCF / after-tax-operating-income over history — the clean conversion for the operating
+    DCF. Anchoring on operating income (not GAAP NI) makes the ratio robust for names whose NI is
+    distorted by non-operating swings."""
+    rows = (
+        await db.execute(
+            select(Financial.free_cash_flow, Financial.operating_income)
+            .where(Financial.ticker == ticker,
+                   Financial.free_cash_flow.is_not(None),
+                   Financial.operating_income > 0)
+            .order_by(Financial.period_end_date.desc())
+            .limit(24)
+        )
+    ).all()
+    ratios = sorted(f / (oi * (1 - tax_rate)) for f, oi in rows if oi)
+    if len(ratios) < 4:
+        return FCF_CONVERSION_FALLBACK, "fallback (thin operating-FCF history)"
+    med = ratios[len(ratios) // 2]
+    lo, hi = FCF_CONVERSION_BOUNDS
+    return max(lo, min(hi, med)), f"median of {len(ratios)} quarters (operating basis)"
 
 
 def run_dcf(

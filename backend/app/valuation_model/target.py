@@ -26,7 +26,8 @@ from app.models.price import DailyPrice
 from app.models.price_target import PriceTarget
 from app.models.stock import Stock
 from app.models.valuation import Valuation
-from app.valuation_model.dcf import (DEFAULT_TERMINAL_G, TERMINAL_G, historical_fcf_conversion,
+from app.valuation_model.dcf import (DEFAULT_TERMINAL_G, NORMALIZED_TAX_RATE, TERMINAL_G,
+                                     historical_fcf_conversion, operating_fcf_conversion,
                                      run_dcf, sensitivity_grid)
 from app.valuation_model.wacc import build_wacc
 
@@ -46,6 +47,13 @@ PE_BOUNDS_CYCLICAL = (8.0, 30.0)
 PE_BOUNDS_GROWTH = (8.0, 45.0)
 HORIZON_MONTHS = 12
 
+# Growth-tilted multiple (Q2): higher expected growth earns a higher P/E (the PEG relationship), so
+# the bull/bear multiple re-rates instead of holding flat. Tilt = 1 + β·(scenario growth − base
+# growth), bounded — the peer-median P/E stays the anchor; the tilt only widens the spread by each
+# scenario's forward EPS growth differential. Robust where pure PEG blows up (growth → 0).
+GROWTH_PE_BETA = 1.5
+MULT_TILT_BOUNDS = (0.70, 1.40)
+
 
 def scenario_summary(scenarios: dict | None) -> dict:
     """Slim per-scenario legs for API/UI: the DCF value, the multiple value, and the blend —
@@ -58,6 +66,10 @@ def scenario_summary(scenarios: dict | None) -> dict:
             "dcf": (s.get("dcf") or {}).get("fair_value_per_share"),
             "multiple": s.get("multiple_value"),
             "blended": s.get("blended"),
+            # Operating (non-GAAP) legs — present when an operating DCF was computed.
+            "dcf_operating": (s.get("dcf_operating") or {}).get("fair_value_per_share"),
+            "multiple_operating": s.get("multiple_value_operating"),
+            "blended_operating": s.get("blended_operating"),
         }
     return out
 
@@ -191,6 +203,9 @@ async def compute_price_target(db: AsyncSession, ticker: str,
 
     wacc = await build_wacc(db, ticker, market_cap, total_debt)
     fcf_conv, fcf_conv_source = await historical_fcf_conversion(db, ticker)
+    # Operating (non-GAAP) basis: after-tax operating income, bypassing GAAP NI's below-the-line
+    # noise (equity-stake revaluations). Two DCFs, two price targets, switchable in the UI.
+    fcf_conv_op, fcf_conv_op_source = await operating_fcf_conversion(db, ticker)
     terminal_g = TERMINAL_G.get(archetype or "", DEFAULT_TERMINAL_G)
     probs, probs_source = scenario_probabilities(judge_report)
     w_dcf = W_DCF.get(archetype or "", DEFAULT_W_DCF)
@@ -206,53 +221,109 @@ async def compute_price_target(db: AsyncSession, ticker: str,
     else:
         pe = await _peer_forward_pe(db, ticker)
         pe = max(PE_BOUNDS_GROWTH[0], min(PE_BOUNDS_GROWTH[1], pe)) if pe else 18.0
-        multiple_basis = f"scenario NTM EPS × peer-median fwd P/E {pe:.1f}"
+        multiple_basis = f"scenario NTM EPS × growth-tilted peer P/E (base {pe:.1f})"
         normalized_eps = None
 
+    def _blend(dcf_v: float | None, mult_v: float | None) -> float | None:
+        if dcf_v is not None and mult_v is not None:
+            return w_dcf * dcf_v + (1 - w_dcf) * mult_v
+        return dcf_v if dcf_v is not None else mult_v
+
+    # Each scenario's forward EPS growth (NTM → following year) → the growth-tilt for its multiple.
+    def _fwd_growth(p: dict) -> float | None:
+        ntm, nxt = p.get("ntm_eps"), p.get("next_year_eps")
+        return max(-0.5, min(2.0, nxt / ntm - 1)) if (ntm and nxt and ntm > 0) else None
+
+    growths = {n: _fwd_growth((forecast.projections or {}).get(n) or {})
+               for n in ("base", "bull", "bear")}
+    growth_base = growths.get("base")
+
+    def _tilted_pe(name: str) -> float:
+        g = growths.get(name)
+        if g is None or growth_base is None:
+            return pe
+        tilt = max(MULT_TILT_BOUNDS[0], min(MULT_TILT_BOUNDS[1], 1 + GROWTH_PE_BETA * (g - growth_base)))
+        lo, hi = PE_BOUNDS_CYCLICAL if use_normalized else PE_BOUNDS_GROWTH
+        return max(lo, min(hi, pe * tilt))
+
     scenarios: dict[str, dict] = {}
-    blended_values: dict[str, float] = {}
+    blended_gaap: dict[str, float] = {}      # GAAP net-income basis (current behavior)
+    blended_op: dict[str, float] = {}        # operating (non-GAAP) basis
     coe_q = (1 + wacc.cost_of_equity) ** 0.25 - 1  # quarterly discount for the excess-cash credit
     for name in ("base", "bull", "bear"):
         proj = (forecast.projections or {}).get(name) or {}
-        q_ni = [q.get("net_income") for q in (proj.get("quarters") or [])]
+        quarters = proj.get("quarters") or []
+        q_ni = [q.get("net_income") for q in quarters]
         if len(q_ni) < 8 or any(v is None for v in q_ni):
             continue
-        d = run_dcf(q_ni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
+        # Operating NI = after-tax operating income (NOPAT) — drops the noisy net_factor. Available
+        # only when every projected quarter carries operating_income.
+        q_oi = [q.get("operating_income") for q in quarters]
+        q_ni_op = ([oi * (1 - NORMALIZED_TAX_RATE) for oi in q_oi]
+                   if len(q_oi) >= 8 and not any(v is None for v in q_oi) else None)
+
+        d_gaap = run_dcf(q_ni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
+        d_op = (run_dcf(q_ni_op, fcf_conv_op, wacc.wacc, terminal_g, net_debt, shares)
+                if q_ni_op else None)
+
         excess_ps = None
         if use_normalized:
             # Through-cycle value = mid-cycle EPS × through-cycle P/E PLUS the PV of ALL the cash
-            # the SCENARIO earns above mid-cycle run-rate before full reversion: the 8 modeled
-            # quarters AND the DCF's fade years 3-5 (which are still above mid-cycle on the way
-            # down). Truncating the credit at year 2 ignored real boom money — user-spotted.
+            # the SCENARIO earns above mid-cycle run-rate before full reversion (8 modeled quarters +
+            # DCF fade years 3-5). For cyclicals the normalized leg is already clean, so both modes
+            # share this multiple — only the DCF leg differs.
             norm_q_ni = ne.normalized_net_income / 4.0
             excess = sum((ni - norm_q_ni) / (1 + coe_q) ** (i + 1) for i, ni in enumerate(q_ni))
             norm_annual = ne.normalized_net_income
-            for yr_idx, ni_y in enumerate(d.ni_years[2:], start=3):  # fade years 3-5
+            for yr_idx, ni_y in enumerate(d_gaap.ni_years[2:], start=3):  # fade years 3-5
                 excess += (ni_y - norm_annual) / (1 + wacc.cost_of_equity) ** yr_idx
             excess_ps = excess / shares
-            mult_value = normalized_eps * pe + excess_ps
+            mult_gaap = normalized_eps * pe + excess_ps
+            mult_op = mult_gaap
+            mult_pe = pe   # cyclicals: through-cycle P/E, not growth-tilted (a stable multiple is the point)
         else:
+            mult_pe = _tilted_pe(name)   # growth-re-rated P/E for this scenario
             ntm_eps = proj.get("ntm_eps")
-            mult_value = (ntm_eps * pe) if ntm_eps else None
-        dcf_v = d.fair_value_per_share
-        if dcf_v is None and mult_value is None:
-            continue
-        blended = (w_dcf * dcf_v + (1 - w_dcf) * mult_value
-                   if (dcf_v is not None and mult_value is not None)
-                   else (dcf_v if dcf_v is not None else mult_value))
-        blended_values[name] = blended
-        scenarios[name] = {"dcf": d.to_dict(),
-                           "multiple_value": round(mult_value, 2) if mult_value else None,
-                           "excess_earnings_ps": round(excess_ps, 2) if excess_ps is not None else None,
-                           "blended": round(blended, 2)}
+            mult_gaap = (ntm_eps * mult_pe) if ntm_eps else None
+            # Clean NTM EPS from operating NI — the operating-basis multiple leg.
+            ntm_eps_op = (sum(q_ni_op[:4]) / shares) if q_ni_op else None
+            mult_op = (ntm_eps_op * mult_pe) if ntm_eps_op else None
 
-    if "base" not in blended_values:
+        b_gaap = _blend(d_gaap.fair_value_per_share, mult_gaap)
+        if b_gaap is None:
+            continue
+        blended_gaap[name] = b_gaap
+        scen = {"dcf": d_gaap.to_dict(),
+                "multiple_value": round(mult_gaap, 2) if mult_gaap else None,
+                "multiple_pe": round(mult_pe, 1),
+                "fwd_growth": round(growths.get(name), 4) if growths.get(name) is not None else None,
+                "excess_earnings_ps": round(excess_ps, 2) if excess_ps is not None else None,
+                "blended": round(b_gaap, 2)}
+        if d_op is not None:
+            b_op = _blend(d_op.fair_value_per_share, mult_op)
+            if b_op is not None:
+                blended_op[name] = b_op
+                scen["dcf_operating"] = d_op.to_dict()
+                scen["multiple_value_operating"] = round(mult_op, 2) if mult_op else None
+                scen["blended_operating"] = round(b_op, 2)
+        scenarios[name] = scen
+
+    if "base" not in blended_gaap:
         logger.warning("[pt] %s: base scenario incomputable — no price target", ticker)
         return None
 
-    fair_value_now = sum(probs[s] * blended_values.get(s, blended_values["base"])
-                         for s in ("bull", "base", "bear"))
+    def _weighted(bv: dict[str, float]) -> float:
+        return sum(probs[s] * bv.get(s, bv["base"]) for s in ("bull", "base", "bear"))
+
+    fair_value_now = _weighted(blended_gaap)              # scalar = GAAP (backward compat)
     pt_12m = fair_value_now * (1 + wacc.cost_of_equity)
+    modes = {"gaap": {"fair_value": round(fair_value_now, 2), "price_target": round(pt_12m, 2),
+                      "upside": round(pt_12m / price_now - 1, 4) if price_now else None}}
+    if "base" in blended_op:
+        fv_op = _weighted(blended_op)
+        pt_op = fv_op * (1 + wacc.cost_of_equity)
+        modes["operating"] = {"fair_value": round(fv_op, 2), "price_target": round(pt_op, 2),
+                              "upside": round(pt_op / price_now - 1, 4) if price_now else None}
 
     # Street-method cross-check for cyclicals (user request, 2026-06-12): what OUR earnings are
     # worth under the STREET's method (NTM EPS × the market's current forward multiple, no
@@ -291,8 +362,13 @@ async def compute_price_target(db: AsyncSession, ticker: str,
         upside=round(pt_12m / price_now - 1, 4) if price_now else None,
         probabilities={**probs, "source": probs_source},
         scenarios=scenarios,
+        modes=modes,
         method={"w_dcf": w_dcf, "multiple_basis": multiple_basis,
                 "fcf_conversion": round(fcf_conv, 3), "fcf_conversion_source": fcf_conv_source,
+                "fcf_conversion_operating": round(fcf_conv_op, 3),
+                "operating_tax_rate": NORMALIZED_TAX_RATE,
+                "operating_basis": "after-tax operating income (NOPAT) — strips below-the-line "
+                                   "non-operating items (e.g. equity-stake revaluations)",
                 "terminal_growth": terminal_g, "earnings_basis": ne.basis if ne else "unknown",
                 "forward_multiple_check": forward_check},
         wacc=wacc.to_dict(),

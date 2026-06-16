@@ -18,6 +18,7 @@ export default function Universe() {
   const [archetype, setArchetype] = useState<string | null>(null);
   const [tier, setTier] = useState<string | null>(null);
   const [promoting, setPromoting] = useState<Record<string, boolean>>({});
+  const [showHow, setShowHow] = useState(false);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -84,12 +85,18 @@ export default function Universe() {
             The S&amp;P 500 + NASDAQ-100, ranked by the peer-relative hard-feature screen — EDGAR
             financials, prices, and a provisional rule-based archetype, at ~zero LLM. Promote a name
             to run the full pipeline (agents, forecast, price target, journal) and add it to coverage.
+            {' '}
+            <button onClick={() => setShowHow((v) => !v)} style={howLinkStyle}>
+              {showHow ? 'Hide scoring detail' : 'How is the composite scored?'}
+            </button>
           </p>
         </div>
         <button onClick={onRefresh} disabled={refreshing} style={btnStyle(refreshing)}>
           {refreshing ? 'Refreshing…' : 'Refresh universe'}
         </button>
       </div>
+
+      {showHow && <HowScored />}
 
       {status && <StatusStrip s={status} />}
 
@@ -158,6 +165,45 @@ export default function Universe() {
   );
 }
 
+function HowScored() {
+  const rows: [string, string, string][] = [
+    ['Growth', '~30%', 'Revenue & EPS YoY, consistency, acceleration — from EDGAR financials.'],
+    ['Profitability', '~23%', 'Operating/net margins, margin trend, FCF conversion.'],
+    ['Valuation', '~31%', 'PEER-RELATIVE: each multiple (P/E, P/S, FCF yield) becomes its percentile within the archetype peer set — not a fixed absolute ruler. With ~520 names the peer pools are real.'],
+    ['Momentum', '~15%', '1 / 3 / 12-month price returns.'],
+  ];
+  return (
+    <Card padding={20} style={{ margin: '4px 0 18px', background: 'var(--color-surface-2)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-ink-3)', marginBottom: 10 }}>
+        How the tier-1 composite is scored
+      </div>
+      <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--color-ink-2)', margin: '0 0 12px', maxWidth: '78ch' }}>
+        Universe names run through the <b>same scoring engine as the watchlist, minus the AI layer</b>.
+        Four hard-fundamental categories are each scored, then combined with{' '}
+        <b>archetype-conditioned weights</b> (a cyclical and a compounder aren&apos;t judged on the same
+        ruler) into the 0–1 composite. No LLM is involved — this is the deterministic screen the backtest
+        validated (rank-IC +0.017, top-vs-bottom decile spread ~+4%/yr).
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <tbody>
+          {rows.map(([cat, w, desc]) => (
+            <tr key={cat} style={{ borderTop: '1px solid var(--color-rule-soft)' }}>
+              <td style={{ padding: '7px 12px 7px 0', fontWeight: 600, color: 'var(--color-ink)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{cat}</td>
+              <td style={{ padding: '7px 12px 7px 0', fontFamily: 'var(--font-mono)', color: 'var(--color-ink-3)', verticalAlign: 'top' }}>{w}</td>
+              <td style={{ padding: '7px 0', color: 'var(--color-ink-2)', lineHeight: 1.5 }}>{desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 11.5, color: 'var(--color-ink-3)', margin: '12px 0 0', fontStyle: 'italic', maxWidth: '78ch' }}>
+        The AI categories (sentiment / risk / event) have no agent coverage for universe names, so they
+        sit at neutral — <b>promote</b> a name to add the full agent dialectic, forecast, and price
+        target. Weights shown are the secular-grower profile and shift by archetype.
+      </p>
+    </Card>
+  );
+}
+
 function StatusStrip({ s }: { s: UniverseStatus }) {
   const job = s.refresh_job;
   const cells: [string, string][] = [
@@ -197,6 +243,7 @@ function StatusStrip({ s }: { s: UniverseStatus }) {
 
 // ── presentational helpers ───────────────────────────────────────────────────
 const linkStyle: React.CSSProperties = { color: 'var(--color-ink)', fontFamily: 'var(--font-mono)', textDecoration: 'none', fontWeight: 600 };
+const howLinkStyle: React.CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--color-ink-2)', textDecoration: 'underline', cursor: 'pointer', fontSize: 13 };
 
 function thStyle(i: number): React.CSSProperties {
   return { textAlign: i >= 5 && i <= 6 ? 'right' : 'left', padding: '12px 12px 10px', color: 'var(--color-ink-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' };

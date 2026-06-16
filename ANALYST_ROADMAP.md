@@ -443,6 +443,27 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > reporting-lag (not exact filed dates — M4 refinement) + survivorship (current constituents only).
 > 8 backtest unit tests pin the no-lookahead gating + scorer + Spearman; full suite 15 green.
 
+> **Status: Valuation/forecast hardening (2026-06-16, user-driven from the UBER PT review).** Four
+> fixes after the UBER "$6 bear" investigation: **(1) Forecast projects OPERATING MARGIN directly**
+> (`forecast/model.py`: `OI = revenue × operating_margin`, anchored on recent actual) instead of
+> `gross_margin − opex_ratio`, which silently collapsed for names that don't file a gross-profit line
+> — UBER read a ~5% op margin vs the actual ~14%, under-projecting OI ~3× and crushing the whole DCF.
+> `operating_margin` is now a first-class driver (`drivers.py`); the assumptions prompt emits an
+> `operating_margin_path` with a q1-anchor rule; gm−opx kept as optional fallback (e2e-safe). UBER
+> year-1 OI $1.3-2.9B → $7-9.7B. **(2) Dual DCF — GAAP vs operating (non-GAAP)**: per scenario, run the
+> DCF on GAAP NI AND on after-tax operating income (NOPAT, bypassing the noisy net_factor / below-line
+> equity-stake revaluations). Two fair values + two price targets in `price_targets.modes` (migration
+> `c5f1a9b3e740`); scalar fields stay GAAP (PT is display-only, not a decision input). `dcf.py`
+> `operating_fcf_conversion` + `NORMALIZED_TAX_RATE=0.21`. UBER: GAAP $112 (+54%, bakes in equity
+> gains) vs operating $79 (+8%, core business) — the operating leg is the more defensible one.
+> **(3) Growth-tilted multiple** (`target.py`): P/E_s = peer_pe × clamp(1 + 1.5·(growth_s − growth_base),
+> [0.7,1.4]) so bear/bull RE-RATE, not just re-EPS (UBER bear 17.5× / base 25× / bull 29×); cyclicals
+> keep the un-tilted through-cycle P/E. **(4) UI**: DecisionPanel GAAP/Non-GAAP toggle (switches
+> headline PT + the DCF/multiple/blended legs); Universe page "How the composite is scored" explainer
+> (hard-category weights + peer-relative valuation + neutral-AI note). Combined effect: UBER bear $6 →
+> $54 (sensible −26%), PT no longer absurdly low. Net-of-all-this, the multiple leg now answers Q2 —
+> different EPS AND different multiple per scenario.
+
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 6.1 | **Universe screening, two-tier** — tier 1: batch-ingest **S&P 500 + NASDAQ-100** (~520 unique names; per user 2026-06-11) through EDGAR+prices only (no transcripts/agents), hard features + rule-based provisional archetype + peer-relative screen → ranked table, **~zero LLM**; tier 2: user promotes a name → full pipeline as today (pull model preserved) | L | idea generation | ranked SPX+NDX screen; promote-to-watchlist flow |
