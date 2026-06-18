@@ -8,6 +8,10 @@ class StockCreate(BaseModel):
     name: str
     sector: str | None = None
     industry: str | None = None
+    # REQUIRED: the company's IR earnings page URL, written straight to the IR registry (no LLM guess).
+    # Auto-discovery was removed — IR domains are too often non-obvious (e.g. ISRG → isrg.intuitive.com)
+    # for a guess to be reliable. The user pastes the URL when adding a name.
+    ir_url: str
 
 
 class StockResponse(BaseModel):

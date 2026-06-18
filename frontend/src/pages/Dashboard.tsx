@@ -84,8 +84,20 @@ export default function Dashboard() {
     if (!t) return;
     const ticker = t.trim().toUpperCase();
     if (!ticker) return;
+    // IR earnings URL is required — auto-discovery was removed (it guessed the wrong domain too
+    // often). The user pastes the real IR page URL so transcripts can be fetched.
+    const url = window.prompt(
+      `Investor Relations earnings page URL for ${ticker} (required):\n` +
+        'e.g. https://isrg.intuitive.com/financial-information/quarterly-results',
+    );
+    if (url === null) return; // cancelled
+    const irUrl = url.trim();
+    if (!/^https?:\/\//i.test(irUrl)) {
+      setError('An IR earnings page URL (https://…) is required to add a name.');
+      return;
+    }
     try {
-      await api.stocks.add({ ticker, name: ticker });
+      await api.stocks.add({ ticker, name: ticker, ir_url: irUrl });
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add stock');

@@ -14,10 +14,8 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
 
 import anthropic
-import httpx
 import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -32,7 +30,6 @@ from app.models.stock import Stock
 logger = logging.getLogger(__name__)
 
 MODEL = settings.sonnet_model
-_UA = "Mozilla/5.0 (research) equity-research-personal yimngli470@gmail.com"
 
 
 @dataclass
@@ -135,87 +132,12 @@ async def generate_kpi_definitions(db: AsyncSession, ticker: str, info: dict, fo
     return "ok", len(rows)
 
 
-# ── 2. IR source auto-discovery ───────────────────────────────────────────────
-
-_IR_SYS = """Identify a public company's official Investor Relations EARNINGS page and how its
-per-quarter earnings artifacts are named. Prefer the RICHEST artifact (full call transcript or
-slide deck) over a press release.
-
-Respond with JSON only:
-{"ir_url":"https://... official IR earnings/quarterly page",
- "artifact_type":"transcript|prepared_remarks|slides|press_release",
- "strategy":{"type":"link_regex|css_selector|url_template","pattern":"..."},
- "notes":"how artifacts are named / where they live"}
-
-Use the real official IR domain (e.g. investor.<company>.com). link_regex matches a link's href
-or text (case-insensitive); placeholders {year} {quarter} {q} {ordinal} are interpolated. If
-unsure of the exact pattern, give a broad link_regex for earnings/transcript/results links."""
-
-
-def _classify_url(url: str) -> tuple[str, str]:
-    """Return (status, detail). status in ok|unreachable|not_found."""
-    try:
-        r = httpx.get(url, headers={"User-Agent": _UA}, follow_redirects=True, timeout=12)
-        if r.status_code == 200:
-            return "ok", f"reachable (HTTP 200, {len(r.text)} chars)"
-        if r.status_code in (401, 403, 429):
-            return "unreachable", f"HTTP {r.status_code} (WAF/IP block — URL may be correct)"
-        if r.status_code == 404:
-            return "not_found", "HTTP 404 (URL path likely wrong)"
-        return "unreachable", f"HTTP {r.status_code}"
-    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout):
-        return "unreachable", "timeout (likely IP/WAF block — URL may be correct)"
-    except httpx.ConnectError as e:
-        return "not_found", f"connection failed ({e!r}) — domain may be wrong"
-    except Exception as e:  # noqa: BLE001
-        return "unreachable", f"fetch error: {e!r}"
-
-
-def _propose_ir(ticker: str, info: dict) -> dict:
-    return _llm_json(_IR_SYS, f"Company: {info['name']} ({ticker}). JSON only.")
-
-
-async def discover_ir_source(ticker: str, info: dict, force: bool) -> tuple[str, str | None, str | None, str]:
-    """Returns (status, ir_url, artifact_type, message)."""
-    if registry.get_source(ticker) and not force:
-        return "skipped", None, None, "IR source already configured."
-    if not settings.anthropic_api_key:
-        return "failed", None, None, "No API key for IR auto-discovery."
-    try:
-        prop = await asyncio.to_thread(_propose_ir, ticker, info)
-    except Exception as e:
-        logger.exception("[bootstrap] IR discovery LLM failed for %s", ticker)
-        return "failed", None, None, f"Could not propose an IR source ({e!r}). Set sources.yaml manually."
-
-    url = prop.get("ir_url")
-    artifact = prop.get("artifact_type", "press_release")
-    strat = prop.get("strategy") or {}
-    if not url or not strat.get("type") or not strat.get("pattern"):
-        return "failed", url, artifact, "LLM returned an incomplete IR config. Set sources.yaml manually."
-
-    url_status, detail = await asyncio.to_thread(_classify_url, url)
-
-    # Write the entry when reachable OR likely-blocked (so it works from a residential IP);
-    # skip writing only when the URL looks wrong (not_found).
-    if url_status in ("ok", "unreachable"):
-        src = registry.IRSource(
-            ticker=ticker.upper(), ir_url=url,
-            strategy=registry.DiscoveryStrategy(type=strat["type"], pattern=strat["pattern"]),
-            artifact_type=artifact,
-            notes=(prop.get("notes") or "") + f"\n[auto-discovered {date.today()}; url check: {detail}]",
-        )
-        await asyncio.to_thread(registry.add_source, src, force)
-
-    if url_status == "ok":
-        return "ok", url, artifact, f"Auto-discovered IR source: {url} ({detail})."
-    if url_status == "unreachable":
-        return ("unreachable", url, artifact,
-                f"Proposed IR URL {url} not reachable from this server: {detail}. "
-                f"Written to sources.yaml — it should work when you run the pipeline from your "
-                f"machine (residential IP). If it still fails there, verify the URL.")
-    return ("not_found", url, artifact,
-            f"Proposed IR URL {url} looks wrong: {detail}. NOT written — set the correct IR URL "
-            f"in sources.yaml manually.")
+# ── 2. IR source ──────────────────────────────────────────────────────────────
+# Auto-discovery was REMOVED: the LLM guessed the wrong IR domain too often (real IR pages live at
+# non-obvious URLs — e.g. ISRG at isrg.intuitive.com, not investor.intuitivesurgical.com). The IR
+# earnings URL is now a REQUIRED field when adding a ticker (api/stocks.py writes it to the registry
+# via `sources.yaml`), so there is nothing to discover here — `bootstrap_ticker` just reports what's
+# configured.
 
 
 # ── orchestration ─────────────────────────────────────────────────────────────
@@ -238,13 +160,21 @@ async def bootstrap_ticker(db: AsyncSession, ticker: str, force: bool = False) -
     info = await asyncio.to_thread(_company_info, ticker, stock)
 
     res.kpi_status, res.kpi_count = await generate_kpi_definitions(db, ticker, info, force)
-    res.ir_status, res.ir_url, res.ir_artifact_type, res.message = await discover_ir_source(ticker, info, force)
+
+    # IR source is set MANUALLY at add-time (a required field on the add-stock form). Auto-discovery
+    # was removed — it guessed the wrong domain too often (IR pages live at non-obvious URLs like
+    # isrg.intuitive.com). Here we just report what's configured.
+    src = registry.get_source(ticker)
+    res.ir_status = "configured" if src else "none"
+    res.ir_url = src.ir_url if src else None
+    res.ir_artifact_type = src.artifact_type if src else None
 
     # User-facing warnings
     if res.kpi_status == "failed":
         res.warnings.append(f"{ticker}: could not auto-generate KPI definitions.")
-    if res.ir_status in ("unreachable", "not_found", "failed"):
-        res.warnings.append(f"{ticker}: IR source auto-discovery — {res.message}")
+    if res.ir_status == "none":
+        res.message = "no IR earnings URL configured — transcripts won't be fetched"
+        res.warnings.append(f"{ticker}: {res.message}. Re-add with the IR page URL, or set sources.yaml.")
 
     # Developer-facing record
     stmt = insert(DevTickerBootstrapStatus).values(
@@ -262,7 +192,7 @@ async def bootstrap_ticker(db: AsyncSession, ticker: str, force: bool = False) -
     # Also log failures at WARNING so they surface in `docker compose logs backend`
     # (the dev_ticker_bootstrap_status table is the durable copy, since Docker logs are
     # lost on `docker compose down`).
-    if res.ir_status in ("unreachable", "not_found", "failed") or res.kpi_status == "failed":
+    if res.ir_status == "none" or res.kpi_status == "failed":
         logger.warning("[bootstrap] %s needs attention — kpi=%s ir=%s :: %s",
                        ticker, res.kpi_status, res.ir_status, res.message)
     return res

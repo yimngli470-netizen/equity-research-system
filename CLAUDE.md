@@ -70,7 +70,7 @@ backend/
       decision.py            #   POST /api/decision/run, GET /api/decision/{ticker}/latest
     ingestion/               # Layer 1: data collection (all sources free)
       pipeline.py            #   run_full_ingestion() orchestrator (bootstrap → prices → financials → …)
-      bootstrap.py           #   Auto-onboard new tickers: LLM KPI defs + IR source discovery
+      bootstrap.py           #   Auto-onboard new tickers: LLM KPI defs (IR URL is set MANUALLY at add-time — auto-discovery removed)
       edgar.py               #   SEC EDGAR XBRL — SOURCE OF TRUTH for financials (full history)
       prices.py              #   Daily prices via yfinance (upsert)
       fundamentals.py        #   yfinance: valuation snapshot + price targets; financials FALLBACK
@@ -126,7 +126,7 @@ frontend/
 ### Pipeline: Ingestion → Agents → Scoring
 ```
 1. POST /api/ingestion/run {ticker}
-   → bootstrap.py: if new ticker, auto-generate KPI defs + auto-discover IR source (idempotent)
+   → bootstrap.py: if new ticker, auto-generate KPI defs (idempotent). IR earnings URL is provided by the user as a REQUIRED field on add (api/stocks.py writes it to sources.yaml) — LLM IR auto-discovery was removed (guessed non-obvious domains wrong too often, e.g. ISRG → isrg.intuitive.com)
    → prices.py: daily OHLCV from yfinance (upsert by ticker+date)
    → edgar.py: quarterly financials from SEC XBRL (source of truth); yfinance fallback if EDGAR fails
    → fundamentals.py: valuation snapshot + analyst price targets (yfinance .info)

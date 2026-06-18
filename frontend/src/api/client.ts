@@ -322,7 +322,7 @@ export const api = {
   stocks: {
     list: () => request<Stock[]>('/stocks/'),
     get: (ticker: string) => request<Stock>(`/stocks/${ticker}`),
-    add: (data: { ticker: string; name: string; sector?: string; industry?: string }) =>
+    add: (data: { ticker: string; name: string; sector?: string; industry?: string; ir_url?: string }) =>
       request<Stock>('/stocks/', { method: 'POST', body: JSON.stringify(data) }),
     remove: (ticker: string) => request<void>(`/stocks/${ticker}`, { method: 'DELETE' }),
     valuation: (ticker: string) =>

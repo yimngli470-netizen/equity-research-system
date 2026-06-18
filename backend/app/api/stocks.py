@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,8 @@ from app.schemas.stock import (
     StockScoreResponse,
     StockWithLatestPrice,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -59,8 +62,39 @@ async def list_stocks(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=StockResponse, status_code=201)
+def _register_manual_ir(ticker: str, ir_url: str) -> None:
+    """Write a user-provided IR earnings URL straight to the registry (no LLM guess). A broad
+    link_regex captures earnings/transcript links; the IR repair pass refines it if needed."""
+    from datetime import date
+
+    from app.ingestion.ir import registry
+    registry.add_source(
+        registry.IRSource(
+            ticker=ticker.upper(),
+            ir_url=ir_url.strip(),
+            strategy=registry.DiscoveryStrategy(
+                type="link_regex",
+                pattern=r"(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)"),
+            artifact_type="press_release",
+            notes=f"User-provided IR URL ({date.today()}).",
+        ),
+        overwrite=True,
+    )
+
+
 async def add_stock(stock_in: StockCreate, db: AsyncSession = Depends(get_db)):
     ticker = stock_in.ticker.upper()
+    # The IR earnings URL is required (auto-discovery was removed). Validate, then write it to the
+    # registry so the transcript scraper can use it.
+    ir_url = (stock_in.ir_url or "").strip()
+    if not ir_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422,
+                            detail="An IR earnings page URL (https://…) is required when adding a ticker.")
+    try:
+        _register_manual_ir(ticker, ir_url)
+    except Exception:
+        logger.exception("Failed to register IR URL for %s", ticker)
+
     existing = await db.get(Stock, ticker)
     if existing and existing.active:
         raise HTTPException(status_code=409, detail=f"Stock {ticker} already exists")
