@@ -129,7 +129,7 @@ async def classify_archetype(db: AsyncSession, ticker: str, force: bool = False)
         logger.info("[archetype] %s: insufficient financial history to classify", ticker)
         return ArchetypeResult(ticker, status="insufficient_data")
 
-    if not settings.anthropic_api_key:
+    if not settings.llm_configured:
         return ArchetypeResult(ticker, status="failed", profile=profile.to_dict())
 
     info = await asyncio.to_thread(_company_info, ticker, stock)

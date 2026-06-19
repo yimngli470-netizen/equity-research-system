@@ -149,7 +149,7 @@ async def grade_due_theses(db: AsyncSession, ticker: str) -> int:
                and (_parse_by_date(kc.get("by_date")) or date.max) <= today]
         if not due:
             continue
-        if not settings.anthropic_api_key:
+        if not settings.llm_configured:
             return graded_count
 
         context = await _context_since(db, ticker, th.as_of, price_now, th.price_at)

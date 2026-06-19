@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     opus_model: str = "claude-opus-4-8"
     sonnet_model: str = "claude-sonnet-4-6"
 
+    @property
+    def llm_configured(self) -> bool:
+        """Whether the ACTIVE backend has the credential it needs. Use this to gate optional LLM
+        steps — not `anthropic_api_key`, which is empty in dev (the subscription path uses
+        CLAUDE_CODE_OAUTH_TOKEN instead, so an api-key check would wrongly skip every LLM call)."""
+        if self.llm_backend == "claude_code":
+            return bool(self.claude_code_oauth_token)
+        return bool(self.anthropic_api_key)
+
     # Sync database URL for Alembic (replaces asyncpg with psycopg2)
     @property
     def database_url_sync(self) -> str:

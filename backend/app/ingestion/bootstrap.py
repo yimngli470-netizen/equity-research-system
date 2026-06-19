@@ -103,7 +103,7 @@ async def generate_kpi_definitions(db: AsyncSession, ticker: str, info: dict, fo
             select(TickerKeyMetric).where(TickerKeyMetric.ticker == ticker)
         )).scalars().all()
         return "skipped", len(n)
-    if not settings.anthropic_api_key:
+    if not settings.llm_configured:
         return "failed", 0
     try:
         kpis = await asyncio.to_thread(_gen_kpis, ticker, info)

@@ -119,8 +119,8 @@ async def summarize_transcript(
     """
     if not full_text or len(full_text) < 500:
         return None
-    if not settings.anthropic_api_key:
-        logger.warning("[transcript_summarizer] No ANTHROPIC_API_KEY — skipping %s Q%d %d", ticker, quarter, year)
+    if not settings.llm_configured:
+        logger.warning("[transcript_summarizer] No LLM backend configured — skipping %s Q%d %d", ticker, quarter, year)
         return None
 
     truncated = full_text[:MAX_INPUT_CHARS]

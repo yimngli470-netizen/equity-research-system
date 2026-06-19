@@ -114,7 +114,7 @@ async def extract_kpis(db: AsyncSession, ticker: str, force: bool = False) -> in
             logger.info("[kpi_extractor] %s already extracted for %s — skipping", ticker, period_end)
             return 0
 
-    if not settings.anthropic_api_key:
+    if not settings.llm_configured:
         return 0
 
     defs_block = "\n".join(
