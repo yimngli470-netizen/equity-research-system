@@ -6,10 +6,10 @@ A 6-layer AI-augmented equity research platform for personal stock analysis. Tra
 **`ANALYST_ROADMAP.md` is the current source of truth** for direction and recent work — the long-term goal is an *auditable AI research analyst*, and the dated progress log there records what's been built (EDGAR financials spine, yfinance consensus, per-ticker KPI extraction, auto-bootstrap of new stocks, etc.). This file documents the standing architecture.
 
 ## Tech Stack
-- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic, APScheduler
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic
 - **Database:** PostgreSQL 16 + pgvector (vector search for documents)
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
-- **Infrastructure:** Docker Compose (local), 5 services: db, redis, backend, frontend, scheduler
+- **Infrastructure:** Docker Compose (local), 4 services: db, redis, backend, frontend (pull-model — no scheduler; the pipeline runs on demand only)
 - **AI:** Claude API (Anthropic SDK) — two tiers: **opus** (deep analysis: agents, judge, forecast) and **sonnet** (fast tasks: news, summaries, archetype, KPI, IR repair, grading). Model ids are set in **ONE place** — `config.py` (`opus_model` / `sonnet_model`), overridable via `OPUS_MODEL` / `SONNET_MODEL` env vars. Agents declare a `tier`, never a model string. Update these when Anthropic retires a dated snapshot (a retired id → 404 not_found_error → every agent fails).
 
 ## How to Run
@@ -80,7 +80,6 @@ backend/
       fmp_client.py          #   FMP API client (free tier; only earnings_surprises uses it now)
       transcripts.py         #   Orchestrator: FMP → IR scraper fallback chain, calendar-gated
       earnings_surprises.py  #   EPS beat/miss history from FMP → earnings_events table
-      scheduler.py           #   APScheduler daily cron (entrypoint, run as module)
       computed_metrics.py    #   Derived growth rates, margins, momentum (on-the-fly, not stored)
       ir/                    #   IR-site scraper (BUILT): FMP-miss fallback + auto-discovery target
         sources.yaml         #     Per-ticker IR config: URL + discovery strategy + artifact_type
@@ -181,10 +180,9 @@ journal a duplicate thesis (would poison calibration with pseudo-replication).
 | Validation | **None (deterministic)** | Every run | Re-derive numeric claims vs hard DB data (no LLM) | All agent reports + DB financials/valuation/estimates |
 
 ### Refresh Strategy
-The system has two trigger paths with deliberately different cache semantics:
+The system is **pull-model**: the pipeline runs only when triggered on demand — there is no scheduler/cron (decision 2026-06-11: avoid unattended LLM cost; the `scheduler` service + `ingestion/scheduler.py` were removed 2026-06-19). The single trigger path:
 
-- **"Run Full Pipeline" button (frontend, `state/pipelineTracker.ts`)** — runs the WHOLE chain for the ticker: `/ingestion/run` (incl. bootstrap, EDGAR financials, consensus, transcript fetch, KPI extraction) → `/analysis/run` with **`mode: "smart"`** → `/scoring/run` → `/decision/run`. Quiet day: ~0 LLM calls (cached agents reused; scoring/decision still recompute fresh from daily prices). News day: ~1 Sonnet. Earnings day: the new filing auto-invalidates the cascade (~6 calls). The UI shows "N re-ran · M reused (inputs unchanged)".
-- **Daily scheduler (`ingestion/scheduler.py`, 21:30 UTC)** — runs ingestion for all active stocks. Agent/scoring/decision wiring is **not yet hooked up** ("What's Not Yet Built" item). When wired, it should run `mode: "smart"` — same input-driven semantics as the button.
+- **"Run Full Pipeline" button (frontend, `state/pipelineTracker.ts`)** — runs the WHOLE chain for the ticker: `/ingestion/run` (incl. bootstrap, EDGAR financials, consensus, transcript fetch, KPI extraction) → `/analysis/run` with **`mode: "smart"`** → `/scoring/run` → `/decision/run`. Quiet day: ~0 LLM calls (cached agents reused; scoring/decision still recompute fresh from daily prices). News day: ~1 Sonnet. Earnings day: the new filing auto-invalidates the cascade (~6 calls). The UI shows "N re-ran · M reused (inputs unchanged)". (The same chain is also reachable via the API endpoints directly.)
 
 **The old staleness gotcha is FIXED by smart mode:** time-based caching could return a stale earnings report for up to 30 days after a new quarterly release; fingerprint invalidation re-runs the earnings agent the moment a new filing/transcript is ingested, no button-clicking discipline required.
 
@@ -370,6 +368,5 @@ The IR scraper needs a `sources.yaml` entry per ticker; for new tickers `bootstr
 ## What's Not Yet Built / Next
 - **Phase 1 (next): peer-relative normalization + business-model archetypes** — the current normalizer uses fixed absolute bounds (one ruler for MU and Meta); see `ANALYST_ROADMAP.md`.
 - Interactive DCF calculator (frontend); stock comparison page; settings page (watchlist, weights)
-- Scheduler wiring: auto-run agents + scoring + decision after daily ingestion
 - Document embeddings (pgvector) not yet active
 - Insider trades ingestion deferred (`InsiderTrade` model exists, unused)

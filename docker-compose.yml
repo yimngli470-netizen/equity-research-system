@@ -68,25 +68,13 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8000
 
-  scheduler:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://researcher:${DB_PASSWORD:-changeme_local_dev}@db:5432/equity_research
-      - REDIS_URL=redis://redis:6379/0
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - NEWS_API_KEY=${NEWS_API_KEY:-}
-      - FMP_API_KEY=${FMP_API_KEY:-}
-    volumes:
-      - ./backend:/app
-    command: python -m app.ingestion.scheduler
+  # NOTE: the `scheduler` service (python -m app.ingestion.scheduler) was REMOVED
+  # 2026-06-19. It ran an unattended APScheduler daily cron (Mon-Fri 21:30 UTC)
+  # whose daily_job() called run_all_agents → scoring → decision, spending LLM
+  # API credits on a timer. This contradicts the project's pull-model decision
+  # (ANALYST_ROADMAP, 2026-06-11: "no schedulers/event-driven/alerting"). Do NOT
+  # re-add it. Run the pipeline on demand via the frontend "Run Full Pipeline"
+  # button or the API. scheduler.py remains in the repo as dormant code.
 
 volumes:
   pgdata:
