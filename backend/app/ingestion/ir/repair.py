@@ -9,9 +9,8 @@ import asyncio
 import json
 import logging
 
-import anthropic
-
 from app.config import settings
+from app.llm import make_llm_client
 from app.ingestion.ir.registry import DiscoveryStrategy, IRSource
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ If you cannot find anything plausible, set found_url and new_strategy to null.""
 
 
 def _call_claude(page_html: str, year: int, quarter: int, ticker: str) -> dict:
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client()
     user_prompt = (
         f"Ticker: {ticker}\n"
         f"Target: Q{quarter} {year}\n\n"

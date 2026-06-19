@@ -26,6 +26,8 @@ import anthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm import make_llm_client
+
 from app.config import settings
 from app.models.analysis import AnalysisReport
 from app.models.financial import Financial
@@ -82,7 +84,7 @@ class BaseAgent(ABC):
         return settings.opus_model if self.tier == "opus" else settings.sonnet_model
 
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self.client = make_llm_client()
 
     async def run(
         self,

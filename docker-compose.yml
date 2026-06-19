@@ -33,6 +33,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # This compose file is the DEV (laptop) setup: install the Claude Code CLI so LLM calls can
+      # bill your SUBSCRIPTION (APP_ENV=dev → llm_backend=claude_code). Prod uses docker-compose.prod.yml
+      # (no CLI; APP_ENV=prod → llm_backend=api). See CLAUDE.md "Dev vs Prod LLM backend".
+      args:
+        INSTALL_CLAUDE_CLI: "1"
     restart: unless-stopped
     depends_on:
       db:
@@ -42,7 +47,10 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://researcher:${DB_PASSWORD:-changeme_local_dev}@db:5432/equity_research
       - REDIS_URL=redis://redis:6379/0
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - APP_ENV=${APP_ENV:-dev}
+      # Dev backend: subscription token (run `claude setup-token` on the host → put in .env). The
+      # API key is intentionally absent here so dev can never silently bill credits.
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       - NEWS_API_KEY=${NEWS_API_KEY:-}
       - FMP_API_KEY=${FMP_API_KEY:-}
       - ENV=${ENV:-development}

@@ -1,0 +1,17 @@
+# Prod override (servers). Use with:
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Flips the backend from the dev/subscription backend to the prod/API-key backend:
+#   • APP_ENV=prod        → loads config/prod.yaml → llm_backend=api
+#   • ANTHROPIC_API_KEY    → completions billed to the API key (set it in the server's env/.env)
+#   • INSTALL_CLAUDE_CLI=0 → image does NOT ship the Claude Code CLI (lean prod image)
+#
+# The base file's CLAUDE_CODE_OAUTH_TOKEN var stays present-but-empty and is simply unused here.
+services:
+  backend:
+    build:
+      args:
+        INSTALL_CLAUDE_CLI: "0"
+    environment:
+      - APP_ENV=prod
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

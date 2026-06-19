@@ -16,6 +16,18 @@ RUN pip install --no-cache-dir -e ".[dev]"
 # sites (ISRG/UBER/FIG) that a static httpx GET can't read. --with-deps pulls the required system libs.
 RUN python -m playwright install --with-deps chromium
 
+# Dev-only: the Claude Code CLI. When LLM_BACKEND=claude_code (the dev/local backend) the app routes
+# every completion through this CLI using CLAUDE_CODE_OAUTH_TOKEN, so calls bill to a Max/Pro
+# SUBSCRIPTION instead of API credits. Gated by a build arg so PROD images (LLM_BACKEND=api) stay
+# lean and never ship the CLI. The local docker-compose sets INSTALL_CLAUDE_CLI=1.
+ARG INSTALL_CLAUDE_CLI=0
+RUN if [ "$INSTALL_CLAUDE_CLI" = "1" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+        curl -fsSL https://claude.ai/install.sh | bash && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+ENV PATH="/root/.local/bin:${PATH}"
+
 # Copy application code
 COPY . .
 

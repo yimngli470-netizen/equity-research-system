@@ -176,6 +176,9 @@ def patch_world(engine, monkeypatch):
     monkeypatch.setattr("app.ingestion.pipeline.async_session", test_sm)
     monkeypatch.setattr("app.agents.orchestrator.async_session", test_sm)
     monkeypatch.setattr("app.config.settings.anthropic_api_key", "test-key", raising=False)
+    # Force the API backend so make_llm_client() builds anthropic.Anthropic (patched below). The dev
+    # default (claude_code) would otherwise try to shell out to the claude CLI.
+    monkeypatch.setattr("app.config.settings.llm_backend", "api", raising=False)
     # No real third-party calls: FMP (earnings surprises) is gated on this key being set.
     monkeypatch.setattr("app.config.settings.fmp_api_key", None, raising=False)
 

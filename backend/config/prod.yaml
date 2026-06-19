@@ -1,0 +1,3 @@
+# Prod environment (servers). NON-secret settings only — secrets live in .env / the deploy env.
+# LLM calls go through the Anthropic SDK, billed to ANTHROPIC_API_KEY. No claude CLI needed.
+llm_backend: api

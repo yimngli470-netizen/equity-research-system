@@ -1,7 +1,20 @@
-from pydantic_settings import BaseSettings
+import os
+from pathlib import Path
+
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
+
+# Per-env, NON-secret config lives in backend/config/<app_env>.yaml (committed). Secrets
+# (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) stay in .env / env vars, never in the YAML.
+_CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     database_url: str = "postgresql+asyncpg://researcher:changeme_local_dev@db:5432/equity_research"
     redis_url: str = "redis://redis:6379/0"
     anthropic_api_key: str = ""
@@ -9,6 +22,18 @@ class Settings(BaseSettings):
     fmp_api_key: str = ""
     env: str = "development"
     log_level: str = "INFO"
+
+    # ── Environment & LLM backend ────────────────────────────────────────────────────────────────
+    # app_env selects which config/<app_env>.yaml is layered in: "dev" (local docker, DEFAULT) or
+    # "prod" (servers — MUST set APP_ENV=prod). The two envs differ in how they reach Claude:
+    #   llm_backend="api"         → Anthropic SDK billed to ANTHROPIC_API_KEY (prod).
+    #   llm_backend="claude_code" → route every completion through the `claude` CLI using
+    #                               CLAUDE_CODE_OAUTH_TOKEN, billed to your Max/Pro SUBSCRIPTION
+    #                               (dev only; shares your 5-hour interactive rate limits).
+    # Both are read through the single factory in app/llm/client.py — see make_llm_client().
+    app_env: str = "dev"
+    llm_backend: str = "api"
+    claude_code_oauth_token: str = ""
 
     # LLM model selection — TWO tiers, set in ONE place (override per-env via OPUS_MODEL / SONNET_MODEL
     # in .env, no code change). Anthropic retires dated snapshots periodically (a retired id returns
@@ -23,7 +48,19 @@ class Settings(BaseSettings):
     def database_url_sync(self) -> str:
         return self.database_url.replace("+asyncpg", "+psycopg2")
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    @classmethod
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+    ):
+        """Layer config/<APP_ENV>.yaml in BELOW env vars (so env/.env still override). The YAML file
+        is picked from the APP_ENV env var directly (read before the model is built)."""
+        env_name = os.environ.get("APP_ENV", cls.model_fields["app_env"].default)
+        yaml_file = _CONFIG_DIR / f"{env_name}.yaml"
+        sources = [init_settings, env_settings, dotenv_settings]
+        if yaml_file.is_file():
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
 
 settings = Settings()

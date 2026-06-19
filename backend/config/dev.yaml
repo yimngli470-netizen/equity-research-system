@@ -1,0 +1,5 @@
+# Dev environment (local docker on this laptop). NON-secret settings only — secrets live in .env.
+# LLM calls route through the `claude` CLI using CLAUDE_CODE_OAUTH_TOKEN, billed to your Max/Pro
+# SUBSCRIPTION instead of API credits. Requires the claude CLI in the image + the token in .env
+# (run `claude setup-token` on the host). Shares your 5-hour interactive rate limits.
+llm_backend: claude_code

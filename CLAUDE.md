@@ -10,7 +10,7 @@ A 6-layer AI-augmented equity research platform for personal stock analysis. Tra
 - **Database:** PostgreSQL 16 + pgvector (vector search for documents)
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
 - **Infrastructure:** Docker Compose (local), 4 services: db, redis, backend, frontend (pull-model — no scheduler; the pipeline runs on demand only)
-- **AI:** Claude API (Anthropic SDK) — two tiers: **opus** (deep analysis: agents, judge, forecast) and **sonnet** (fast tasks: news, summaries, archetype, KPI, IR repair, grading). Model ids are set in **ONE place** — `config.py` (`opus_model` / `sonnet_model`), overridable via `OPUS_MODEL` / `SONNET_MODEL` env vars. Agents declare a `tier`, never a model string. Update these when Anthropic retires a dated snapshot (a retired id → 404 not_found_error → every agent fails).
+- **AI:** Claude API (Anthropic SDK) — two tiers: **opus** (deep analysis: agents, judge, forecast) and **sonnet** (fast tasks: news, summaries, archetype, KPI, IR repair, grading). Model ids are set in **ONE place** — `config.py` (`opus_model` / `sonnet_model`), overridable via `OPUS_MODEL` / `SONNET_MODEL` env vars. Agents declare a `tier`, never a model string. Update these when Anthropic retires a dated snapshot (a retired id → 404 not_found_error → every agent fails). **Every LLM call is built through ONE factory** — `app/llm/client.py` `make_llm_client()` (see "Dev vs Prod LLM backend"); no code constructs `anthropic.Anthropic` directly.
 
 ## How to Run
 ```bash
@@ -22,6 +22,30 @@ docker compose down           # Stop all services
 - Backend API: http://localhost:8000
 - API Docs (Swagger): http://localhost:8000/docs
 - Postgres exposed on host port 5433 (not 5432, which is used by local Postgres)
+
+### Dev vs Prod LLM backend
+Two environments, selected by `APP_ENV`, which layers in `backend/config/<APP_ENV>.yaml`. The only
+real difference is **how LLM calls are paid for** — both go through the single factory
+`app/llm/client.py` `make_llm_client()`, which all 8 call sites use (no code builds `anthropic.Anthropic`
+directly).
+
+| Env | `APP_ENV` | `llm_backend` | Pays via | Where |
+|-----|-----------|---------------|----------|-------|
+| **dev** (DEFAULT) | `dev` | `claude_code` | your Max/Pro **subscription** (no API credits) | this laptop / local docker |
+| **prod** | `prod` | `api` | `ANTHROPIC_API_KEY` (per-token credits) | servers |
+
+- **Dev (subscription):** the default `docker-compose.yml` builds the image with `INSTALL_CLAUDE_CLI=1`
+  (ships the `claude` CLI) and the app routes every completion through `claude -p --output-format json`
+  using `CLAUDE_CODE_OAUTH_TOKEN`. **One-time setup:** run `claude setup-token` on the host (Claude
+  subscription required; token is long-lived ~1yr, auto-refreshes), put it in `.env` as
+  `CLAUDE_CODE_OAUTH_TOKEN`, then `docker compose up -d backend` to pick it up. **Fails loudly** if the
+  CLI or token is missing — it never silently falls back to the API key. Caveats: shares your 5-hour
+  interactive rate limits; routing a backend app through the subscription is a ToS gray area.
+- **Prod (API key):** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` → sets
+  `APP_ENV=prod` (→ `llm_backend=api`), passes `ANTHROPIC_API_KEY`, builds with `INSTALL_CLAUDE_CLI=0`
+  (lean image, no CLI). The standard Anthropic SDK path, unchanged.
+- **Secrets** (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) live in gitignored `.env`, never in the
+  committed `config/*.yaml` (which hold only the non-secret `llm_backend` switch).
 
 ## Testing
 One end-to-end test (`backend/tests/test_pipeline_e2e.py`) drives the full backend workflow —

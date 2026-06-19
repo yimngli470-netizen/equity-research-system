@@ -13,11 +13,11 @@ import logging
 import re
 from datetime import date, timedelta
 
-import anthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.llm import make_llm_client
 from app.models.financial import Financial
 from app.models.price import DailyPrice
 from app.models.thesis import StockThesis
@@ -61,7 +61,7 @@ Respond with JSON only: {"grades":[{"index":int,"result":"hit|miss|partial|undet
 
 
 def _grade_llm(thesis_date, predictions: list[tuple[int, dict]], context: str) -> dict:
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client()
     pred_lines = "\n".join(
         f'  index {i}: "{kc.get("prediction","")}" (watch: {kc.get("watch_metric","")}; '
         f'by {kc.get("by_date","")}; would confirm: {kc.get("would_confirm","")})'

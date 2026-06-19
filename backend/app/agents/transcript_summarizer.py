@@ -20,6 +20,7 @@ import logging
 import anthropic
 
 from app.config import settings
+from app.llm import make_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ async def summarize_transcript(
             ticker, quarter, year, len(full_text), MAX_INPUT_CHARS,
         )
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client()
     logger.info("[transcript_summarizer] summarizing %s Q%d %d (%d chars)", ticker, quarter, year, len(truncated))
     summary = await asyncio.to_thread(_call_summarizer, client, truncated, ticker, year, quarter)
 

@@ -17,11 +17,11 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
-import anthropic
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.llm import make_llm_client
 from app.ingestion.bootstrap import _company_info  # reuse name/sector/industry/summary lookup
 from app.measurement.profile import QuantProfile, compute_quant_profile
 from app.models.stock import Stock
@@ -96,7 +96,7 @@ def _profile_lines(p: QuantProfile) -> str:
 
 
 def _classify(info: dict, profile: QuantProfile) -> dict:
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client()
     user = (
         f"Company: {info['name']} ({info.get('ticker','')}). Sector: {info['sector']}. "
         f"Industry: {info['industry']}.\n"

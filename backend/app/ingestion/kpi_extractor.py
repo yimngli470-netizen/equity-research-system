@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.llm import make_llm_client
 from app.models.financial import Financial
 from app.models.key_metric import TickerKeyMetric, TickerKpiValue
 from app.models.transcript import EarningsTranscript
@@ -124,7 +125,7 @@ async def extract_kpis(db: AsyncSession, ticker: str, force: bool = False) -> in
     )
     valid_names = {d.metric_name for d in defs}
 
-    result = await asyncio.to_thread(_call, anthropic.Anthropic(api_key=settings.anthropic_api_key),
+    result = await asyncio.to_thread(_call, make_llm_client(),
                                      ticker, defs_block, tr.full_text)
     if "error" in result:
         return 0

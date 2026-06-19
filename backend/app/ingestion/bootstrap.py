@@ -15,13 +15,13 @@ import json
 import logging
 from dataclasses import dataclass, field
 
-import anthropic
 import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.llm import make_llm_client
 from app.ingestion.ir import registry
 from app.models.key_metric import TickerKeyMetric
 from app.models.onboarding import DevTickerBootstrapStatus
@@ -62,7 +62,7 @@ def _company_info(ticker: str, stock: Stock | None) -> dict:
 
 
 def _llm_json(system: str, user: str) -> dict:
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client()
     resp = client.messages.create(model=MODEL, max_tokens=2048, system=system,
                                   messages=[{"role": "user", "content": user}])
     content = resp.content[0].text

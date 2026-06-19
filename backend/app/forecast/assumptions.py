@@ -12,11 +12,11 @@ import json
 import logging
 from datetime import date
 
-import anthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.llm import make_llm_client
 from app.forecast.drivers import DriverHistory, format_drivers_for_llm
 from app.models.estimate import AnalystEstimate
 from app.models.stock import Stock
@@ -131,7 +131,7 @@ async def build_assumptions_context(db: AsyncSession, ticker: str, drivers: Driv
 
 
 def _call_llm(system: str, user: str) -> dict:
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client()
     resp = client.messages.create(model=MODEL, max_tokens=4096, system=system,
                                   messages=[{"role": "user", "content": user}])
     content = resp.content[0].text
