@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[dev]"
 
+# Headless Chromium for the IR scraper's rendered-fetch fallback — JS-rendered / WAF-stalling IR
+# sites (ISRG/UBER/FIG) that a static httpx GET can't read. --with-deps pulls the required system libs.
+RUN python -m playwright install --with-deps chromium
+
 # Copy application code
 COPY . .
 

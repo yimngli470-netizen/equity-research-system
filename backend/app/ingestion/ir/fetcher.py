@@ -6,8 +6,6 @@ Orchestrates: registry lookup → discovery → optional LLM repair → extract.
 import logging
 from dataclasses import dataclass
 
-import httpx
-
 from app.ingestion.ir import discovery, extract, registry, repair
 
 logger = logging.getLogger(__name__)
@@ -47,10 +45,21 @@ def _detect_qa(text: str) -> bool:
 
 
 async def _download(url: str) -> tuple[bytes, str]:
-    async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
-        resp = await client.get(url, headers={"User-Agent": _USER_AGENT})
-        resp.raise_for_status()
-        return resp.content, resp.headers.get("content-type", "")
+    """Download the transcript/release. Browser-TLS-impersonating fetch first — the doc usually lives
+    on the same WAF-protected IR domain that resets plain httpx (and headless Chromium). curl_cffi gets
+    PDFs and HTML alike; a headless render is the last resort for JS-gated documents."""
+    from app.ingestion.ir.browser_fetch import fetch_impersonated
+
+    result = await fetch_impersonated(url, timeout=30)
+    if result is not None:
+        return result
+
+    logger.info("[ir] impersonated download failed for %s — trying headless render", url)
+    from app.ingestion.ir.render import fetch_rendered
+    html = await fetch_rendered(url, _USER_AGENT)
+    if html is None:
+        raise RuntimeError("download failed (impersonated + rendered)")
+    return html, "text/html"
 
 
 async def fetch_transcript_from_ir(
