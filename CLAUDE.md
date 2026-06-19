@@ -235,9 +235,15 @@ Strategy types supported by `ir.discovery`:
 
 **Design rationale (why programmatic with LLM repair, not LLM-driven navigation):** per-scrape Claude calls × small watchlist × multi-weekly runs adds avoidable cost; LLMs hallucinate URLs in ways that are hard to debug; YAML configs are 5-minute fixes when IR sites redesign (1-2x/yr per ticker). LLM is the repair tool, not the runtime.
 
-**Dependencies (installed):** `pdfplumber`, `beautifulsoup4`, `python-pptx`, `pyyaml`, `httpx`.
+**Dependencies (installed):** `pdfplumber`, `beautifulsoup4`, `python-pptx`, `pyyaml`, `curl_cffi`, `playwright` (+ Chromium, installed in the Docker image).
 
-**IR reachability note:** several IR sites (MU, TSLA, AVGO) block this project's *datacenter* IP (timeout/403). They are reachable from a residential IP, so the scraper works when the app runs on the user's own machine. `bootstrap.py` auto-discovery distinguishes a bad URL (404/DNS → not written) from an IP block (timeout/403 → written anyway, works from residential IP); failures surface as UI warnings + `dev_ticker_bootstrap_status`.
+**Fetch chain (`discovery._fetch` / `fetcher._download`):** `curl_cffi` Chrome-TLS impersonation (PRIMARY) → headless Chromium render (`ir/render.py`, for JS-injected links) → give up. curl_cffi is the primary because plain httpx and even a headless browser get reset by WAF **JA3/TLS-fingerprint blocking** (see note below); it's also cheaper than spawning a browser.
+
+**IR reachability note:** IR sites block automated clients at two different layers.
+- **IP-level** (MU, TSLA, AVGO): block this project's *datacenter* IP (timeout/403); reachable from a residential IP, so the scraper works when the app runs on the user's own machine.
+- **Fingerprint-level** (ISRG, likely UBER/FIG): WAF resets the connection on the TLS/HTTP2 handshake fingerprint (JA3), *before* any HTTP body or JS — so it defeats plain httpx (RemoteProtocolError/ReadTimeout) AND headless Chromium (ERR_HTTP2_PROTOCOL_ERROR), even from a residential IP (a HEAD returns 200 while GET is reset). The fix is `curl_cffi` browser-TLS impersonation, which speaks a real Chrome JA3 and is let through. A headless browser cannot beat this — the block is below the browser layer.
+
+Note: ISRG (like Apple) posts **no text transcript** — its `sources.yaml` strategy targets the *"Intuitive Announces [Ordinal] Quarter Earnings"* press release (financials + da Vinci procedure/installed-base KPIs), NOT the conference-call event page (register/webcast boilerplate). When configuring a new IR site, point the link_regex at the press release, not the event/webcast page.
 
 ### Scoring System
 **60+ features** across 9 extraction categories, mapped to **7 scoring categories** (+ validation meta-category):
