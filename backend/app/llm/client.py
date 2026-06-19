@@ -38,6 +38,40 @@ logger = logging.getLogger(__name__)
 # Opus analyst calls can stream large JSON for a while; give the subprocess generous headroom.
 _CLI_TIMEOUT_S = 600
 
+# Notional API-equivalent price per 1M tokens (input, output) by model family — used only to log a
+# rough $ figure so you can see what each call WOULD cost on the API (on the subscription path it's
+# what you're saving). Keep roughly in sync with the claude-api skill price table.
+_PRICE_PER_MTOK = {
+    "opus": (5.0, 25.0),
+    "sonnet": (3.0, 15.0),
+    "haiku": (1.0, 5.0),
+    "fable": (10.0, 50.0),
+}
+
+
+def _family(model: str | None) -> str | None:
+    m = (model or "").lower()
+    for fam in _PRICE_PER_MTOK:
+        if fam in m:
+            return fam
+    return None
+
+
+def _tier_of(model: str | None) -> str:
+    if model == settings.opus_model:
+        return "opus"
+    if model == settings.sonnet_model:
+        return "sonnet"
+    return _family(model) or "?"
+
+
+def _notional_cost(model: str | None, in_tok: int, out_tok: int) -> float | None:
+    fam = _family(model)
+    if fam is None:
+        return None
+    p_in, p_out = _PRICE_PER_MTOK[fam]
+    return round(in_tok / 1e6 * p_in + out_tok / 1e6 * p_out, 4)
+
 
 def make_llm_client():
     """Return an LLM client for the active backend. See module docstring."""
@@ -45,12 +79,44 @@ def make_llm_client():
         return ClaudeCodeClient()
     if settings.llm_backend == "api":
         # Attribute access (not a stored import) so the e2e test's monkeypatch of
-        # anthropic.Anthropic still takes effect here.
-        return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        # anthropic.Anthropic still takes effect here. Wrapped so each call logs the backend + cost.
+        return _ApiLoggingClient(anthropic.Anthropic(api_key=settings.anthropic_api_key))
     raise ValueError(
         f"Unknown llm_backend {settings.llm_backend!r} — expected 'api' or 'claude_code'. "
         "Check config/<app_env>.yaml or the LLM_BACKEND env var."
     )
+
+
+# ── Prod (API key) path: transparent wrapper that logs backend + notional cost per call ───────────
+class _ApiLoggingMessages:
+    def __init__(self, inner):
+        self._inner = inner
+
+    def create(self, **kw):
+        resp = self._inner.create(**kw)
+        model = kw.get("model")
+        try:
+            u = resp.usage
+            cost = _notional_cost(model, u.input_tokens, u.output_tokens)
+            logger.info(
+                "LLM via Anthropic API key: model=%s notional_cost_usd=%s tier=%s",
+                model, cost, _tier_of(model),
+            )
+        except Exception:
+            pass  # never let logging break a real call (e.g. a fake response without .usage in tests)
+        return resp
+
+
+class _ApiLoggingClient:
+    """Wraps anthropic.Anthropic so each .messages.create() logs the backend + cost; delegates the
+    rest unchanged so it's a transparent stand-in."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.messages = _ApiLoggingMessages(inner.messages)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
 
 
 # ── Response shapes (mirror the Anthropic SDK fields the call sites read) ─────────────────────────
@@ -137,4 +203,9 @@ class ClaudeCodeClient:
         if envelope.get("is_error") or envelope.get("subtype") != "success":
             raise RuntimeError(f"claude CLI returned an error envelope: {str(envelope)[:500]}")
 
+        # The CLI reports the real API-equivalent cost (what you're NOT paying in credits) + session.
+        logger.info(
+            "LLM via Claude Code CLI (subscription plan): model=%s notional_cost_usd=%s tier=%s session=%s",
+            model, envelope.get("total_cost_usd"), _tier_of(model), envelope.get("session_id"),
+        )
         return envelope.get("result", "")
