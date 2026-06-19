@@ -248,7 +248,14 @@ ISRG:
   artifact_type: press_release
   notes: "Intuitive Surgical IR \u2014 isrg.intuitive.com (ticker-as-subdomain of\
     \ intuitive.com). User-provided 2026-06-18. WAF does JA3/TLS-fingerprint blocking\
-    \ (resets httpx AND headless Chromium); curl_cffi browser impersonation defeats it.\
-    \ No text transcript posted \u2014 target the 'Intuitive Announces [Ordinal] Quarter\
-    \ Earnings' press release (financial tables + procedure volume), not the conference-call\
-    \ event page."
+    \ (resets httpx AND headless Chromium); curl_cffi browser impersonation defeats\
+    \ it. No text transcript posted \u2014 target the 'Intuitive Announces [Ordinal]\
+    \ Quarter Earnings' press release (financial tables + procedure volume), not the\
+    \ conference-call event page."
+NOW:
+  ir_url: https://www.servicenow.com/company/investor-relations.html
+  strategy:
+    type: link_regex
+    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
+  artifact_type: press_release
+  notes: User-provided IR URL (2026-06-19).

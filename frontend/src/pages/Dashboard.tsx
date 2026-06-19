@@ -5,6 +5,7 @@ import DashboardHeader from '../components/dashboard/DashboardHeader';
 import WatchlistToolbar, { type Layout, type SortBy } from '../components/dashboard/WatchlistToolbar';
 import WatchlistTable from '../components/dashboard/WatchlistTable';
 import WatchlistGrid from '../components/dashboard/WatchlistGrid';
+import AddStockModal from '../components/dashboard/AddStockModal';
 import type { WatchlistRow } from '../components/dashboard/rows';
 import { fmtRelativeTime } from '../components/primitives/format';
 
@@ -27,6 +28,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [sortBy, setSortByRaw] = useState<SortBy>(() => loadSort());
   const [layout, setLayoutRaw] = useState<Layout>(() => loadLayout());
@@ -79,29 +81,11 @@ export default function Dashboard() {
     }
   }
 
-  async function handleAdd() {
-    const t = window.prompt('Add ticker:');
-    if (!t) return;
-    const ticker = t.trim().toUpperCase();
-    if (!ticker) return;
-    // IR earnings URL is required — auto-discovery was removed (it guessed the wrong domain too
-    // often). The user pastes the real IR page URL so transcripts can be fetched.
-    const url = window.prompt(
-      `Investor Relations earnings page URL for ${ticker} (required):\n` +
-        'e.g. https://isrg.intuitive.com/financial-information/quarterly-results',
-    );
-    if (url === null) return; // cancelled
-    const irUrl = url.trim();
-    if (!/^https?:\/\//i.test(irUrl)) {
-      setError('An IR earnings page URL (https://…) is required to add a name.');
-      return;
-    }
-    try {
-      await api.stocks.add({ ticker, name: ticker, ir_url: irUrl });
-      await loadAll();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add stock');
-    }
+  // Ticker + required IR URL are collected together in one modal (AddStockModal). Throwing here keeps
+  // the modal open and surfaces the message inside it.
+  async function submitAdd(ticker: string, irUrl: string) {
+    await api.stocks.add({ ticker, name: ticker, ir_url: irUrl });
+    await loadAll();
   }
 
   const filtered = rows.filter((r) => {
@@ -130,8 +114,10 @@ export default function Dashboard() {
         setSortBy={setSortBy}
         layout={layout}
         setLayout={setLayout}
-        onAdd={handleAdd}
+        onAdd={() => setAddOpen(true)}
       />
+
+      <AddStockModal open={addOpen} onClose={() => setAddOpen(false)} onSubmit={submitAdd} />
 
       {error && (
         <div

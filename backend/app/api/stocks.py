@@ -61,7 +61,6 @@ async def list_stocks(db: AsyncSession = Depends(get_db)):
     return enriched
 
 
-@router.post("/", response_model=StockResponse, status_code=201)
 def _register_manual_ir(ticker: str, ir_url: str) -> None:
     """Write a user-provided IR earnings URL straight to the registry (no LLM guess). A broad
     link_regex captures earnings/transcript links; the IR repair pass refines it if needed."""
@@ -82,6 +81,7 @@ def _register_manual_ir(ticker: str, ir_url: str) -> None:
     )
 
 
+@router.post("/", response_model=StockResponse, status_code=201)
 async def add_stock(stock_in: StockCreate, db: AsyncSession = Depends(get_db)):
     ticker = stock_in.ticker.upper()
     # The IR earnings URL is required (auto-discovery was removed). Validate, then write it to the
