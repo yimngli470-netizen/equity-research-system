@@ -38,6 +38,29 @@ logger = logging.getLogger(__name__)
 # Opus analyst calls can stream large JSON for a while; give the subprocess generous headroom.
 _CLI_TIMEOUT_S = 600
 
+
+class LLMUsageLimitError(RuntimeError):
+    """The subscription's usage/rate limit was hit. Distinct so callers (the orchestrator) can stop
+    the run cleanly and tell you to re-run later to resume — rather than failing every remaining
+    agent one by one."""
+
+
+# Markers in the CLI's error output that mean "subscription limit", not a generic failure.
+_LIMIT_MARKERS = (
+    "usage limit",
+    "rate limit",
+    "limit reached",
+    "limit will reset",
+    "resets at",
+    "too many requests",
+    "429",
+)
+
+
+def _is_usage_limit(text: str) -> bool:
+    low = (text or "").lower()
+    return any(m in low for m in _LIMIT_MARKERS)
+
 # Notional API-equivalent price per 1M tokens (input, output) by model family — used only to log a
 # rough $ figure so you can see what each call WOULD cost on the API (on the subscription path it's
 # what you're saving). Keep roughly in sync with the claude-api skill price table.
@@ -191,9 +214,10 @@ class ClaudeCodeClient:
             raise RuntimeError(f"claude CLI timed out after {_CLI_TIMEOUT_S}s") from e
 
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"claude CLI exited {proc.returncode}: {(proc.stderr or proc.stdout)[:500]}"
-            )
+            detail = (proc.stderr or proc.stdout)[:500]
+            if _is_usage_limit(detail):
+                raise LLMUsageLimitError(detail)
+            raise RuntimeError(f"claude CLI exited {proc.returncode}: {detail}")
 
         try:
             envelope = json.loads(proc.stdout)
@@ -201,7 +225,10 @@ class ClaudeCodeClient:
             raise RuntimeError(f"claude CLI returned non-JSON: {proc.stdout[:500]}") from e
 
         if envelope.get("is_error") or envelope.get("subtype") != "success":
-            raise RuntimeError(f"claude CLI returned an error envelope: {str(envelope)[:500]}")
+            detail = str(envelope.get("result") or envelope)[:500]
+            if _is_usage_limit(detail):
+                raise LLMUsageLimitError(detail)
+            raise RuntimeError(f"claude CLI returned an error envelope: {detail}")
 
         # The CLI reports the real API-equivalent cost (what you're NOT paying in credits) + session.
         logger.info(
