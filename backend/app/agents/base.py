@@ -19,6 +19,7 @@ Run modes (2026-06-11 smart caching):
 import hashlib
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
 
@@ -26,7 +27,12 @@ import anthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm import make_llm_client
+from app.llm import LLMUsageLimitError, make_llm_client
+
+# LLMs occasionally emit malformed JSON, and the CLI/API path has transient hiccups; a couple of
+# retries absorb those (both NOW's judge and TTD's valuation failed once, then succeeded on re-run).
+_MAX_LLM_ATTEMPTS = 3
+_RETRY_BACKOFF_S = 2
 
 from app.config import settings
 from app.models.analysis import AnalysisReport
@@ -245,33 +251,50 @@ class BaseAgent(ABC):
         return report
 
     def _call_claude(self, system_prompt: str, user_prompt: str) -> dict:
-        """Call Claude API and parse the JSON response."""
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_output_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
+        """Call Claude and parse the JSON response, retrying transient failures.
 
-            content = response.content[0].text
+        Malformed-JSON and transient CLI/API errors are retried (the model re-rolls and usually
+        returns clean JSON the next time). A usage-limit error is NOT retried — it propagates so the
+        orchestrator can stop the run and resume later via smart-cache.
+        """
+        last_err: Exception | None = None
+        content: str | None = None
+        for attempt in range(1, _MAX_LLM_ATTEMPTS + 1):
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=self.max_output_tokens,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                content = response.content[0].text
 
-            # Extract JSON from response (handle markdown code blocks)
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
+                # Extract JSON from response (handle markdown code blocks)
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
 
-            report = json.loads(content.strip())
-            logger.info("[%s] Claude API call successful", self.agent_type)
-            return report
+                report = json.loads(content.strip())
+                if attempt > 1:
+                    logger.info("[%s] Claude call succeeded on attempt %d", self.agent_type, attempt)
+                else:
+                    logger.info("[%s] Claude API call successful", self.agent_type)
+                return report
 
-        except json.JSONDecodeError as e:
-            logger.error("[%s] Failed to parse Claude response as JSON: %s", self.agent_type, e)
+            except LLMUsageLimitError:
+                raise  # don't retry a usage limit — let the orchestrator stop + resume
+            except (json.JSONDecodeError, anthropic.APIError, RuntimeError) as e:
+                last_err = e
+                logger.warning("[%s] LLM attempt %d/%d failed (%s): %s",
+                               self.agent_type, attempt, _MAX_LLM_ATTEMPTS, type(e).__name__, str(e)[:160])
+                if attempt < _MAX_LLM_ATTEMPTS:
+                    time.sleep(_RETRY_BACKOFF_S * attempt)
+
+        logger.error("[%s] all %d LLM attempts failed: %s", self.agent_type, _MAX_LLM_ATTEMPTS, last_err)
+        if isinstance(last_err, json.JSONDecodeError):
             return {"error": "Failed to parse response", "raw": content}
-        except anthropic.APIError as e:
-            logger.error("[%s] Claude API error: %s", self.agent_type, e)
-            return {"error": f"API error: {e}"}
+        return {"error": f"LLM call failed: {last_err}"}
 
     async def _get_recency_marker(self, db: AsyncSession, ticker: str) -> str | None:
         """Return a one-line marker if the ticker just reported earnings.
