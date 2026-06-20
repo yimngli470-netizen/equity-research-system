@@ -194,13 +194,18 @@ async def recompute_peer_weights(db: AsyncSession) -> int:
     if not rows:
         return 0
 
-    stmt = insert(PeerWeight).values(rows)
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_peer_ticker_peer",
-        set_={c: getattr(stmt.excluded, c)
-              for c in ("weight", "fundamental_sim", "return_corr", "embedding_sim", "as_of")},
-    )
-    await db.execute(stmt)
+    # Chunk the upsert: a single multi-row INSERT is capped at asyncpg's 32767 bound parameters
+    # (≈ 4680 rows × 7 cols), which the full pairwise grid exceeds once the universe is large.
+    _COLS = ("weight", "fundamental_sim", "return_corr", "embedding_sim", "as_of")
+    CHUNK = 2000  # 2000 × 7 = 14k params, safely under the limit
+    for i in range(0, len(rows), CHUNK):
+        batch = rows[i:i + CHUNK]
+        stmt = insert(PeerWeight).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_peer_ticker_peer",
+            set_={c: getattr(stmt.excluded, c) for c in _COLS},
+        )
+        await db.execute(stmt)
     await db.commit()
     logger.info("[peers] recomputed %d peer-weight rows across %d names", len(rows), len(uni.tickers))
     return len(rows)
