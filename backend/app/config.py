@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     fmp_api_key: str = ""
     env: str = "development"
     log_level: str = "INFO"
+    # SQL echo — logs EVERY statement with bound params (huge lines that flood docker logs). Off by
+    # default; set DB_ECHO=true only when debugging SQL.
+    db_echo: bool = False
 
     # ── Environment & LLM backend ────────────────────────────────────────────────────────────────
     # app_env selects which config/<app_env>.yaml is layered in: "dev" (local docker, DEFAULT) or
