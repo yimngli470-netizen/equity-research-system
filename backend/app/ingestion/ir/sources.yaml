@@ -49,9 +49,8 @@ AMZN:
 AVGO:
   ir_url: https://investors.broadcom.com/financial-information/quarterly-results
   strategy:
-    type: link_regex
-    pattern: (reports|announces).*(Q{q}|{q}Q|{ordinal}-quarter).*{year}.*(financial-results|financial
-      results|earnings|results)
+    type: url_template
+    pattern: https://investors.broadcom.com/news-releases/news-release-details/broadcom-inc-announces-{quarter}-quarter-fiscal-year-{year}-financial
   artifact_type: press_release
   notes: 'Broadcom''s investors.broadcom.com subdomain refuses connections from
 
@@ -201,8 +200,8 @@ TSLA:
 UBER:
   ir_url: https://investor.uber.com/financials/default.aspx
   strategy:
-    type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    type: css_selector
+    pattern: .module_item.{Q} a.module_link-transcript
   artifact_type: press_release
   notes: "Uber's IR site (Q4 Inc-hosted) renders the quarterly artifact list entirely\n\
     via JavaScript \u2014 the static HTML returned by httpx is a single SPA shell\n\
@@ -255,7 +254,21 @@ ISRG:
 NOW:
   ir_url: https://www.servicenow.com/company/investor-relations.html
   strategy:
+    type: url_template
+    pattern: https://investors.servicenow.com/news-releases/news-release-details/servicenow-reports-{quarter}-quarter-{year}-financial-results
+  artifact_type: press_release
+  notes: User-provided IR URL (2026-06-19).
+TTD:
+  ir_url: https://investors.thetradedesk.com/financials/quarterly-results/default.aspx
+  strategy:
     type: link_regex
     pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
   artifact_type: press_release
-  notes: User-provided IR URL (2026-06-19).
+  notes: User-provided IR URL (2026-06-20).
+MSFT:
+  ir_url: https://www.microsoft.com/en-us/investor/default
+  strategy:
+    type: url_template
+    pattern: https://www.microsoft.com/en-us/investor/earnings/FY-{year}-Q{q}-quarterly-earnings/overview
+  artifact_type: press_release
+  notes: User-provided IR URL (2026-06-30).
