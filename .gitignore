@@ -34,3 +34,6 @@ htmlcov/
 # Python
 __pycache__/
 *.pyc
+
+# Generated backtest/ML charts & reports (not source)
+reports/

@@ -157,6 +157,11 @@ def features_asof(s: TickerSeries, asof: date) -> dict[str, float] | None:
         feats["ps"] = mktcap / ttm_rev
     if mktcap and mktcap > 0 and ttm_fcf is not None:
         feats["fcf_yield"] = ttm_fcf / mktcap
+    # Earnings yield (E/P) = the robust valuation feature: uses aggregate net income (well-populated)
+    # not the sparse per-share `eps` tag, and is DEFINED for negative earnings (ranks low, as it
+    # should) where P/E explodes. ~76% coverage vs pe's ~2%.
+    if mktcap and mktcap > 0 and ttm_ni is not None:
+        feats["earnings_yield"] = ttm_ni / mktcap
 
     # Momentum
     for k, v in _momentum(s, asof).items():
