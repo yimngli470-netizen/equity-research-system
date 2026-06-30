@@ -8,6 +8,7 @@ from app.api.analysis import router as analysis_router
 from app.api.decision import router as decision_router
 from app.api.ingestion import router as ingestion_router
 from app.api.notes import router as notes_router
+from app.api.pipeline import router as pipeline_router
 from app.api.portfolio import router as portfolio_router
 from app.api.track_record import router as track_record_router
 from app.api.scoring import router as scoring_router
@@ -58,6 +59,7 @@ app.include_router(notes_router)
 app.include_router(track_record_router)
 app.include_router(universe_router)
 app.include_router(portfolio_router)
+app.include_router(pipeline_router)
 
 
 @app.get("/api/health")

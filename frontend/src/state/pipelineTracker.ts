@@ -41,15 +41,22 @@ export function usePipelineState(ticker: string): PipelineState {
   );
 }
 
+export interface PipelineResult {
+  ticker: string;
+  ok: boolean;
+  error?: string;
+  usageLimited?: boolean; // failed because the subscription's 5-hr usage limit was hit
+}
+
 // Promise per ticker so a duplicate click during a run returns the same promise
 // instead of kicking off a second pipeline. Cleared when the run resolves.
-const inFlight = new Map<string, Promise<void>>();
+const inFlight = new Map<string, Promise<PipelineResult>>();
 
-export function runPipeline(ticker: string): Promise<void> {
+export function runPipeline(ticker: string): Promise<PipelineResult> {
   const existing = inFlight.get(ticker);
   if (existing) return existing;
 
-  const promise = (async () => {
+  const promise = (async (): Promise<PipelineResult> => {
     setState(ticker, { running: true, message: 'Refreshing market data…' });
     try {
       const ingestionResults = await api.ingestion.run([ticker]);
@@ -71,10 +78,17 @@ export function runPipeline(ticker: string): Promise<void> {
       const agentResult = await api.analysis.run(ticker, { mode: 'smart', ingestFirst: false });
       const agentFailures = agentResult.results.filter((r) => !r.success);
       if (agentFailures.length > 0) {
+        const usageLimited = agentFailures.some((r) => r.usage_limited);
         const detail = agentFailures
           .map((r) => `${r.agent_type}${r.error ? `: ${r.error}` : ''}`)
           .join(' · ');
-        throw new Error(`Agent refresh failed (${detail})`);
+        const err = new Error(
+          usageLimited
+            ? 'Subscription usage limit hit — re-run later to resume (smart-cache finishes the rest)'
+            : `Agent refresh failed (${detail})`,
+        ) as Error & { usageLimited?: boolean };
+        err.usageLimited = usageLimited;
+        throw err;
       }
       const cachedCount = agentResult.results.filter((r) => r.cached).length;
       const freshCount = agentResult.results.length - cachedCount;
@@ -97,11 +111,12 @@ export function runPipeline(ticker: string): Promise<void> {
         message: `Pipeline complete · ${scoreResult.feature_count} features · score ${scoreResult.composite_score.toFixed(3)} · ${decisionResult.final_signal} (${decisionResult.confidence}, ${flagCount} flag${flagCount !== 1 ? 's' : ''})`,
         warnings,
       });
+      return { ticker, ok: true };
     } catch (err) {
-      setState(ticker, {
-        running: false,
-        message: err instanceof Error ? err.message : 'Pipeline failed',
-      });
+      const error = err instanceof Error ? err.message : 'Pipeline failed';
+      const usageLimited = !!(err as { usageLimited?: boolean })?.usageLimited;
+      setState(ticker, { running: false, message: error });
+      return { ticker, ok: false, error, usageLimited };
     } finally {
       inFlight.delete(ticker);
     }
@@ -110,6 +125,12 @@ export function runPipeline(ticker: string): Promise<void> {
   inFlight.set(ticker, promise);
   return promise;
 }
+
+// NOTE: bulk "Run All" used to loop over tickers HERE in the browser, which meant a single
+// dropped/stuck request silently stalled the whole watchlist and closing the tab killed it. That
+// loop now lives in the backend (POST /api/pipeline/run-all + status polling, see
+// app/pipeline/runner.py and Dashboard.runAll). This module keeps only the single-ticker pipeline
+// (the per-stock "Run" button in StockDetail).
 
 export function clearPipelineMessage(ticker: string) {
   const s = getState(ticker);

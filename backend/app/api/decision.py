@@ -27,6 +27,7 @@ class RiskFlagResponse(BaseModel):
 class DecisionResponse(BaseModel):
     ticker: str
     date: str
+    created_at: str | None = None  # full run timestamp; `date` is date-only (UI "last run")
     raw_signal: str
     raw_composite: float
     final_signal: str
@@ -57,6 +58,7 @@ async def run_decision_endpoint(
     return DecisionResponse(
         ticker=result.ticker,
         date=str(result.date),
+        created_at=result.created_at.isoformat() if result.created_at else None,
         raw_signal=result.raw_signal,
         raw_composite=result.raw_composite,
         final_signal=result.final_signal,
@@ -118,6 +120,7 @@ async def get_latest_decision(ticker: str, db: AsyncSession = Depends(get_db)):
     return DecisionResponse(
         ticker=decision.ticker,
         date=str(decision.date),
+        created_at=decision.created_at.isoformat() if decision.created_at else None,
         raw_signal=decision.raw_signal,
         raw_composite=decision.raw_composite,
         final_signal=decision.final_signal,

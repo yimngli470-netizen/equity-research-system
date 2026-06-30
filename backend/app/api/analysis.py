@@ -35,6 +35,7 @@ class AgentResultResponse(BaseModel):
     report: dict | None = None
     error: str | None = None
     cached: bool = False
+    usage_limited: bool = False  # failed specifically because the subscription limit was hit
 
 
 class AnalysisRunResponse(BaseModel):
@@ -84,6 +85,7 @@ async def run_analysis(request: AnalysisRequest):
                 report=r.report,
                 error=r.error,
                 cached=r.cached,
+                usage_limited=r.usage_limited,
             )
             for r in result.results
         ],

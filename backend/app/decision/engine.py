@@ -13,7 +13,7 @@ The decision engine:
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -204,6 +204,7 @@ class DecisionResult:
     risk_flags: list[dict]
     reasoning: str
     scores: dict[str, float]
+    created_at: datetime | None = None  # actual run timestamp (not the date-only `date`)
     judge_leaning: str | None = None
     judge_conviction: float | None = None
     position_sizing: dict | None = None
@@ -404,8 +405,11 @@ async def run_decision(
         row.judge_leaning = judge_leaning
         row.judge_conviction = judge_conviction
         row.position_sizing = position_sizing
+        # One decision row per (ticker, date) — bump created_at so it tracks the LATEST run today,
+        # not the first. The dashboard reads this as "last run".
+        row.created_at = func.now()
     else:
-        db.add(StockDecision(
+        row = StockDecision(
             ticker=ticker,
             date=today,
             raw_signal=raw_signal,
@@ -417,9 +421,12 @@ async def run_decision(
             judge_leaning=judge_leaning,
             judge_conviction=judge_conviction,
             position_sizing=position_sizing,
-        ))
+        )
+        db.add(row)
 
     await db.commit()
+    await db.refresh(row)  # resolve the server-side created_at...
+    created_at = row.created_at  # ...and capture it now, before journaling commits expire the row
 
     # Thesis journal (roadmap 3.1): snapshot this verdict as the last pipeline step (run-once, not a
     # scheduler). Best-effort — journaling must never break the decision.
@@ -468,6 +475,7 @@ async def run_decision(
         risk_flags=flag_dicts,
         reasoning=reasoning,
         scores=scores,
+        created_at=created_at,
         judge_leaning=judge_leaning,
         judge_conviction=judge_conviction,
         position_sizing=position_sizing,

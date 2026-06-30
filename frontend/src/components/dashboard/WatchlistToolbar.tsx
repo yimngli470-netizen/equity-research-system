@@ -11,6 +11,9 @@ interface Props {
   layout: Layout;
   setLayout: (v: Layout) => void;
   onAdd: () => void;
+  onRunAll: () => void;
+  bulkRunning: boolean;
+  bulkLabel?: string | null;
 }
 
 interface SegmentedProps<T extends string> {
@@ -63,6 +66,9 @@ export default function WatchlistToolbar({
   layout,
   setLayout,
   onAdd,
+  onRunAll,
+  bulkRunning,
+  bulkLabel,
 }: Props) {
   return (
     <div
@@ -121,7 +127,18 @@ export default function WatchlistToolbar({
             { value: 'grid', label: 'Grid' },
           ]}
         />
-        <Btn variant="primary" size="md" onClick={onAdd} icon={<span style={{ fontSize: 14, lineHeight: 1 }}>+</span>}>
+        <Btn
+          variant="primary"
+          size="lg"
+          onClick={onRunAll}
+          disabled={bulkRunning}
+          icon={
+            <span style={{ fontSize: 11, lineHeight: 1 }}>{bulkRunning ? '⏳' : '▶'}</span>
+          }
+        >
+          {bulkRunning ? bulkLabel ?? 'Running…' : 'Run all'}
+        </Btn>
+        <Btn variant="ghost" size="lg" onClick={onAdd} icon={<span style={{ fontSize: 14, lineHeight: 1 }}>+</span>}>
           Add ticker
         </Btn>
       </div>

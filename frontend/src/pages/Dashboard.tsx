@@ -8,6 +8,7 @@ import WatchlistGrid from '../components/dashboard/WatchlistGrid';
 import AddStockModal from '../components/dashboard/AddStockModal';
 import type { WatchlistRow } from '../components/dashboard/rows';
 import { fmtRelativeTime } from '../components/primitives/format';
+import type { PipelineResult } from '../state/pipelineTracker';
 
 const LAYOUT_KEY = 'watchlist-layout';
 const SORT_KEY = 'watchlist-sort';
@@ -29,6 +30,9 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkLabel, setBulkLabel] = useState<string | null>(null);
+  const [bulkReport, setBulkReport] = useState<PipelineResult[] | null>(null);
   const [query, setQuery] = useState('');
   const [sortBy, setSortByRaw] = useState<SortBy>(() => loadSort());
   const [layout, setLayoutRaw] = useState<Layout>(() => loadLayout());
@@ -44,6 +48,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadAll();
+    // If a server-side Run All is already in progress (started by this tab before a reload, or by
+    // another tab), attach to it and show live progress. The run lives in the backend now.
+    api.pipeline
+      .runAllStatus()
+      .then((s) => {
+        if (s.running) pollRunAll();
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAll() {
@@ -69,7 +82,7 @@ export default function Dashboard() {
             composite_score: score ? score.composite_score : null,
             signal: decision ? decision.final_signal : score ? score.signal : null,
             flag_count: decision ? decision.risk_flags.length : 0,
-            last_run: fmtRelativeTime(decision?.date ?? score?.date ?? null),
+            last_run: fmtRelativeTime(decision?.created_at ?? decision?.date ?? score?.date ?? null),
           };
         }),
       );
@@ -86,6 +99,51 @@ export default function Dashboard() {
   async function submitAdd(ticker: string, irUrl: string) {
     await api.stocks.add({ ticker, name: ticker, ir_url: irUrl });
     await loadAll();
+  }
+
+  // Poll the server-side Run All until it finishes, mirroring its progress into the bulk UI. The
+  // loop runs in the backend (survives tab close); this only reflects status, so closing/reopening
+  // the dashboard mid-run just re-attaches (see the mount effect above).
+  async function pollRunAll() {
+    setBulkRunning(true);
+    try {
+      for (;;) {
+        const s = await api.pipeline.runAllStatus();
+        setBulkLabel(
+          s.in_flight.length
+            ? `Running ${s.in_flight.join(', ')} (${s.done_count}/${s.total} done)…`
+            : s.running
+              ? 'Starting…'
+              : 'Finishing…',
+        );
+        if (!s.running) {
+          setBulkReport(
+            s.done.map((o) => ({
+              ticker: o.ticker,
+              ok: o.ok,
+              error: o.error ?? undefined,
+              usageLimited: o.usage_limited,
+            })),
+          );
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    } finally {
+      setBulkRunning(false);
+      setBulkLabel(null);
+      // Refresh scores/decisions now that the run has settled.
+      await loadAll();
+    }
+  }
+
+  // Kick off a server-side Run All over every covered stock, then poll its progress. A second click
+  // (or another tab) is a no-op server-side — it just re-attaches to the running job.
+  async function runAll() {
+    if (bulkRunning || stocks.length === 0) return;
+    setBulkReport(null);
+    await api.pipeline.runAll();
+    await pollRunAll();
   }
 
   const filtered = rows.filter((r) => {
@@ -115,9 +173,61 @@ export default function Dashboard() {
         layout={layout}
         setLayout={setLayout}
         onAdd={() => setAddOpen(true)}
+        onRunAll={runAll}
+        bulkRunning={bulkRunning}
+        bulkLabel={bulkLabel}
       />
 
       <AddStockModal open={addOpen} onClose={() => setAddOpen(false)} onSubmit={submitAdd} />
+
+      {bulkReport && (() => {
+        const failures = bulkReport.filter((r) => !r.ok);
+        const okCount = bulkReport.length - failures.length;
+        const failed = failures.length > 0;
+        return (
+          <div
+            style={{
+              background: failed ? 'var(--color-neg-bg)' : 'var(--color-surface)',
+              border: '1px solid var(--color-rule)',
+              color: failed ? 'var(--color-neg-fg)' : 'var(--color-ink-2)',
+              padding: '10px 14px',
+              borderRadius: 6,
+              fontSize: 12.5,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: failed ? 6 : 0 }}>
+              {failed
+                ? `Pipeline run: ${okCount} succeeded, ${failures.length} failed`
+                : `Pipeline run complete — all ${okCount} stocks refreshed`}
+            </div>
+            {failed && (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {failures.map((f) => (
+                  <li key={f.ticker}>
+                    <strong>{f.ticker}</strong>: {f.error ?? 'failed'}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              onClick={() => setBulkReport(null)}
+              style={{
+                marginTop: failed ? 8 : 0,
+                marginLeft: failed ? 0 : 8,
+                textDecoration: 'underline',
+                background: 'transparent',
+                border: 'none',
+                color: 'inherit',
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        );
+      })()}
 
       {error && (
         <div

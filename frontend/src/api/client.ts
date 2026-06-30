@@ -1,9 +1,15 @@
 const API_BASE = '/api';
 
+// A single ticker's full analysis can legitimately take several minutes (an Opus run), so this is
+// generous — its job is only to ensure a dropped/stuck connection eventually REJECTS instead of
+// hanging forever (the failure mode that silently stalled the old client-side Run All).
+const REQUEST_TIMEOUT_MS = 15 * 60 * 1000;
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
+    signal: options?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }));
@@ -82,6 +88,7 @@ export interface RiskFlag {
 export interface Decision {
   ticker: string;
   date: string;
+  created_at: string | null;  // full run timestamp; `date` is date-only
   raw_signal: string;
   raw_composite: number;
   final_signal: string;
@@ -284,6 +291,24 @@ export interface IngestionResult {
   warnings: string[];
 }
 
+export interface RunAllOutcome {
+  ticker: string;
+  ok: boolean;
+  error?: string | null;
+  usage_limited?: boolean;
+}
+
+export interface RunAllStatus {
+  running: boolean;
+  total: number;
+  started_at: string | null;
+  finished_at: string | null;
+  in_flight: string[];
+  done: RunAllOutcome[];
+  done_count: number;
+  stopped_reason: string | null; // "usage_limit" when the run halted early
+}
+
 export interface AnalysisRunResult {
   ticker: string;
   ingestion: IngestionResult | null;
@@ -292,6 +317,7 @@ export interface AnalysisRunResult {
     success: boolean;
     cached: boolean;
     error?: string | null;
+    usage_limited?: boolean;
   }[];
   all_succeeded: boolean;
 }
@@ -456,6 +482,16 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tickers }),
       }),
+  },
+  pipeline: {
+    // Start a server-side Run All over every active ticker (bounded pool, runs in the backend so it
+    // survives the browser). No-op if one is already running — returns the live state either way.
+    runAll: (concurrency?: number) =>
+      request<RunAllStatus>('/pipeline/run-all', {
+        method: 'POST',
+        body: JSON.stringify(concurrency ? { concurrency } : {}),
+      }),
+    runAllStatus: () => request<RunAllStatus>('/pipeline/run-all/status'),
   },
   health: () => request<{ status: string; env: string }>('/health'),
 };
