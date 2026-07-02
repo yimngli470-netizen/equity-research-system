@@ -32,12 +32,27 @@ def _tstat(ics: list[float]) -> float:
 
 
 async def evaluate_m5(
-    db: AsyncSession, *, horizon: int = 63, rebalance: int = 63, min_train: int = 12, n_test: int = 4
+    db: AsyncSession, *, horizon: int = 63, rebalance: int = 63, min_train: int = 12, n_test: int = 4,
+    panel_version: int | None = None, pit: bool = True,
 ) -> dict:
     """Run the whole walk-forward and return a results dict (per-date ICs, summary metrics,
-    feature importances). Pure — no I/O beyond the DB read; the report layer renders it."""
-    tickers = await _universe_tickers()
-    raw = await build_panel(db, tickers, horizon_days=horizon, rebalance_days=rebalance)
+    feature importances). Pure — no I/O beyond the DB read; the report layer renders it.
+
+    `panel_version` pins a materialized panel (M4): the exact stored rows are used, and horizon/
+    rebalance come from its recipe. Otherwise the panel is built in-memory — point-in-time
+    membership by default, `pit=False` for the legacy survivorship-biased universe."""
+    if panel_version is not None:
+        from app.ml.materialize import load_panel_version
+        raw, params = await load_panel_version(db, panel_version)
+        horizon, rebalance = params["horizon_days"], params["rebalance_days"]
+    else:
+        membership: dict | None = None
+        if pit:
+            from app.universe.history import load_history
+            membership = load_history()
+        tickers = await _universe_tickers(membership)
+        raw = await build_panel(db, tickers, horizon_days=horizon, rebalance_days=rebalance,
+                                membership=membership)
     proc = rank_features(raw, FEATURE_COLS)                 # cross-sectional ranks (for the model)
     proc, _clip = winsorize_label(proc, LABEL_COL)          # clipped label (for TRAINING only)
     dates = sorted(raw.date.unique())
@@ -89,9 +104,20 @@ async def evaluate_m5(
 
 
 async def _main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(description="M5 walk-forward eval (LightGBM vs hand-screen).")
+    ap.add_argument("--horizon", type=int, default=63)
+    ap.add_argument("--rebalance", type=int, default=63)
+    ap.add_argument("--panel-version", type=int, default=None,
+                    help="pin a materialized panel version (app.ml.materialize)")
+    ap.add_argument("--no-pit", action="store_true",
+                    help="legacy current-snapshot universe (survivorship-biased)")
+    args = ap.parse_args()
+
     warnings.filterwarnings("ignore")
     async with async_session() as db:
-        r = await evaluate_m5(db)
+        r = await evaluate_m5(db, horizon=args.horizon, rebalance=args.rebalance,
+                              panel_version=args.panel_version, pit=not args.no_pit)
     print(f"OOS {r['test_dates'][0]} → {r['test_dates'][-1]} ({len(r['test_dates'])} periods)")
     for k, lbl in (("gbm", "LightGBM   "), ("base", "Hand-screen")):
         m = r[k]

@@ -22,6 +22,7 @@ from app.backtest.screen import _percentile_rank, score_cross_section
 class _Fin:
     def __init__(self, period_end, **kw):
         self.period_end_date = period_end
+        self.filed_date = None  # default: no exact filing date → 75d-lag fallback (pre-M4 rows)
         for k, v in kw.items():
             setattr(self, k, v)
 
@@ -47,6 +48,17 @@ def test_available_financials_newest_first():
     s = _series_with_fins(fins)
     avail = _available_financials(s, date(2024, 6, 1))
     assert [f.period_end_date for f in avail] == [date(2023, 9, 30), date(2023, 6, 30), date(2023, 3, 31)]
+
+
+def test_filed_date_gates_exactly():
+    """M4: a row carrying the exact SEC filed_date is public the day AFTER filing — earlier than
+    the 75d blanket for a typical ~35d filer, but never on the filing day itself."""
+    q_end, filed = date(2024, 3, 31), date(2024, 5, 4)   # ~34d filer (AAPL-like)
+    s = _series_with_fins([_Fin(q_end, filed_date=filed)])
+    assert _available_financials(s, filed) == []                      # filing day: not yet
+    assert len(_available_financials(s, date(2024, 5, 5))) == 1      # day after: visible
+    # …which beats the 75d fallback (would have waited until mid-June)
+    assert _available_financials(_series_with_fins([_Fin(q_end)]), date(2024, 5, 5)) == []
 
 
 # ── No lookahead: prices ──────────────────────────────────────────────────────

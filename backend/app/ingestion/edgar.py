@@ -90,6 +90,7 @@ class EdgarQuarter:
     fy: int
     fp: str  # Q1..Q4
     period_end_date: date
+    filed_date: date | None = None  # earliest SEC filing reporting this period (M4 gating)
     revenue: float | None = None
     gross_profit: float | None = None
     operating_income: float | None = None
@@ -221,6 +222,34 @@ def _ytd_standalone(records: list[dict]) -> dict[tuple[int, str], dict]:
     return out
 
 
+def _earliest_filed_map(facts: dict) -> dict[tuple[int, str], date]:
+    """{(fy, fp): earliest `filed` date} across the core flow concepts — when the quarter FIRST
+    became public. Deliberately the MIN, not `_pick`'s max: `_pick` prefers restated values (filed
+    later as comparatives), but availability for point-in-time gating is the original 10-Q/10-K.
+    Q4 additionally considers annual (FY) facts, since Q4 is typically derived from the 10-K."""
+    out: dict[tuple[int, str], date] = {}
+
+    def _note(key: tuple[int, str], filed_s: str | None) -> None:
+        if not filed_s:
+            return
+        d = date.fromisoformat(filed_s)
+        if key not in out or d < out[key]:
+            out[key] = d
+
+    for concept, unit in (("revenue", "USD"), ("operating_income", "USD"),
+                          ("net_income", "USD"), ("eps", "USD/shares")):
+        for r in _concept_facts(facts, concept, unit):
+            dur = _dur_days(r)
+            fy, fp = r.get("fy"), r.get("fp")
+            if dur is None or fy is None:
+                continue
+            if 80 <= dur <= 100 and fp in _QTR_ORDER:
+                _note((fy, fp), r.get("filed"))
+            elif 350 <= dur <= 380 and fp == "FY":
+                _note((fy, "Q4"), r.get("filed"))
+    return out
+
+
 def _instant_map(facts: dict, concept: str, unit: str = "USD") -> dict[str, float]:
     """{end_date: val} for point-in-time balance-sheet concepts (latest filed wins)."""
     recs = _concept_facts(facts, concept, unit)
@@ -292,11 +321,15 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
     buybacks = _ytd_standalone(_concept_facts(facts, "buybacks", "USD"))
 
     keys = set(rev) | set(ni) | set(eps) | set(oi)
+    filed_map = _earliest_filed_map(facts)
     quarters: list[EdgarQuarter] = []
     for (fy, fp) in keys:
         end_s = (rev.get((fy, fp)) or ni.get((fy, fp)) or eps.get((fy, fp)) or oi.get((fy, fp)))["end"]
         end = date.fromisoformat(end_s)
         eq = EdgarQuarter(fy=fy, fp=fp, period_end_date=end)
+        filed = filed_map.get((fy, fp))
+        # sanity: a filing can't precede the period it reports; bad metadata → leave None (75d fallback)
+        eq.filed_date = filed if filed is not None and filed >= end else None
 
         def take(m, attr, name):
             r = m.get((fy, fp))
@@ -406,6 +439,7 @@ async def ingest_financials_edgar(db: AsyncSession, ticker: str) -> int:
             "ticker": ticker,
             "period": q.label,
             "period_end_date": q.period_end_date,
+            "filed_date": q.filed_date,
             **{f: getattr(q, f) for f in _EDGAR_FIELDS},
             "source": "edgar",
             "source_url": url,
@@ -416,7 +450,7 @@ async def ingest_financials_edgar(db: AsyncSession, ticker: str) -> int:
 
     stmt = insert(Financial).values(rows)
     update_cols = {c: getattr(stmt.excluded, c) for c in
-                   ("period", *_EDGAR_FIELDS, "source", "source_url", "as_of")}
+                   ("period", "filed_date", *_EDGAR_FIELDS, "source", "source_url", "as_of")}
     stmt = stmt.on_conflict_do_update(constraint="uq_fin_ticker_period", set_=update_cols)
     await db.execute(stmt)
 

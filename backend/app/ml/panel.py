@@ -50,6 +50,7 @@ async def build_panel(
     *,
     horizon_days: int = 63,
     rebalance_days: int = 63,
+    membership: dict | None = None,  # M4: point-in-time membership gate (see run_backtest)
 ) -> pd.DataFrame:
     """Assemble the flat (X, y) panel. Mirrors `app.backtest.evaluate.run_backtest` row-for-row,
     but emits the raw (ticker, date) observations rather than per-date ICs."""
@@ -68,7 +69,13 @@ async def build_panel(
         spy_fwd = forward_return(spy, t, horizon_days)
         if spy_fwd is None:
             continue
-        for n in names:
+        if membership is not None:
+            from app.universe.history import constituents_asof
+            active = set(constituents_asof(t, membership))
+            cross = [n for n in names if n in active]
+        else:
+            cross = names
+        for n in cross:
             feats = features_asof(series[n], t)
             if feats is None:
                 continue

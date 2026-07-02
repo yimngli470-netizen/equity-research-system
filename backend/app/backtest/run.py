@@ -22,16 +22,25 @@ from app.models.backtest import BacktestRun
 logging.disable(logging.WARNING)
 
 
-async def _universe_tickers() -> list[str]:
-    """Screening universe = committed SPX+NDX snapshot ∪ whatever's in `stocks`."""
+async def _universe_tickers(membership: dict | None = None) -> list[str]:
+    """Screening universe. Point-in-time (M4): every name that was an S&P member at ANY point in
+    the window ∪ whatever's in `stocks` (the per-DATE membership gate is applied downstream by the
+    evaluator). Legacy: committed SPX+NDX snapshot ∪ `stocks`."""
+    from datetime import date
+
     from sqlalchemy import select
 
     from app.models.stock import Stock
     from app.universe.constituents import load_universe
-    try:
-        names = set(load_universe())
-    except Exception:
-        names = set()
+    names: set[str] = set()
+    if membership is not None:
+        from app.universe.history import all_members_between
+        names |= set(all_members_between(date(2016, 1, 1), date.today(), membership))
+    else:
+        try:
+            names |= set(load_universe())
+        except Exception:
+            pass
     async with async_session() as db:
         names |= {r[0] for r in (await db.execute(select(Stock.ticker))).all()}
     names.discard("SPY")
@@ -78,9 +87,17 @@ def _fmt_pct(v: float | None) -> str:
 
 
 async def main_async(args: argparse.Namespace) -> None:
-    tickers = await _universe_tickers()
-    print(f"[backtest] universe: {len(tickers)} names; running…", flush=True)
-    result = await async_run(tickers, args)
+    membership: dict | None = None
+    if not args.no_pit:
+        from app.universe.history import load_history
+        try:
+            membership = load_history()
+        except FileNotFoundError:
+            print("[backtest] no membership_history.json — falling back to current-snapshot universe.")
+    tickers = await _universe_tickers(membership)
+    mode = "point-in-time" if membership is not None else "current-snapshot"
+    print(f"[backtest] universe: {len(tickers)} names ({mode}); running…", flush=True)
+    result = await async_run(tickers, args, membership)
 
     print("\n" + _report(result) + "\n")
 
@@ -94,10 +111,12 @@ async def main_async(args: argparse.Namespace) -> None:
         print(f"[backtest] saved run #{row.id} to backtest_runs.", flush=True)
 
 
-async def async_run(tickers: list[str], args: argparse.Namespace) -> BacktestResult:
+async def async_run(tickers: list[str], args: argparse.Namespace,
+                    membership: dict | None = None) -> BacktestResult:
     async with async_session() as db:
         return await run_backtest(
-            db, tickers, horizon_days=args.horizon, rebalance_days=args.rebalance, label=args.label)
+            db, tickers, horizon_days=args.horizon, rebalance_days=args.rebalance,
+            label=args.label, membership=membership)
 
 
 def main() -> None:
@@ -106,6 +125,9 @@ def main() -> None:
     ap.add_argument("--rebalance", type=int, default=63, help="rebalance interval in trading days")
     ap.add_argument("--label", type=str, default=None)
     ap.add_argument("--no-save", action="store_true", help="print only; don't persist to backtest_runs")
+    ap.add_argument("--no-pit", action="store_true",
+                    help="legacy mode: current-snapshot universe (survivorship-biased) instead of "
+                         "point-in-time membership")
     args = ap.parse_args()
     asyncio.run(main_async(args))
 

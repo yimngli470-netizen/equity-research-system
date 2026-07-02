@@ -88,8 +88,15 @@ async def run_backtest(
     start: date | None = None,
     end: date | None = None,
     label: str | None = None,
+    membership: dict | None = None,  # app.universe.history snapshot → point-in-time universe gate
 ) -> BacktestResult:
-    """Walk-forward rank-IC of the deterministic screen vs forward excess return."""
+    """Walk-forward rank-IC of the deterministic screen vs forward excess return.
+
+    With `membership` (the M4 stage-1 history snapshot), a name enters the cross-section on a date
+    only if it was an index member ON that date — killing both survivorship bias (removed names
+    stay in for the dates they were members) and its mirror (recent joiners no longer appear in
+    years before they made the index). Without it, the pre-M4 behaviour: `tickers` on every date.
+    """
     # Load every series once (prices + financials), including the benchmark.
     series: dict[str, TickerSeries] = {}
     for t in {*[t.upper() for t in tickers], BENCHMARK}:
@@ -116,7 +123,13 @@ async def run_backtest(
     coverage: list[int] = []
 
     for t in rb:
-        feats = {n: f for n in names if (f := features_asof(series[n], t)) is not None}
+        if membership is not None:
+            from app.universe.history import constituents_asof
+            active = set(constituents_asof(t, membership))
+            cross = [n for n in names if n in active]
+        else:
+            cross = names
+        feats = {n: f for n in cross if (f := features_asof(series[n], t)) is not None}
         if len(feats) < MIN_NAMES:
             continue
         composite = score_cross_section(feats)
@@ -153,9 +166,12 @@ async def run_backtest(
 
     metrics = _aggregate(ic_series, spreads, coverage, horizon_days)
     notes = (
-        f"Point-in-time via {_lag()}d reporting lag (not exact SEC filing dates — M4 refinement). "
-        "Universe = CURRENT index constituents (survivorship bias: dropped/delisted names absent). "
-        "Validates the DETERMINISTIC hard-feature screen only; the LLM layer is excluded by design. "
+        f"Point-in-time via exact SEC filed_date where present, else {_lag()}d reporting lag. "
+        + ("Universe = POINT-IN-TIME S&P membership (M4): names enter only on dates they were members; "
+           "residual bias = delisted names whose price history free sources no longer serve. "
+           if membership is not None else
+           "Universe = CURRENT index constituents (survivorship bias: dropped/delisted names absent). ")
+        + "Validates the DETERMINISTIC hard-feature screen only; the LLM layer is excluded by design. "
         + ("Rebalance ≈ horizon ⇒ near-non-overlapping windows." if rebalance_days >= horizon_days
            else "Rebalance < horizon ⇒ OVERLAPPING windows; IC t-stat is optimistic.")
     )
@@ -163,6 +179,7 @@ async def run_backtest(
         "horizon_days": horizon_days, "rebalance_days": rebalance_days,
         "start": start.isoformat(), "end": end.isoformat(),
         "n_names": len(names), "reporting_lag_days": _lag(),
+        "universe": "point-in-time" if membership is not None else "current-snapshot",
         "benchmark": BENCHMARK, "weighting": "hard-category, percentile-rank",
         "label": label,
     }

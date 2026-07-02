@@ -7,6 +7,47 @@ screen-rank signal; revisit M5 only with *new data or new features*, not tuning.
 > Scope: this concerns output ① the **screen-rank** only. It says nothing about the LLM signal (②)
 > or the DCF price target (③), which are graded prospectively by the accountability loop.
 
+---
+
+## 2026-07-01 update — M4 re-measurement: half the baseline was survivorship bias
+
+M4 shipped the point-in-time panel (see `ANALYST_ROADMAP.md`): **historical S&P membership**
+(727 names were members at some point 2016–2026; the old universe saw only the 503 survivors —
+98 of the 224 removed names recovered with full free price history, universe 503 → 617 with data)
+and **exact SEC filed-date gating** (median real filing lag 35d vs the blanket 75d assumption;
+99.6% of EDGAR rows now carry `filed_date`). Panels are now materialized + versioned
+(`panel_versions`/`panel_rows`, `python -m app.ml.materialize`); results below pin versions 1–2.
+
+Two single-variable comparisons on the hand-screen (36 quarters, 2017–2026):
+
+| Universe | Gating | Mean rank-IC | t | What changed |
+|---|---|---|---|---|
+| current-snapshot (old) | 75d lag | **+0.0174** | 1.14 | the original baseline |
+| current-snapshot (old) | filed-date | +0.0170 | 1.1 | gating alone: ~no effect |
+| **point-in-time (M4)** | filed-date | **+0.0090** | 0.5 | **universe fix: edge halves** |
+
+And M5 vs the hand-screen on the honest (PIT) panels, same purged walk-forward:
+
+| Panel | OOS periods | GBM IC (t) | Hand-screen IC (t) |
+|---|---|---|---|
+| v1 quarterly | 24 | −0.0015 (−0.09) | −0.0023 (−0.11) |
+| v2 monthly | 92 | −0.0113 (−1.08) | −0.0004 (−0.03) |
+
+**Reading.** (1) Roughly **half the hand-screen's measured edge was survivorship bias** — scoring
+only the names that survived to 2026 flattered the screen by ~0.008 IC. (2) What remains
+(+0.0090 full-sample) is front-loaded in 2017–2020; over the 2020+ OOS windows both the GBM and
+the hand-screen are statistically zero. (3) The GBM's illusory quarterly +0.0168 (already shown
+to be retraining variance) does not reappear on the corrected data — the original verdict stands,
+now on cleaner evidence. (4) Residual optimism remains: ~126 removed names (acquired/private/
+delisted) have no free price history, so even the PIT numbers are slightly flattered — the
+bankruptcy-shaped hole free data cannot fill.
+
+**Consequence.** The bar for M5 didn't move — it dropped: there is now *less* proven edge in the
+hand-screen to beat, and less apparent signal in these 11 features overall. The improvement path
+is unchanged (new features next: quality/size/volatility are computable free from data already in
+the DB; estimate-revisions accrue in `consensus_snapshots`), but any future claim of edge must be
+made on a pinned PIT panel version, never the legacy universe.
+
 ## Question
 Can a LightGBM, learning the feature combination from history, rank the ~500-name universe by
 forward 3-month excess-vs-SPY return **better than the hand-authored, fixed-weight screen** —

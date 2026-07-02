@@ -272,3 +272,10 @@ MSFT:
     pattern: https://www.microsoft.com/en-us/investor/earnings/FY-{year}-Q{q}-quarterly-earnings/overview
   artifact_type: press_release
   notes: User-provided IR URL (2026-06-30).
+GLW:
+  ir_url: https://investor.corning.com/investor-relations/default.aspx
+  strategy:
+    type: link_regex
+    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
+  artifact_type: press_release
+  notes: User-provided IR URL (2026-07-01).

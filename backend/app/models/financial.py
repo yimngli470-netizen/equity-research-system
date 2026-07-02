@@ -15,6 +15,12 @@ class Financial(Base):
     period: Mapped[str] = mapped_column(String(20))  # e.g. "Q2 FY2026"
     period_end_date: Mapped[date] = mapped_column(Date)
 
+    # When the quarter's numbers first became PUBLIC (M4): the earliest SEC `filed` date among the
+    # facts reporting this period — i.e. the original 10-Q/10-K, not later comparative restatements.
+    # Point-in-time gating uses this exactly; NULL (yfinance rows, pre-backfill) falls back to the
+    # blanket 75-day reporting lag.
+    filed_date: Mapped[date | None] = mapped_column(Date)
+
     # Income statement
     revenue: Mapped[float | None] = mapped_column(Float)
     gross_profit: Mapped[float | None] = mapped_column(Float)

@@ -1,10 +1,10 @@
 """Point-in-time panel (roadmap 6.3c) — what was knowable on each rebalance date, no lookahead.
 
 The cardinal sin of a backtest is using data that wasn't public yet. Two guards here:
-  • FUNDAMENTALS are gated by a reporting lag — a quarter's figures only become "available" once
-    `period_end + REPORTING_LAG_DAYS` has passed (a 10-Q files ~40d after quarter-end, a 10-K ~60d;
-    75 calendar days is a conservative blanket assumption, biased the safe direction). v1 uses this
-    lag rather than the exact SEC filing date (a later M4-panel refinement).
+  • FUNDAMENTALS are gated by the exact SEC `filed_date` when the row carries one (M4): a quarter
+    becomes "available" the day after its original 10-Q/10-K was filed. Rows without it fall back
+    to the v1 blanket lag — `period_end + REPORTING_LAG_DAYS` (a 10-Q files ~40d after quarter-end,
+    a 10-K ~60d; 75 calendar days is conservative, biased the safe direction).
   • PRICES use only bars on/before the as-of date; FORWARD returns look strictly after it.
 
 For efficiency each ticker's full price + financial series is loaded ONCE; features for every
@@ -76,9 +76,16 @@ def price_asof(s: TickerSeries, asof: date) -> float | None:
 
 
 def _available_financials(s: TickerSeries, asof: date) -> list[Financial]:
-    """Quarters whose filing would have been public by `asof`, newest-first."""
+    """Quarters whose filing would have been public by `asof`, newest-first.
+
+    M4: rows carrying the exact SEC `filed_date` gate on it directly (public the day after filing —
+    filings often land after the close). Rows without it (yfinance-sourced, or pre-backfill) fall
+    back to the conservative blanket lag."""
     cutoff = asof - timedelta(days=REPORTING_LAG_DAYS)
-    avail = [f for f in s.financials if f.period_end_date <= cutoff]
+    avail = [
+        f for f in s.financials
+        if (f.filed_date < asof if f.filed_date is not None else f.period_end_date <= cutoff)
+    ]
     return list(reversed(avail))  # newest first
 
 

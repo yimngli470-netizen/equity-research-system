@@ -20,6 +20,7 @@ from app.models.research_note import ResearchNote
 from app.models.estimate import ConsensusSnapshot
 from app.models.portfolio import PortfolioPosition, PortfolioAccount
 from app.models.backtest import BacktestRun
+from app.models.panel import PanelRow, PanelVersion
 
 __all__ = [
     "Stock",
@@ -48,4 +49,6 @@ __all__ = [
     "PortfolioPosition",
     "PortfolioAccount",
     "BacktestRun",
+    "PanelVersion",
+    "PanelRow",
 ]
