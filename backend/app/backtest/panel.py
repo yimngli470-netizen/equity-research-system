@@ -15,6 +15,7 @@ construction), so this module carries no absolute-bound calibration.
 
 from __future__ import annotations
 
+import math
 from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -99,6 +100,24 @@ def _ttm(rows_newest_first: list[Financial], field: str) -> float | None:
     return sum(vals)
 
 
+def _volatility(s: TickerSeries, asof: date, window: int = 63) -> float | None:
+    """Annualized stdev of daily returns over the trailing `window` bars — the low-vol factor
+    input. None when history is too short or too gappy to be meaningful."""
+    i = _price_idx_asof(s, asof)
+    if i is None or i < window:
+        return None
+    rets = []
+    for j in range(i - window + 1, i + 1):
+        a, b = s.adj[j - 1], s.adj[j]
+        if a == a and b == b and a > 0:
+            rets.append(b / a - 1.0)
+    if len(rets) < int(window * 0.8):
+        return None
+    m = sum(rets) / len(rets)
+    var = sum((r - m) ** 2 for r in rets) / (len(rets) - 1)
+    return (var ** 0.5) * (252 ** 0.5)
+
+
 def _momentum(s: TickerSeries, asof: date) -> dict[str, float | None]:
     i = _price_idx_asof(s, asof)
     out: dict[str, float | None] = {}
@@ -174,6 +193,29 @@ def features_asof(s: TickerSeries, asof: date) -> dict[str, float] | None:
     for k, v in _momentum(s, asof).items():
         if v is not None:
             feats[k] = v
+
+    # Quality (M4 feature expansion) — classic factors, all from EDGAR fields already in the DB.
+    # Balance-sheet items are instants: take the NEWEST available quarter that filed the field.
+    ttm_ocf = _ttm(avail, "operating_cash_flow")
+    equity = next((f.total_equity for f in avail if f.total_equity is not None), None)
+    assets = next((f.total_assets for f in avail if f.total_assets is not None), None)
+    debt = next((f.total_debt for f in avail if f.total_debt is not None), None)
+    if ttm_ni is not None and equity is not None and equity > 0:
+        feats["roe"] = ttm_ni / equity          # profitability quality (negative equity → undefined)
+    if ttm_ni is not None and ttm_ocf is not None and assets and assets > 0:
+        # Sloan accruals: earnings NOT backed by cash, scaled by assets. LOW = high earnings quality.
+        feats["accruals"] = (ttm_ni - ttm_ocf) / assets
+    if debt is not None and assets and assets > 0:
+        # debt/assets, not debt/equity: bounded and defined for buyback-driven negative equity.
+        feats["leverage"] = debt / assets
+
+    # Size (log market cap — the small-cap factor input; log because caps span 3 orders of magnitude)
+    if mktcap and mktcap > 0:
+        feats["size"] = math.log(mktcap)
+
+    # Volatility (trailing 3m realized, annualized — the low-vol anomaly input)
+    if (vol := _volatility(s, asof)) is not None:
+        feats["vol_3m"] = vol
 
     return feats or None
 

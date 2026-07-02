@@ -25,12 +25,17 @@ from app.backtest.panel import TickerSeries, features_asof, forward_return, load
 
 # The ML feature set. Drops `pe` (2% coverage) and `eps_growth` (0.7%) — both depend on EDGAR's
 # sparse per-share `eps` tag — and adds `earnings_yield` (E/P, ~76% coverage) as the robust
-# valuation replacement (see Stage 1 coverage inspection).
+# valuation replacement (see Stage 1 coverage inspection). M4 feature expansion adds the classic
+# quality/size/low-vol factors — information the hand-screen does NOT use (it stays the fixed
+# control), so any GBM edge over it must come from here. LightGBM learns each feature's direction
+# itself; no inversion needed for accruals/leverage/vol.
 FEATURE_COLS: list[str] = [
     "rev_growth",                                              # growth
     "gross_margin", "op_margin", "net_margin", "fcf_margin",  # profitability
     "ps", "fcf_yield", "earnings_yield",                      # valuation
     "mom_3m", "mom_6m", "mom_12m",                            # momentum
+    "roe", "accruals", "leverage",                            # quality (Sloan/leverage)
+    "size", "vol_3m",                                         # size, low-vol
 ]
 LABEL_COL = "y_fwd_excess_vs_spy"
 

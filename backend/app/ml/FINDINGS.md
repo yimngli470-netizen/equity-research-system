@@ -48,6 +48,34 @@ is unchanged (new features next: quality/size/volatility are computable free fro
 the DB; estimate-revisions accrue in `consensus_snapshots`), but any future claim of edge must be
 made on a pinned PIT panel version, never the legacy universe.
 
+---
+
+## 2026-07-02 update — quality/size/vol features added: no rescue
+
+Added the five classic free factors to `features_asof` (panels v3 quarterly / v4 monthly — same
+dates/universe as v1/v2, 16 features): **ROE** (TTM NI / equity; undefined on negative equity),
+**Sloan accruals** ((NI − OCF) / assets; low = high earnings quality), **leverage** (debt/assets —
+not debt/equity, which blows up on buyback-driven negative equity), **size** (log mktcap),
+**vol_3m** (annualized trailing stdev). Coverage 81–99.9%. The hand-screen deliberately does NOT
+see them — it is the fixed control.
+
+| Panel (PIT) | GBM 11 feats | GBM 16 feats | Hand-screen |
+|---|---|---|---|
+| quarterly, 24 OOS | −0.0015 | +0.0066 (t 0.26) | −0.0023 |
+| monthly, 92 OOS | −0.0113 | −0.0107 (t −0.80) | −0.0004 |
+
+The quarterly/monthly sign-split persists; nothing approaches significance. Feature importances
+are diagnostic: nearly FLAT (3.6–8.1% across 16 features, accruals/leverage/size ranked #2–4) —
+the model uses the new inputs but no feature carries real signal; democratic splits are what
+fitting noise looks like. Not surprising in hindsight: large-cap S&P names 2018–2026 are the most
+efficiently priced corner of the market, and size/low-vol famously struggled this exact decade.
+
+**Standing verdict unchanged.** Hand-screen stays the screen-rank. The remaining un-tried levers,
+honestly ranked: estimate-revisions (accruing in `consensus_snapshots` since 2026-06 — usable in
+~2y), M3 regime features (modeling work, not data), longer history / broader universe (mid/small
+caps where factors still pay — but free point-in-time data thins out fast). Hyperparameter tuning
+remains the wrong move for the same multiple-comparisons reasons as before.
+
 ## Question
 Can a LightGBM, learning the feature combination from history, rank the ~500-name universe by
 forward 3-month excess-vs-SPY return **better than the hand-authored, fixed-weight screen** —

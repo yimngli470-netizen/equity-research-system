@@ -279,3 +279,10 @@ GLW:
     pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
   artifact_type: press_release
   notes: User-provided IR URL (2026-07-01).
+VRT:
+  ir_url: https://investors.vertiv.com/overview/default.aspx
+  strategy:
+    type: link_regex
+    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
+  artifact_type: press_release
+  notes: User-provided IR URL (2026-07-02).
