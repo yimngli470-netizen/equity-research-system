@@ -16,6 +16,7 @@ Pure stats (numpy). No LLM, no network. Cross-sectional: recompute once after al
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import date
@@ -176,13 +177,9 @@ async def compute_peer_weights(db: AsyncSession, ticker: str) -> list[PeerWeight
     return _pairs_for(uni, ticker.upper()) or []
 
 
-async def recompute_peer_weights(db: AsyncSession) -> int:
-    """Recompute all pairwise peer weights across the universe and upsert. Returns row count."""
-    uni = await _load_universe(db)
-    if uni is None:
-        logger.info("[peers] universe too small to compute peer weights")
-        return 0
-
+def _build_rows(uni: _Universe) -> list[dict]:
+    """Full pairwise grid as upsert dicts. Sync + CPU-bound by design — call it via
+    asyncio.to_thread, never directly from a coroutine (see recompute_peer_weights)."""
     rows: list[dict] = []
     for t in uni.tickers:
         for pw in _pairs_for(uni, t) or []:
@@ -191,6 +188,21 @@ async def recompute_peer_weights(db: AsyncSession) -> int:
                 "fundamental_sim": pw.fundamental_sim, "return_corr": pw.return_corr,
                 "embedding_sim": pw.embedding_sim, "as_of": pw.as_of,
             })
+    return rows
+
+
+async def recompute_peer_weights(db: AsyncSession) -> int:
+    """Recompute all pairwise peer weights across the universe and upsert. Returns row count."""
+    uni = await _load_universe(db)
+    if uni is None:
+        logger.info("[peers] universe too small to compute peer weights")
+        return 0
+
+    # OFF THE EVENT LOOP. The grid is O(n²) — at 598 names that's ~357k pairs and minutes of pure
+    # numpy/Python with no await in it, which would freeze every other request on the server
+    # (a no-I/O /api/health stalled >30s before this was threaded). _build_rows touches only the
+    # in-memory _Universe — no DB, no network — so it's safe to hand to a worker thread.
+    rows = await asyncio.to_thread(_build_rows, uni)
     if not rows:
         return 0
 
