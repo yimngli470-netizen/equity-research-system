@@ -70,16 +70,17 @@ async def estimates_marker(db: AsyncSession, ticker: str) -> str | None:
     rows = (
         await db.execute(
             select(AnalystEstimate.period_end_date, AnalystEstimate.eps_consensus,
-                   AnalystEstimate.revenue_consensus)
-            .where(AnalystEstimate.ticker == ticker)
-            .order_by(AnalystEstimate.period_end_date.asc())
+                   AnalystEstimate.revenue_consensus, AnalystEstimate.period_type,
+                   AnalystEstimate.accounting_basis, AnalystEstimate.date_precision)
+            .where(AnalystEstimate.ticker == ticker, AnalystEstimate.period_type != "legacy")
+            .order_by(AnalystEstimate.period_end_date.asc(), AnalystEstimate.period_type)
             .limit(8)
         )
     ).all()
     if not rows:
         return None
     parts = [
-        f"{r.period_end_date}|{round(r.eps_consensus, 2) if r.eps_consensus is not None else 'x'}"
+        f"{r.period_end_date}|{r.period_type}|{r.accounting_basis}|{r.date_precision}|{round(r.eps_consensus, 2) if r.eps_consensus is not None else 'x'}"
         f"|{round(r.revenue_consensus / 1e7) if r.revenue_consensus is not None else 'x'}"
         for r in rows
     ]

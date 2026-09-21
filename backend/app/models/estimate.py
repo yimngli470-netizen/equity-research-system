@@ -10,12 +10,16 @@ from app.database import Base
 class AnalystEstimate(Base):
     __tablename__ = "analyst_estimates"
     __table_args__ = (
-        UniqueConstraint("ticker", "period_end_date", name="uq_est_ticker_period"),
+        UniqueConstraint("ticker", "period_end_date", "period_type", name="uq_est_ticker_period"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(10), index=True)
     period_end_date: Mapped[date] = mapped_column(Date, index=True)
+    period_type: Mapped[str] = mapped_column(String(20), default="legacy", server_default="legacy")
+    period_key: Mapped[str | None] = mapped_column(String(10))
+    date_precision: Mapped[str] = mapped_column(String(20), default="unknown", server_default="unknown")
+    accounting_basis: Mapped[str] = mapped_column(String(30), default="provider_unspecified", server_default="provider_unspecified")
     eps_consensus: Mapped[float | None] = mapped_column(Float)
     eps_high: Mapped[float | None] = mapped_column(Float)
     eps_low: Mapped[float | None] = mapped_column(Float)
@@ -47,13 +51,17 @@ class ConsensusSnapshot(Base):
 
     __tablename__ = "consensus_snapshots"
     __table_args__ = (
-        UniqueConstraint("ticker", "as_of", "period_end_date", name="uq_consensus_snap"),
+        UniqueConstraint("ticker", "as_of", "period_end_date", "period_type", name="uq_consensus_snap"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(10), index=True)
     as_of: Mapped[date] = mapped_column(Date, index=True)         # fetch date
     period_end_date: Mapped[date] = mapped_column(Date)           # which forward period
+    period_type: Mapped[str] = mapped_column(String(20), default="legacy", server_default="legacy")
+    period_key: Mapped[str | None] = mapped_column(String(10))
+    date_precision: Mapped[str] = mapped_column(String(20), default="unknown", server_default="unknown")
+    accounting_basis: Mapped[str] = mapped_column(String(30), default="provider_unspecified", server_default="provider_unspecified")
     eps_consensus: Mapped[float | None] = mapped_column(Float)
     revenue_consensus: Mapped[float | None] = mapped_column(Float)
     num_analysts: Mapped[int | None] = mapped_column(Integer)

@@ -35,7 +35,7 @@ its business-model archetype, management guidance excerpts, and street consensus
 
 RULES:
 - ALL numbers are FRACTIONS, not percents (operating margin 0.14, NOT 14; revenue YoY +0.12, NOT 12).
-- Emit 8-quarter paths for revenue YoY growth and OPERATING MARGIN per scenario.
+- Emit 12-quarter paths for revenue YoY growth and OPERATING MARGIN per scenario.
   revenue_yoy_path[i] is growth vs the same quarter one year earlier (seasonality is handled by
   the compiler — do not re-seasonalize).
 - OPERATING MARGIN is the primary profitability driver: code computes operating income =
@@ -48,13 +48,16 @@ RULES:
 - QUARTER 1 IS USUALLY ALREADY GUIDED (it is the in-progress or just-ended, not-yet-reported
   quarter). Anchor q1 revenue AND operating margin tightly to management guidance and the most recent
   actual in ALL scenarios — guidance for an ending quarter is rarely off by more than a few percent.
-  Your cycle/fade view belongs in quarters 2-8, NOT in q1. A thesis about the future must not rewrite
+  Your cycle/fade view belongs in quarters 2-12, NOT in q1. A thesis about the future must not rewrite
   a quarter that has effectively already happened.
 - ARCHETYPE CONDITIONING:
   * cyclical-commodity / deep-value-turnaround: margins MUST trend toward the through-cycle median
     over the horizon unless specific guidance says otherwise — peak margins are not a plateau.
     State which it is.
-  * secular-grower / platform: growth FADES over the horizon (no perpetual +30%); say your fade.
+  * secular-grower / platform: explicitly justify growth DURATION and the fade using demand,
+    competition, product mix, reinvestment and current scale. Do not force a fast grower to mature
+    within three years just because it shares an archetype with a slower company. Market cap alone
+    is not growth runway. Revenue growth, operating leverage and dilution must tell one consistent story.
   * mature-compounder / financial: stability is the prior; deviations need explicit drivers.
 - Scenarios must be genuinely distinct and ordered: bear ≤ base ≤ bull on revenue growth and
   margins, quarter by quarter. Bear = things going wrong plausibly, not Armageddon.
@@ -70,9 +73,9 @@ Respond with valid JSON only, this exact schema:
   "ticker": "string",
   "scenarios": {
     "base": {
-      "revenue_yoy_path": [8 fractions],
-      "operating_margin_path": [8 fractions],
-      "gross_margin_path": [8 fractions]  (OPTIONAL context; omit if not filed),
+      "revenue_yoy_path": [12 fractions],
+      "operating_margin_path": [12 fractions],
+      "gross_margin_path": [12 fractions]  (OPTIONAL context; omit if not filed),
       "net_factor": fraction,
       "share_change_qoq": fraction,
       "rationale": "string — the 2-3 sentence story of this path"
@@ -112,7 +115,8 @@ async def build_assumptions_context(db: AsyncSession, ticker: str, drivers: Driv
         await db.execute(
             select(AnalystEstimate)
             .where(AnalystEstimate.ticker == ticker,
-                   AnalystEstimate.period_end_date >= date.today())
+                   AnalystEstimate.period_end_date >= date.today(),
+                   AnalystEstimate.period_type != "legacy")
             .order_by(AnalystEstimate.period_end_date.asc())
             .limit(4)
         )
@@ -121,10 +125,11 @@ async def build_assumptions_context(db: AsyncSession, ticker: str, drivers: Driv
         lines = ["--- STREET CONSENSUS (low-weight reference; do not anchor blindly) ---"]
         for e in est:
             lines.append(
-                f"  ~{e.period_end_date}: EPS {e.eps_consensus if e.eps_consensus is not None else 'n/a'}, "
+                f"  {e.period_type} ending {e.period_end_date} ({e.date_precision}; {e.accounting_basis}): EPS {e.eps_consensus if e.eps_consensus is not None else 'n/a'}, "
                 f"revenue {f'${e.revenue_consensus/1e9:.2f}B' if e.revenue_consensus else 'n/a'} "
                 f"({e.number_of_analysts or '?'} analysts, {e.revisions_30d if e.revisions_30d is not None else '?'} revisions/30d)"
             )
+        lines.append("Do not compare quarterly EPS to annual EPS, or GAAP EPS to provider-unspecified adjusted EPS. Fiscal years are not rolling NTM periods.")
         sections.append("\n".join(lines))
 
     return "\n\n".join(sections)
@@ -132,7 +137,7 @@ async def build_assumptions_context(db: AsyncSession, ticker: str, drivers: Driv
 
 def _call_llm(system: str, user: str) -> dict:
     client = make_llm_client()
-    resp = client.messages.create(model=MODEL, max_tokens=4096, system=system,
+    resp = client.messages.create(model=MODEL, max_tokens=8192, system=system,
                                   messages=[{"role": "user", "content": user}])
     content = resp.content[0].text
     if "```json" in content:
@@ -146,7 +151,7 @@ async def generate_assumptions(db: AsyncSession, ticker: str, drivers: DriverHis
     """One Opus call → the raw assumptions payload (clamping happens in model.ScenarioPath)."""
     context = await build_assumptions_context(db, ticker, drivers)
     user = (f"Today's date is {date.today().isoformat()}.\n\n"
-            f"Build the 8-quarter forecast assumptions for {ticker}.\n\n{context}\n\n"
+            f"Build the 12-quarter forecast assumptions for {ticker}.\n\n{context}\n\n"
             f"Respond with JSON only.")
     out = await asyncio.to_thread(_call_llm, SYSTEM_PROMPT, user)
     logger.info("[forecast] %s: assumptions generated (%d bases cited)",

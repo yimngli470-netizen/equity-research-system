@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.forecast import assumptions as assumptions_mod
 from app.forecast.drivers import build_driver_history
-from app.forecast.model import HORIZON, ScenarioPath, aggregate, compile_scenario
+from app.forecast.model import COMPILER_VERSION, HORIZON, ScenarioPath, aggregate, compile_scenario
 from app.models.estimate import AnalystEstimate
 from app.models.forecast import Forecast
 from app.models.stock import Stock
@@ -27,11 +27,14 @@ SMART_MAX_AGE_DAYS = 100  # a forecast on unchanged inputs is still stale after 
 
 async def _fingerprint(db: AsyncSession, ticker: str) -> dict:
     from app.agents import fingerprints as fp
+    stock = await db.get(Stock, ticker)
     return {
+        "archetype": stock.archetype if stock else None,
         "financials": await fp.financial_marker(db, ticker),
         "transcript": await fp.transcript_marker(db, ticker),
         "estimates": await fp.estimates_marker(db, ticker),
         "prompt": hashlib.sha256(assumptions_mod.SYSTEM_PROMPT.encode()).hexdigest()[:12],
+        "compiler": COMPILER_VERSION,
     }
 
 
@@ -45,14 +48,16 @@ async def _latest_forecast(db: AsyncSession, ticker: str) -> Forecast | None:
 
 
 async def _street_eps_near(db: AsyncSession, ticker: str, target_end: date,
-                           window_days: int = 60) -> float | None:
+                           window_days: int = 7) -> float | None:
     """Consensus EPS for the period nearest OUR q1's end date (±window). Comparing our May
     quarter to the street's August quarter is not a delta, it's a category error — when no
     consensus period aligns, return None and report 'street n/a' honestly."""
     rows = (
         await db.execute(
             select(AnalystEstimate.period_end_date, AnalystEstimate.eps_consensus)
-            .where(AnalystEstimate.ticker == ticker, AnalystEstimate.eps_consensus.is_not(None))
+            .where(AnalystEstimate.ticker == ticker, AnalystEstimate.eps_consensus.is_not(None),
+                   AnalystEstimate.period_type == "quarter", AnalystEstimate.accounting_basis == "gaap",
+                   AnalystEstimate.date_precision == "provider", AnalystEstimate.as_of >= date.today() - timedelta(days=90))
         )
     ).all()
     best: tuple[int, float] | None = None
@@ -70,11 +75,19 @@ async def ensure_forecast(db: AsyncSession, ticker: str, mode: str = "smart") ->
     ticker = ticker.upper()
 
     fingerprint = await _fingerprint(db, ticker)
+    latest = await _latest_forecast(db, ticker)
+    previous_fingerprint = dict(latest.input_fingerprint or {}) if latest is not None else {}
+    if latest is not None:
+        # Older rows already preserve the archetype used to build them. Promote that recorded
+        # label into the fingerprint without paying for an identical assumptions call.
+        previous_fingerprint.setdefault("archetype", latest.archetype)
     if mode == "smart":
-        latest = await _latest_forecast(db, ticker)
         if (latest is not None
-                and latest.input_fingerprint == fingerprint
+                and previous_fingerprint == fingerprint
                 and latest.as_of >= date.today() - timedelta(days=SMART_MAX_AGE_DAYS)):
+            if latest.input_fingerprint != fingerprint:
+                latest.input_fingerprint = fingerprint
+                await db.commit()
             logger.info("[forecast] %s: inputs unchanged since %s — reusing (no LLM)",
                         ticker, latest.as_of)
             return latest, True
@@ -84,8 +97,20 @@ async def ensure_forecast(db: AsyncSession, ticker: str, mode: str = "smart") ->
         logger.info("[forecast] %s: history too thin to model — skipping", ticker)
         return None, False
 
-    raw = await assumptions_mod.generate_assumptions(db, ticker, drivers)
+    previous = dict(previous_fingerprint)
+    previous.pop("compiler", None)
+    unchanged = {k: v for k, v in fingerprint.items() if k != "compiler"}
+    if (mode == "smart" and latest is not None and previous == unchanged
+            and latest.as_of >= date.today() - timedelta(days=SMART_MAX_AGE_DAYS)):
+        raw = latest.assumptions or {}  # compiler-only fix: reuse cited paths without an LLM call
+    else:
+        raw = await assumptions_mod.generate_assumptions(db, ticker, drivers)
     scenarios_raw = raw.get("scenarios") or {}
+    for name in ("base", "bull", "bear"):
+        scenario = scenarios_raw.get(name) or {}
+        if not all(isinstance(scenario.get(k), list) and len(scenario[k]) == HORIZON
+                   for k in ("revenue_yoy_path", "operating_margin_path")):
+            raise ValueError(f"{name} requires {HORIZON} explicit revenue and operating-margin assumptions")
 
     latest_end = drivers.latest.end
     actual_rev_last4 = [q.revenue for q in drivers.last_n(4)]
@@ -102,6 +127,7 @@ async def ensure_forecast(db: AsyncSession, ticker: str, mode: str = "smart") ->
         rows = compile_scenario(path, actual_rev_last4, latest_end, shares_0)
         projections[name] = {"quarters": rows, **aggregate(rows),
                              "rationale": path.rationale,
+                             "adjustments": path.adjustments,
                              "net_factor": path.net_factor,
                              "share_change_qoq": path.share_change_qoq}
         aggregates[name] = projections[name]["ntm_eps"]

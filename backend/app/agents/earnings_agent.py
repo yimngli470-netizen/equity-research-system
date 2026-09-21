@@ -54,7 +54,14 @@ class EarningsAgent(BaseAgent):
         if {k: bm.get(k) for k in corrected} != corrected:
             bm.update(corrected)
             report["beat_miss_history"] = bm
-            await self._save_report(db, ticker, report)  # persist the corrected figures
+            # Re-save WITH the fingerprint. _save_report_as assigns input_fingerprint
+            # unconditionally, so omitting it here overwrote the one super().run() just stored with
+            # JSON null — which silently disabled smart caching for this agent (every pipeline run
+            # re-paid for an Opus call) and left post-earnings staleness undetectable. The inputs
+            # are unchanged between the two saves; only the numbers in the report were corrected.
+            await self._save_report(
+                db, ticker, report, fingerprint=await self._full_fingerprint(db, ticker)
+            )
             logger.info("[earnings] %s: corrected beat/miss → beats=%d avg_surprise=%.3f trend=%s",
                         ticker, stats.last_4q_eps_beats, stats.avg_surprise_pct, stats.trend)
         return report
@@ -122,7 +129,7 @@ class EarningsAgent(BaseAgent):
 
         result = await db.execute(
             select(AnalystEstimate)
-            .where(AnalystEstimate.ticker == ticker)
+            .where(AnalystEstimate.ticker == ticker, AnalystEstimate.period_type != "legacy")
             .where(AnalystEstimate.period_end_date >= date.today())
             .order_by(AnalystEstimate.period_end_date.asc())
             .limit(4)
@@ -131,7 +138,7 @@ class EarningsAgent(BaseAgent):
         if estimates:
             lines = ["--- ANALYST CONSENSUS ESTIMATES ---"]
             for e in estimates:
-                parts = [f"  {e.period_end_date}:"]
+                parts = [f"  {e.period_type} ending {e.period_end_date} ({e.date_precision}; EPS basis {e.accounting_basis}):"]
                 if e.eps_consensus is not None:
                     parts.append(f"EPS consensus=${e.eps_consensus:.2f}")
                 if e.revenue_consensus is not None:

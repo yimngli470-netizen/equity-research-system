@@ -328,7 +328,7 @@ async def _check_analyst_estimates(db: AsyncSession, ticker: str) -> CategoryFre
     today = date.today()
     result = await db.execute(
         select(AnalystEstimate)
-        .where(AnalystEstimate.ticker == ticker)
+        .where(AnalystEstimate.ticker == ticker, AnalystEstimate.period_type != "legacy")
         .where(AnalystEstimate.period_end_date >= today)
         .order_by(AnalystEstimate.period_end_date.asc())
         .limit(1)
@@ -345,7 +345,7 @@ async def _check_analyst_estimates(db: AsyncSession, ticker: str) -> CategoryFre
     # No future estimates — check if we have any at all
     any_result = await db.execute(
         select(AnalystEstimate.period_end_date)
-        .where(AnalystEstimate.ticker == ticker)
+        .where(AnalystEstimate.ticker == ticker, AnalystEstimate.period_type != "legacy")
         .order_by(AnalystEstimate.period_end_date.desc())
         .limit(1)
     )

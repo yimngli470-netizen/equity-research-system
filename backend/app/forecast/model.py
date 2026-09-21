@@ -17,15 +17,17 @@ gross-profit line (UBER: gm/opex NULL → a guessed ~5% op margin vs the actual 
 """
 
 import calendar
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from datetime import date
 
-HORIZON = 8
+HORIZON = 12
+COMPILER_VERSION = "2026-09-20.1"
 
 # Hygiene clamps (the P8 lesson: every LLM-emitted number gets bounds enforced in code).
 _CLAMPS = {
     "revenue_yoy": (-0.90, 3.00),
-    "operating_margin": (-0.50, 0.60),
+    "operating_margin": (-1.0, 1.0),
     "gross_margin": (0.0, 1.0),
     "opex_ratio": (0.0, 1.0),
     "net_factor": (0.0, 1.5),
@@ -34,6 +36,8 @@ _CLAMPS = {
 
 
 def _clamp(v: float, key: str) -> float:
+    if not math.isfinite(float(v)):
+        raise ValueError(f"Non-finite forecast assumption: {key}")
     lo, hi = _CLAMPS[key]
     return max(lo, min(hi, float(v)))
 
@@ -54,20 +58,33 @@ class ScenarioPath:
     gross_margin: list[float] | None = None   # optional context (may be absent)
     opex_ratio: list[float] | None = None
     rationale: str = ""
+    adjustments: list[str] = field(default_factory=list)
 
     @classmethod
     def from_llm(cls, raw: dict, defaults: dict) -> "ScenarioPath":
         """Parse + clamp one scenario from the LLM payload; pad/truncate paths to HORIZON.
         Missing values fall back to the driver-history medians (`defaults`)."""
+        adjustments: list[str] = []
+
         def path(key: str, clamp_key: str, default: float | None) -> list[float] | None:
             xs = raw.get(key)
             if xs is None:
                 return None
-            xs = [x for x in xs if isinstance(x, (int, float))]
+            if not isinstance(xs, list) or any(
+                isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
+                for x in xs
+            ):
+                raise ValueError(f"Invalid forecast path: {key}")
             if not xs:
                 xs = [default if default is not None else 0.0]
+            if len(xs) != HORIZON:
+                adjustments.append(f"{key}: supplied {len(xs)} quarters; padded/truncated to {HORIZON}")
             xs = (xs + [xs[-1]] * HORIZON)[:HORIZON]
-            return [_clamp(x, clamp_key) for x in xs]
+            bounded = [_clamp(x, clamp_key) for x in xs]
+            for i, (before, after) in enumerate(zip(xs, bounded), 1):
+                if before != after:
+                    adjustments.append(f"{key} q{i}: {before:g} adjusted to {after:g}")
+            return bounded
 
         rev = path("revenue_yoy_path", "revenue_yoy", defaults.get("revenue_yoy")) or [0.0] * HORIZON
         gm = path("gross_margin_path", "gross_margin", defaults.get("gross_margin"))
@@ -82,10 +99,20 @@ class ScenarioPath:
                 base = defaults.get("operating_margin") or 0.0
                 om = [_clamp(base, "operating_margin")] * HORIZON
 
-        nf = raw.get("net_factor")
-        nf = _clamp(nf, "net_factor") if isinstance(nf, (int, float)) else (defaults.get("net_factor") or 0.8)
-        sc = raw.get("share_change_qoq")
-        sc = _clamp(sc, "share_change_qoq") if isinstance(sc, (int, float)) else 0.0
+        def scalar(key, default):
+            value = raw.get(key)
+            if value is None:
+                value = default
+                adjustments.append(f"{key}: missing; using historical/default value {value:g}")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"Invalid forecast assumption: {key}")
+            bounded = _clamp(value, key)
+            if value != bounded:
+                adjustments.append(f"{key}: {value:g} adjusted to {bounded:g}")
+            return bounded
+
+        nf = scalar("net_factor", defaults.get("net_factor") if defaults.get("net_factor") is not None else .8)
+        sc = scalar("share_change_qoq", 0.)
         return cls(
             revenue_yoy=rev,
             operating_margin=om,
@@ -94,6 +121,7 @@ class ScenarioPath:
             gross_margin=gm,
             opex_ratio=opx,
             rationale=str(raw.get("rationale") or "")[:1500],
+            adjustments=adjustments,
         )
 
 
