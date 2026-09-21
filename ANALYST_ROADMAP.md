@@ -288,6 +288,11 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > breakouts → `segments` table (META FoA $55.9B +33% YoY; MU's 4 BUs). No new LLM calls anywhere
 > in 4.1. **Next: 4.2 (forecast model).**
 
+> **Historical implementation note:** the following 2026-06-12 entries record the original 4.2/4.3
+> implementation and its then-current results. Their 8-quarter horizon, universal fade rules,
+> WACC-based DCF, multiple construction, and price-target mechanics are superseded by the
+> **2026-09-20 valuation repair** in Cross-cutting and the current valuation model in `CLAUDE.md`.
+
 > **Status: 4.2 DONE (2026-06-12) — the forecast model: our own numbers.** `app/forecast/`:
 > `drivers.py` (deterministic driver series + through-cycle medians = the reversion anchor) →
 > `assumptions.py` (**the ONE new Opus call**: 8-quarter bull/base/bear paths, every material
@@ -346,8 +351,8 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | # | Action | Effort | Output | Done when |
 |---|--------|--------|--------|-----------|
 | 4.1 | **Balance-sheet completion + accrue-now data** — map missing XBRL tags (total_debt, cash, shares_outstanding, SBC, buybacks); persist transcript segments into `segments`; ingest SPY benchmark prices; snapshot consensus per run (stop upsert-in-place) → revisions history accrues | M | complete fundamentals spine | leverage/dilution visible; every graded thesis can be benchmark-relative; consensus time-series accruing |
-| 4.2 | **Forecast model** — `app/forecast/`: `drivers.py` (deterministic historical driver series) → `assumptions.py` (ONE LLM call: 8-quarter assumptions, bull/base/bear ranges, each with basis) → `model.py` (deterministic compile → quarterly EPS path, FY aggregates) → immutable `forecasts` table; "our FY EPS vs street" delta into valuation context + quant features; grading scores our EPS vs actual vs street on later pipeline runs | L | our own estimates | per ticker: "we are ±X% vs street on FY27 EPS because <basis>" |
-| 4.3 | **Deterministic DCF + price target** — `app/valuation_model/`: FCF from the forecast model, WACC built from data (^TNX risk-free, OUR computed beta vs SPY, fixed ERP), archetype-bounded terminal growth, sensitivity grid; 3 scenarios × judge-emitted rubric-anchored `scenario_probabilities` (per user 2026-06-11) → EV → 12-mo PT; method blend per archetype (cyclicals: normalized-multiple primary / DCF secondary; growers: reverse) | L | PT + horizon + method | "$X, 12-mo, via <method>, P(bull/base/bear)=…, sensitivity grid" — fully auditable |
+| 4.2 | **Forecast model** — `app/forecast/`: historical drivers → ONE cached LLM call with 12 explicit quarterly bear/base/bull assumptions and cited basis → deterministic quarterly earnings/share paths and FY aggregates. Period, date precision, and accounting basis qualify consensus comparisons. Updated 2026-09-20; compiler adjustments are auditable and missing horizon coverage blocks valuation. | L | our own dated estimates | comparable earnings periods and bases; assumptions can be graded against later actuals |
+| 4.3 | **Deterministic DCF + price target** — updated 2026-09-20: dated per-share equity distributions at cost of equity; measured cash conversion and funded SBC/buybacks; normalized cyclical earnings; company-conditioned growth duration and eligible same-industry GAAP peers. Separate present DCF from 12/18-month targets using EPS for the 12 months after target date; scenario weights, method inputs, and sensitivity remain visible. | L | PT + dates + method | one shared calculator across decision, agent, and notes; unavailable inputs never produce fallback prices |
 
 ### Phase 5 — Deliverable & Track Record (planned 2026-06-11)
 
@@ -443,6 +448,10 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 > reporting-lag (not exact filed dates — M4 refinement) + survivorship (current constituents only).
 > 8 backtest unit tests pin the no-lookahead gating + scorer + Spearman; full suite 15 green.
 
+> **Historical implementation note:** the following 2026-06-16 results are retained as a dated log.
+> The "non-GAAP" label, DCF/multiple mechanics, and universal growth-tilt formula were superseded
+> by the 2026-09-20 valuation repair; the operating-margin driver remains part of the model.
+
 > **Status: Valuation/forecast hardening (2026-06-16, user-driven from the UBER PT review).** Four
 > fixes after the UBER "$6 bear" investigation: **(1) Forecast projects OPERATING MARGIN directly**
 > (`forecast/model.py`: `OI = revenue × operating_margin`, anchored on recent actual) instead of
@@ -487,15 +496,87 @@ Effort: **S** ≤1 day · **M** ~few days · **L** ~1–2 weeks. "Done when" = a
 | 6.3 | **Backtest the screen** (= the evaluator over the M4 panel; see "Backtest ≠ model" in §4a) — walk-forward over EDGAR filed-date-gated history + historical index constituents; rank-IC vs forward returns. **First deliverable: baseline the EXISTING hand-weighted screen before any ML** (M5 must then beat it OOS; "no signal" is equally actionable). **Honesty rule: validates the deterministic SCREEN only; the LLM layer's record accrues prospectively via the journal (5.2)** — replaying LLMs over history is epistemically fake | L | evidence of edge | hand-screen baseline rank-IC measured, then M5 vs baseline OOS; claims bounded by what's proven |
 
 ### Cross-cutting
-- **PT↔decision divergence guard (logged 2026-06-12, not top priority — per user).** The 4.3 price
+- **Model, billing, and local access audit (2026-09-20).** Kept Opus 5 for forecast and analytical
+  agents; upgraded news/utilities from Sonnet 4.6 to Sonnet 5 and pinned Claude Code 2.1.278
+  (previous runtime 2.1.183). These are the latest respective model families per the
+  [official model configuration](https://code.claude.com/docs/en/model-config); validation stays
+  deterministic. The local runtime used first-party OAuth with no API key. The adapter now strips
+  inherited API/provider/alternate credentials, disables user/project settings and tools/MCP, logs
+  actual model IDs, and defaults to `claude_code` if environment YAML is missing. The production API
+  path remains explicit. Five mocked billing regressions passed; live subscription checks returned
+  both requested model IDs. The rebuilt image passed all 92 backend tests and the frontend built.
+  Current
+  [official subscription guidance](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+  pauses the proposed monthly credit change; `claude -p` still consumes subscription limits.
+  The user confirmed Usage credits OFF; that account setting is the paid-overage boundary, not a
+  CLI flag or a blanket cost guarantee. Same-Wi-Fi access was verified at http://10.0.0.71:3000,
+  including the frontend and relative `/api` proxy; no LAN code change was required.
+- **Valuation repair requirements (2026-09-07; user-directed, implemented 2026-09-20 below).** The
+  [valuation audit](docs/valuation-audit-2026-09-07.md) reproduced NVDA's $148.49 GAAP / $138.54
+  operating targets and found a silent 60% operating-margin cap, an unweighted universe-wide
+  "peer" multiple, incompatible earnings periods, stale target presentation, and an operating
+  proxy mislabeled non-GAAP. The AI's separate $245 estimate is not arithmetically reconciled.
+  **The repair must account for company-specific economics:** the user's AMD-versus-AAPL example
+  requires different treatment when growth outlook, margin expansion, cash generation, business
+  maturity, scale, and risk differ. Archetypes are starting policies; deterministic measurements
+  and forecast drivers must differentiate companies within them. Market cap is secondary peer
+  context, not an automatic growth premium. Choose suitable valuation methods, compatible earnings
+  bases/periods, justified comparables, and scenario-specific growth duration; avoid a universal
+  year-five maturity rule. Keep all calculation deterministic (§4a), with cached knowledge labels
+  and cited assumptions; no bespoke ticker formulas or targets adjusted to match market prices.
+  Method-selection principles and acceptance criteria are in the audit's company-specific section.
+- **Valuation repair implemented (2026-09-20).** The current model is documented in
+  [CLAUDE.md](CLAUDE.md#current-valuation-model-2026-09-20); the
+  [original audit](docs/valuation-audit-2026-09-07.md) preserves the motivating defects and acceptance
+  criteria. Forecasts require 12 explicit quarterly paths, preserve legitimate high margins, and
+  record compiler adjustments. Targets are dated 12 or 18 months ahead, with a multiple earnings
+  window covering the following 12 months; present DCF is shown separately. Deterministic policies
+  use company/scenario growth and profitability to vary growth duration and method weights, with
+  normalized earning power for cyclicals and no automatic size premium. Comparable P/E requires
+  at least two fresh, economically eligible same-industry GAAP forecast peers, each backed by four
+  consecutive actual quarters of net income, operating income, revenue, and shares with positive
+  aggregate net and operating income; otherwise the result is DCF-only. Broad provider buckets
+  `Software - Application` and `Software - Infrastructure` explicitly remain DCF-only pending
+  narrower business-model coverage. There are no universe-wide or invented default multiple anchors.
+  The equity DCF discounts distributions per projected share at cost of equity, with no second
+  debt subtraction. Consecutive reported FCF/earnings determine cash conversion; measured SBC and
+  requested net share changes determine desired buybacks at a disclosed constant reference price.
+  Gross repurchases are capped at quarterly modeled FCF; unmet retirements carry through every
+  later quarter as additional dilution, with a warning and recomputed EPS, DCF, and multiple legs.
+  Peer EPS receives the same adjustment. The original forecast is retained alongside the funded
+  share path and adjustment audit. This keeps positive-FCF companies evaluable when their requested
+  buybacks are too high; negative projected FCF or an unsupported basis remains unavailable without
+  assumed cash reserves, borrowing, or issuance proceeds. Future dilution affects each distribution, and terminal
+  retention follows declared growth/ROE assumptions. The old "Non-GAAP" view is now **Operating
+  sensitivity**, with no P/E applied to an unreconciled operating-income proxy; failure of this
+  optional view, which holds the GAAP-funded share path fixed, does not suppress a valid GAAP result.
+  Estimate period and
+  accounting-basis metadata prevent unlike comparisons. The valuation agent takes its numeric
+  outputs from the same calculator, and shared display guards suppress legacy/stale targets and
+  mismatched narrative across the decision panel, agent card, and research note. Missing financials,
+  unsupported models, and incomplete forecasts show reasons instead of fabricated fallback prices.
+  Regression coverage includes calendar windows, economic eligibility, dilution/buyback funding,
+  period-aware ingestion, and stale display hydration, alongside the full pipeline test. Policy
+  coefficients and provisional scenario weights remain declared priors, not evidence of predictive
+  calibration. Live recalculation does not imply a refreshed judge decision or new position sizing.
+  The final input audit also fixed EDGAR coverage: `ProfitLoss` is accepted only with explicit
+  minority deduction or matching diluted-EPS/share reconciliation; `PaymentsForCapitalImprovements`
+  completes capex coverage; treasury-inclusive issued shares cannot be the forecast denominator.
+  Starting shares use the greater of quarter diluted shares and period-end basic outstanding,
+  preserving actual issuance while avoiding the issued-share error. No Q4 weighted-share average
+  is invented from annual averages. These repairs directly affect AVGO and GLW; source details and
+  the completed portfolio refresh are recorded in the [implementation report](docs/valuation-repair-2026-09-20.md).
+- **PT↔decision divergence guard (logged 2026-06-12; partial implementation 2026-09-20).** The 4.3 price
   target is a display artifact, NOT a decision input (the signal = screen + flags + judge gate +
   validation gate). Observed on UBER: PT +57% upside alongside a momentum-flag REDUCE, silently.
-  Planned guard: when |PT upside| > ~25% and points AGAINST the final signal, append an explicit
+  Implemented: a target more than 20% below the reference price alongside BUY/STRONG_BUY appends
+  an explicit assumption/thesis-conflict notice. The broader original proposal remains planned:
+  when |PT upside| > ~25% and points AGAINST the final signal, append an explicit
   divergence note to the decision reasoning + a WATCH flag (`pt_decision_divergence`). Deliberately
   NOT a signal input — gates only ever lower; the PT earns signal power only after forecast grading
-  (4.2) builds a track record. Related observation, fixed by 6.1: with a 13-name watchlist the peer
-  pool gives UBER semiconductor "comps" (top similarity weight only 0.47) — peer-multiple legs for
-  watchlist oddballs are suspect until the universe ingest provides real comps + M1 embeddings.
+  (4.2) builds a track record. The historical watchlist-only unrelated-comps issue is now guarded
+  in valuation by strict economic eligibility and DCF-only fallback when fewer than two suitable
+  current GAAP forecast peers exist; broader comparable coverage remains a data-coverage task.
 - **Smart fingerprint caching (2026-06-11, per user).** Run Full Pipeline no longer forces all 6 LLM
   calls: each report stores an **input fingerprint** (latest filing/transcript/estimates hash/price
   ±5% band/news marker + system-prompt hash, `agents/fingerprints.py`) and `mode:"smart"` re-runs an

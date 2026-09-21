@@ -99,7 +99,6 @@ export default function TrackRecord() {
 function SummaryStrip({
   s,
   pct,
-  num,
 }: {
   s: TrackRecordSummary;
   pct: (v: number | null | undefined, signed?: boolean) => string;
