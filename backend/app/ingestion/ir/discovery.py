@@ -18,14 +18,38 @@ logger = logging.getLogger(__name__)
 _ORDINAL_BY_QUARTER = {1: "first", 2: "second", 3: "third", 4: "fourth"}
 
 
+_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
+
+
 def _interpolate(template: str, year: int, quarter: int) -> str:
-    return template.format(
-        year=year,
-        quarter=quarter,
-        q=quarter,
-        yr=year,
-        ordinal=_ORDINAL_BY_QUARTER.get(quarter, str(quarter)),
-    )
+    """Substitute the supported {placeholders}, leaving anything else literal.
+
+    Deliberately NOT str.format: patterns are hand-maintained in sources.yaml and legitimately
+    contain braces that aren't placeholders — regex quantifiers like \\d{4} (which .format reads
+    as a positional field) and stale/mistyped names like {Q}. Either used to raise out of
+    discovery *before* the LLM repair fallback could run, turning a fixable config into a hard
+    failure. Now an unrecognized brace just yields a selector that doesn't match, which is the
+    condition repair already handles.
+    """
+    known = {
+        "year": str(year),
+        "quarter": str(quarter),
+        "q": str(quarter),
+        "yr": str(year),
+        "ordinal": _ORDINAL_BY_QUARTER.get(quarter, str(quarter)),
+    }
+
+    def sub(m: re.Match) -> str:
+        key = m.group(1)
+        if key in known:
+            return known[key]
+        logger.warning(
+            "[ir] unrecognized placeholder {%s} in strategy pattern — left literal; the selector "
+            "likely won't match and will fall through to LLM repair", key,
+        )
+        return m.group(0)
+
+    return _PLACEHOLDER_RE.sub(sub, template)
 
 
 async def _fetch(url: str, user_agent: str) -> tuple[bytes, str, bool]:
@@ -52,16 +76,28 @@ def _find_link(strategy, content: bytes, landing_url: str, year: int, quarter: i
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(content, "html.parser")
-    if strategy.type == "link_regex":
-        pattern = re.compile(_interpolate(strategy.pattern, year, quarter), re.IGNORECASE)
-        for a in soup.find_all("a", href=True):
-            if pattern.search(a["href"]) or pattern.search(a.get_text(strip=True)):
-                return urljoin(landing_url, a["href"])
-        return None
-    if strategy.type == "css_selector":
-        el = soup.select_one(_interpolate(strategy.pattern, year, quarter))
-        if el and el.get("href"):
-            return urljoin(landing_url, el["href"])
+    # A malformed pattern is a CONFIG bug, not a fetch failure: sources.yaml is hand-maintained and
+    # IR sites get redesigned under it. Treat "this selector doesn't compile" the same as "this
+    # selector matched nothing" so the caller falls through to LLM repair, which can rewrite the
+    # strategy and persist it. Letting re.error / SelectorSyntaxError escape here aborted discovery
+    # outright and made a self-healable config permanently dead.
+    try:
+        if strategy.type == "link_regex":
+            pattern = re.compile(_interpolate(strategy.pattern, year, quarter), re.IGNORECASE)
+            for a in soup.find_all("a", href=True):
+                if pattern.search(a["href"]) or pattern.search(a.get_text(strip=True)):
+                    return urljoin(landing_url, a["href"])
+            return None
+        if strategy.type == "css_selector":
+            el = soup.select_one(_interpolate(strategy.pattern, year, quarter))
+            if el and el.get("href"):
+                return urljoin(landing_url, el["href"])
+            return None
+    except Exception as e:
+        logger.warning(
+            "[ir] %s strategy %r is malformed (%s: %s) — treating as no-match so repair can run",
+            strategy.type, strategy.pattern, type(e).__name__, e,
+        )
         return None
     logger.warning("Unknown strategy type: %s", strategy.type)
     return None

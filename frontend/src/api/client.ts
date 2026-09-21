@@ -370,6 +370,19 @@ export interface ValuationResponse {
   shares_outstanding: number | null;
 }
 
+export interface IrDiscoveryResult {
+  status: 'ok' | 'needs_attention';
+  ir_url: string | null;
+  strategy_type: string | null;
+  strategy_pattern: string | null;
+  artifact_type: string | null;
+  sample_url: string | null;
+  sample_chars: number;
+  confidence: string | null;
+  message: string;
+}
+
+
 // ─── Kill signals ──────────────────────────────────────────────────────────
 // Standing per-stock list of what would break the thesis. Distinct from the judge's per-run
 // kill_criteria (immutable, graded): the judge feeds proposals in here as `candidate` rows and
@@ -415,6 +428,7 @@ export interface KillSignalBuckets {
   dismissed: KillSignal[];
 }
 
+
 // ─── Post-earnings staleness ───────────────────────────────────────────────
 // Notification only: the pull model is intact and nothing here triggers an LLM call. `stale`
 // means the company reported (or a new transcript landed) since the earnings agent last ran.
@@ -435,6 +449,11 @@ export const api = {
     get: (ticker: string) => request<Stock>(`/stocks/${ticker}`),
     add: (data: { ticker: string; name: string; sector?: string; industry?: string; ir_url?: string }) =>
       request<Stock>('/stocks/', { method: 'POST', body: JSON.stringify(data) }),
+    discoverIr: (data: { ticker: string; seed_url: string; name?: string }) =>
+      request<IrDiscoveryResult>('/stocks/discover-ir', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
     remove: (ticker: string) => request<void>(`/stocks/${ticker}`, { method: 'DELETE' }),
     valuation: (ticker: string) =>
       request<ValuationResponse | null>(`/stocks/${ticker}/valuation`),

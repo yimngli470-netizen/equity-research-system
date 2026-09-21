@@ -13,7 +13,7 @@ AAPL:
   ir_url: https://www.apple.com/investor/earnings-call/
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript)
   artifact_type: press_release
   notes: 'Apple posts quarterly earnings call links and results materials on its IR
 
@@ -28,7 +28,7 @@ APPL:
   ir_url: https://www.apple.com/investor/earnings-call/
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript)
   artifact_type: press_release
   notes: 'Alias for the inactive APPL typo row in the local DB; same IR source as
     AAPL.
@@ -81,7 +81,7 @@ GOOG:
   ir_url: https://abc.xyz/investor/
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript)
   artifact_type: transcript
   notes: 'Alphabet uses the abc.xyz investor site for both GOOG and GOOGL. The
 
@@ -94,7 +94,7 @@ GOOGL:
   ir_url: https://abc.xyz/investor/
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript)
   artifact_type: transcript
   notes: 'Same Alphabet IR source as GOOG; active DB ticker is GOOGL.
 
@@ -118,7 +118,7 @@ META:
   ir_url: https://investor.atmeta.com/investor-events/default.aspx
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript)
   artifact_type: transcript
   notes: 'Meta''s investor-events page is the official landing page for quarterly
 
@@ -141,8 +141,8 @@ MRVL:
 MU:
   ir_url: https://investors.micron.com/quarterly-results
   strategy:
-    type: link_regex
-    pattern: reports-results-{ordinal}-quarter-fiscal-{year}
+    type: url_template
+    pattern: https://investors.micron.com/news-releases/news-release-details/micron-technology-inc-reports-results-{quarter}-quarter-fiscal-{year}
   artifact_type: press_release
   notes: "Micron's /quarterly-results page lists one /news-releases/news-release-details/\n\
     link per fiscal quarter. URL slug format:\n  micron-technology-inc-reports-results-{ordinal}-quarter-fiscal-{year}\n\
@@ -182,7 +182,7 @@ TSLA:
   ir_url: https://ir.tesla.com/#quarterly-disclosure
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(update|deck|earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(update|deck|earnings|results|call|transcript)
   artifact_type: slides
   notes: 'Tesla''s official IR quarterly-disclosure page generally posts shareholder
 
@@ -214,7 +214,7 @@ FIG:
   ir_url: https://investor.figma.com/overview/default.aspx
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript)
   artifact_type: press_release
   notes: 'Figma (IPO 2025) IR site is Q4 Inc-hosted (same default.aspx platform as
 
@@ -252,37 +252,46 @@ ISRG:
     \ Quarter Earnings' press release (financial tables + procedure volume), not the\
     \ conference-call event page."
 NOW:
-  ir_url: https://www.servicenow.com/company/investor-relations.html
+  ir_url: https://newsroom.servicenow.com/press-releases/default.aspx
   strategy:
-    type: url_template
-    pattern: https://investors.servicenow.com/news-releases/news-release-details/servicenow-reports-{quarter}-quarter-{year}-financial-results
+    type: link_regex
+    pattern: Reports.*{ordinal}.*Quarter.*{year}.*Financial.Results
   artifact_type: press_release
-  notes: User-provided IR URL (2026-06-19).
+  notes: Auto-discovered from https://www.servicenow.com/company/investor-relations.html
+    (2026-07-05); verified 40077 chars.
 TTD:
   ir_url: https://investors.thetradedesk.com/financials/quarterly-results/default.aspx
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
+    pattern: (Q{q}|{q}Q|{ordinal}.quarter).*{year}.*(earnings|results|call|transcript|webcast)
   artifact_type: press_release
   notes: User-provided IR URL (2026-06-20).
 MSFT:
   ir_url: https://www.microsoft.com/en-us/investor/default
   strategy:
     type: url_template
-    pattern: https://www.microsoft.com/en-us/investor/earnings/FY-{year}-Q{q}-quarterly-earnings/overview
+    pattern: https://www.microsoft.com/en-us/investor/earnings/FY-{year}-Q{q}/press-release-webcast
   artifact_type: press_release
-  notes: User-provided IR URL (2026-06-30).
+  notes: "User-provided IR URL (2026-06-30). Slug fixed 2026-07-04 \u2014 the old\
+    \ \"FY-{year}-Q{q}-quarterly-earnings/overview\" path 404s."
 GLW:
-  ir_url: https://investor.corning.com/investor-relations/default.aspx
+  ir_url: https://investor.corning.com/financials/quarterly-results/default.aspx
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
+    pattern: Corning-Announces.*{ordinal}-Quarter-{year}-Financial-Results
   artifact_type: press_release
-  notes: User-provided IR URL (2026-07-01).
+  notes: "User-provided IR URL (2026-07-01). Strategy fixed 2026-07-04 \u2014 the\
+    \ old generic regex on the IR overview matched the earnings-call EVENT page (webcast\
+    \ boilerplate), not the press release. Quarterly-results links are JS-injected\
+    \ (discovery's render retry finds them); the news-details release page itself\
+    \ extracts statically."
 VRT:
-  ir_url: https://investors.vertiv.com/overview/default.aspx
+  ir_url: https://investors.vertiv.com/financials/quarterly-results/default.aspx
   strategy:
     type: link_regex
-    pattern: (Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)
+    pattern: Vertiv[_-]{ordinal}-Quarter(-and-Full-Year)?-{year}-Earnings-Release\.pdf
   artifact_type: press_release
-  notes: User-provided IR URL (2026-07-02).
+  notes: "User-provided IR URL (2026-07-02). Strategy fixed 2026-07-04 \u2014 the\
+    \ overview page has no earnings links, so discovery always failed (no transcript\
+    \ ever stored). Quarterly-results page carries direct q4cdn PDF links (JS-injected;\
+    \ render retry)."

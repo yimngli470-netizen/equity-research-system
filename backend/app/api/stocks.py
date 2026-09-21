@@ -61,9 +61,12 @@ async def list_stocks(db: AsyncSession = Depends(get_db)):
     return enriched
 
 
-def _register_manual_ir(ticker: str, ir_url: str) -> None:
-    """Write a user-provided IR earnings URL straight to the registry (no LLM guess). A broad
-    link_regex captures earnings/transcript links; the IR repair pass refines it if needed."""
+def _register_manual_ir(ticker: str, ir_url: str, overwrite: bool = True) -> None:
+    """Write a user-provided IR earnings URL to the registry with a broad fallback regex (no LLM guess).
+
+    Used as the provisional entry when auto-discovery didn't produce a validated one. Pass
+    overwrite=False to avoid clobbering a strategy that discovery already verified for this ticker.
+    """
     from datetime import date
 
     from app.ingestion.ir import registry
@@ -75,10 +78,34 @@ def _register_manual_ir(ticker: str, ir_url: str) -> None:
                 type="link_regex",
                 pattern=r"(Q{q}|{q}Q|quarter).*{year}.*(earnings|results|call|transcript|webcast)"),
             artifact_type="press_release",
-            notes=f"User-provided IR URL ({date.today()}).",
+            notes=f"User-provided IR URL ({date.today()}); broad fallback regex (auto-discovery unverified).",
         ),
-        overwrite=True,
+        overwrite=overwrite,
     )
+
+
+@router.post("/discover-ir")
+async def discover_ir(payload: dict):
+    """Crawl from a pasted IR URL, LLM-pick + verify the earnings-release page, and (on success)
+    persist the strategy to the registry. Returns the discovery result so the add-stock modal can
+    show "✓ found earnings page" / "✗ needs manual config" immediately.
+
+    Body: {"ticker": "NOW", "seed_url": "https://…", "name": "ServiceNow"?}
+    """
+    ticker = (payload.get("ticker") or "").strip().upper()
+    seed_url = (payload.get("seed_url") or "").strip()
+    if not ticker:
+        raise HTTPException(422, "ticker is required")
+    if not seed_url.startswith(("http://", "https://")):
+        raise HTTPException(422, "seed_url must be an http(s) URL")
+
+    from app.ingestion.ir.autodiscover import discover_and_register
+    try:
+        res = await discover_and_register(ticker, seed_url, payload.get("name"))
+    except Exception:
+        logger.exception("IR auto-discovery crashed for %s", ticker)
+        raise HTTPException(500, "auto-discovery failed unexpectedly")
+    return res.to_dict()
 
 
 @router.post("/", response_model=StockResponse, status_code=201)
@@ -91,7 +118,11 @@ async def add_stock(stock_in: StockCreate, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=422,
                             detail="An IR earnings page URL (https://…) is required when adding a ticker.")
     try:
-        _register_manual_ir(ticker, ir_url)
+        # If the modal already ran /discover-ir and it verified a strategy, that entry is in the
+        # registry now — don't overwrite it with the broad fallback regex. Only write the provisional
+        # entry when discovery hasn't produced one (overwrite=False is a no-op if an entry exists).
+        from app.ingestion.ir import registry
+        _register_manual_ir(ticker, ir_url, overwrite=registry.get_source(ticker) is None)
     except Exception:
         logger.exception("Failed to register IR URL for %s", ticker)
 

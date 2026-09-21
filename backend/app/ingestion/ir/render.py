@@ -42,7 +42,12 @@ async def fetch_rendered(url: str, user_agent: str, timeout: float = 45.0) -> by
                 )
                 page = await ctx.new_page()
                 # "domcontentloaded" first (fast), then settle for late JS-injected links.
-                await page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+                response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+                # A rendered error page (e.g. Microsoft's custom 404) is valid HTML — without this
+                # check it gets stored as a "transcript" downstream.
+                if response is not None and response.status >= 400:
+                    logger.warning("[ir.render] %s returned HTTP %d — treating as failure", url, response.status)
+                    return None
                 try:
                     await page.wait_for_load_state("networkidle", timeout=8000)
                 except Exception:
