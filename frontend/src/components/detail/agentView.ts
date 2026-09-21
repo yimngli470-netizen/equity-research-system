@@ -88,13 +88,14 @@ export interface NormalizedAgent {
 }
 
 const AGENT_MODEL: Record<string, string> = {
-  news: 'Sonnet 4',
-  earnings: 'Opus 4',
-  industry: 'Opus 4',
-  valuation: 'Opus 4',
-  bull: 'Opus 4',
-  bear: 'Opus 4',
-  judge: 'Opus 4',
+  // Historical reports do not record an exact model version; show their assigned family.
+  news: 'Sonnet',
+  earnings: 'Opus',
+  industry: 'Opus',
+  valuation: 'Opus',
+  bull: 'Opus',
+  bear: 'Opus',
+  judge: 'Opus',
   validation: 'Deterministic',
 };
 
@@ -355,29 +356,32 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
 
   if (agent_type === 'valuation') {
     const tiles: Tile[] = [];
+    const model = (r.valuation_model as Record<string, unknown>) || {};
+    const method = (model.method as Record<string, unknown>) || {};
+    const verified = model.status === 'verified';
     const dcf = (r.dcf_analysis as Record<string, unknown>) || {};
     const target = (r.target_price_range as Record<string, unknown>) || {};
     const current = asNumber(r.current_price);
-    const fair = asNumber(dcf.intrinsic_value_base) ?? asNumber(target.mid);
-    const upside = asNumber(r.margin_of_safety);
+    const fair = verified ? asNumber(dcf.intrinsic_value_base) : null;
+    const upside = verified ? asNumber(r.margin_of_safety) : null;
 
-    tiles.push({ label: 'DCF fair value', value: fmtPriceTile(fair) });
-    tiles.push({ label: 'Current', value: fmtPriceTile(current) });
+    tiles.push({ label: verified ? 'Base present DCF' : 'DCF needs refresh', value: fmtPriceTile(fair) });
+    tiles.push({ label: 'Model reference price', value: fmtPriceTile(current) });
     if (upside != null) {
       // upside is sometimes given as percent number (e.g. 28.2 means 28.2%)
-      const pct = Math.abs(upside) > 1 ? upside / 100 : upside;
-      tiles.push({ label: 'Margin of safety', value: fmtSignedPct(pct), tone: pct >= 0 ? 'pos' : 'neg' });
+      const pct = upside;
+      tiles.push({ label: 'DCF vs reference', value: fmtSignedPct(pct), tone: pct >= 0 ? 'pos' : 'neg' });
     }
-    if (typeof r.valuation_verdict === 'string') {
+    if (verified && typeof r.valuation_verdict === 'string') {
       tiles.push({ label: 'Verdict', value: r.valuation_verdict.replace(/_/g, ' ') });
     }
 
     // Triangulation vs the street (2.3): fair value, street target, divergence + justification.
     const tri = (r.triangulation as Record<string, unknown>) || {};
-    const fv = asNumber(tri.your_fair_value);
+    const fv = verified ? asNumber(target.mid) : null;
     const street = asNumber(tri.street_mean_target);
-    const div = asNumber(tri.divergence_pct);
-    if (fv != null) tiles.push({ label: 'Your fair value', value: fmtPriceTile(fv) });
+    const div = verified ? asNumber(tri.divergence_pct) : null;
+    if (fv != null) tiles.push({ label: 'Base future target', value: fmtPriceTile(fv) });
     if (street != null) tiles.push({ label: 'Street target', value: fmtPriceTile(street) });
     if (div != null) {
       tiles.push({ label: 'vs Street', value: fmtSignedPct(div), tone: div >= 0 ? 'pos' : 'neg' });
@@ -385,7 +389,14 @@ export function normalizeAgent(report: AnalysisReport): NormalizedAgent {
     base.valuation_tiles = tiles;
     const justification = asString(tri.divergence_justification);
     const reconciliation = asString(tri.reconciliation);
-    base.valuation_note = reconciliation || justification || null;
+    base.valuation_note = verified
+      ? `Model ${String(model.as_of || '')} · target ${String(model.target_date || '')} · reference price ${String(method.price_date || 'date unavailable')} · street ${String(method.street_as_of || 'date unavailable')} · narrative ${String(model.narrative_as_of || report.run_date)}${model.narrative_stale ? ' (refresh needed)' : ''}. Base scenario; the decision target weights all three scenarios. ${reconciliation || justification || ''}`
+      : `${Array.isArray(model.issues) && model.issues.length ? model.issues.join(' ') : 'This report predates the shared calculator or lacks current inputs.'} Refresh analysis before using its valuation claims.`;
+    if (model.narrative_stale) {
+      base.summary = verified
+        ? 'Values reflect the current deterministic model. Refresh the narrative to explain the updated assumptions.'
+        : 'Valuation inputs need a refresh before the earlier narrative can be used.';
+    }
   }
 
   if (agent_type === 'bull' || agent_type === 'bear') {

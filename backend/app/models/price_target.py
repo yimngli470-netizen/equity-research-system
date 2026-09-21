@@ -24,19 +24,19 @@ class PriceTarget(Base):
     horizon_months: Mapped[int] = mapped_column(Integer, default=12)
 
     fair_value: Mapped[float | None] = mapped_column(Float)      # probability-weighted, today
-    price_target: Mapped[float | None] = mapped_column(Float)   # fair value grown at CoE to horizon
+    price_target: Mapped[float | None] = mapped_column(Float)   # expected price at the dated future horizon
     price_at: Mapped[float | None] = mapped_column(Float)       # price when set
     upside: Mapped[float | None] = mapped_column(Float)         # PT / price − 1
     street_target_mean: Mapped[float | None] = mapped_column(Float)
 
     probabilities: Mapped[dict] = mapped_column(JSONB)          # P(bull/base/bear) + source
     scenarios: Mapped[dict] = mapped_column(JSONB)              # per-scenario DCF + multiple + blend
-    # Dual-basis price targets (GAAP vs operating/non-GAAP) — same scenarios, different earnings base.
+    # Dual-basis price targets (GAAP vs operating cash-conversion sensitivity) — same scenarios, different earnings base.
     # {"gaap": {fair_value, price_target, upside}, "operating": {...}}. Scalar fields above = GAAP.
     modes: Mapped[dict | None] = mapped_column(JSONB)
     method: Mapped[dict] = mapped_column(JSONB)                 # w_dcf, multiple basis, terminal g…
     wacc: Mapped[dict] = mapped_column(JSONB)                   # rf/beta/ERP/CoE + sources
-    sensitivity: Mapped[dict] = mapped_column(JSONB)            # WACC × terminal-g grid
+    sensitivity: Mapped[dict] = mapped_column(JSONB)            # cost-of-equity × terminal-g grid
 
     forecast_as_of: Mapped[date | None] = mapped_column(Date)   # which forecast it consumed
 

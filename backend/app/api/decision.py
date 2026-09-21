@@ -137,7 +137,8 @@ async def get_latest_decision(ticker: str, db: AsyncSession = Depends(get_db)):
 
 async def _latest_price_target(db: AsyncSession, ticker: str) -> dict | None:
     from app.models.price_target import PriceTarget
-    from app.valuation_model.target import scenario_summary
+    from app.valuation_model.presentation import price_target_payload
+    from app.models.financial import Financial
 
     pt = (
         await db.execute(
@@ -147,15 +148,6 @@ async def _latest_price_target(db: AsyncSession, ticker: str) -> dict | None:
     ).scalar_one_or_none()
     if pt is None:
         return None
-    return {
-        "fair_value": pt.fair_value,
-        "price_target": pt.price_target,
-        "horizon_months": pt.horizon_months,
-        "upside": pt.upside,
-        "probabilities": pt.probabilities,
-        "scenarios": scenario_summary(pt.scenarios),
-        "modes": pt.modes,   # GAAP vs operating (non-GAAP) dual basis
-        "method": pt.method,
-        "wacc": pt.wacc,
-        "street_target_mean": pt.street_target_mean,
-    }
+    latest_end = (await db.execute(select(Financial.period_end_date)
+        .where(Financial.ticker == ticker).order_by(Financial.period_end_date.desc()).limit(1))).scalar_one_or_none()
+    return price_target_payload(pt, latest_financial_end=latest_end)

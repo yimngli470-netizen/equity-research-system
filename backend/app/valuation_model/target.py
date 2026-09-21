@@ -1,24 +1,18 @@
-"""Price target assembly (roadmap 4.3) — scenario-weighted, method-blended, fully auditable.
+"""Dated, company-conditioned scenario valuation. All prices come from deterministic math.
 
-    PT(12m) = [ Σ_s P(s) × ( w_dcf × DCF_s + (1−w_dcf) × Multiple_s ) ] × (1 + cost_of_equity)
-
-- P(s): the judge's rubric-anchored scenario_probabilities (the ONE judgment input — everything
-  else here is measured or declared). Fallback mapping from leaning/conviction for older reports.
-- w_dcf per archetype: cyclicals anchor on the normalized-earnings MULTIPLE (a DCF off peak
-  earnings is a trap); secular growers anchor on the DCF.
-- Multiple leg: cyclical basis → normalized mid-cycle EPS × own through-cycle median P/E;
-  otherwise scenario NTM EPS × peer-median forward P/E (own as fallback).
-Every component lands in the persisted row — the PT is reproducible arithmetic, not a vibe.
+Present DCF value and a future share-price target are separate quantities. The multiple leg
+uses earnings for the twelve months AFTER the target date, never an unspecified provider EPS.
 """
-
+from dataclasses import replace
+from datetime import date, timedelta
 import logging
-from datetime import date
+import statistics
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.forecast.model import COMPILER_VERSION, _add_months
 from app.measurement.normalized_earnings import compute_normalized_earnings
-from app.models.analysis import AnalysisReport
 from app.models.financial import Financial
 from app.models.forecast import Forecast
 from app.models.peer import PeerWeight
@@ -26,364 +20,392 @@ from app.models.price import DailyPrice
 from app.models.price_target import PriceTarget
 from app.models.stock import Stock
 from app.models.valuation import Valuation
-from app.valuation_model.dcf import (DEFAULT_TERMINAL_G, NORMALIZED_TAX_RATE, TERMINAL_G,
-                                     historical_fcf_conversion, operating_fcf_conversion,
-                                     run_dcf, sensitivity_grid)
+from app.valuation_model.economics import (MODEL_VERSION, adjusted_multiple, comparable_weight,
+    forecast_economics, number, select_policy, weighted_median, window_total)
+from app.valuation_model.equity import equity_dcf
+from app.valuation_model.funding import funded_share_path
 from app.valuation_model.wacc import build_wacc
 
 logger = logging.getLogger(__name__)
-
-# DCF weight in the method blend, per archetype (the rest goes to the multiple leg).
-W_DCF = {
-    "cyclical-commodity": 0.30,
-    "deep-value-turnaround": 0.40,
-    "financial": 0.30,
-    "mature-compounder": 0.50,
-    "secular-grower": 0.60,
-    "platform": 0.60,
-}
-DEFAULT_W_DCF = 0.50
-PE_BOUNDS_CYCLICAL = (8.0, 30.0)
-PE_BOUNDS_GROWTH = (8.0, 45.0)
 HORIZON_MONTHS = 12
-
-# Growth-tilted multiple (Q2): higher expected growth earns a higher P/E (the PEG relationship), so
-# the bull/bear multiple re-rates instead of holding flat. Tilt = 1 + β·(scenario growth − base
-# growth), bounded — the peer-median P/E stays the anchor; the tilt only widens the spread by each
-# scenario's forward EPS growth differential. Robust where pure PEG blows up (growth → 0).
-GROWTH_PE_BETA = 1.5
-MULT_TILT_BOUNDS = (0.70, 1.40)
+NORMALIZED_TAX_RATE = .21
 
 
 def scenario_summary(scenarios: dict | None) -> dict:
-    """Slim per-scenario legs for API/UI: the DCF value, the multiple value, and the blend —
-    the spread between the legs is the expectations gap and belongs on screen, not buried in JSONB."""
-    out: dict = {}
-    for name, s in (scenarios or {}).items():
-        if not isinstance(s, dict):
-            continue
-        out[name] = {
-            "dcf": (s.get("dcf") or {}).get("fair_value_per_share"),
-            "multiple": s.get("multiple_value"),
-            "blended": s.get("blended"),
-            # Operating (non-GAAP) legs — present when an operating DCF was computed.
-            "dcf_operating": (s.get("dcf_operating") or {}).get("fair_value_per_share"),
-            "multiple_operating": s.get("multiple_value_operating"),
-            "blended_operating": s.get("blended_operating"),
-        }
-    return out
+    return {name: {
+        "dcf": (s.get("dcf") or {}).get("price_at_horizon"),
+        "dcf_today": (s.get("dcf") or {}).get("fair_value_per_share"),
+        "multiple": s.get("multiple_value"), "blended": s.get("blended"),
+        "dcf_operating": (s.get("dcf_operating") or {}).get("price_at_horizon"),
+        "multiple_operating": None, "blended_operating": s.get("blended_operating"),
+        "eps_at_horizon": s.get("eps_at_horizon"), "multiple_pe": s.get("multiple_pe"),
+        "w_dcf": s.get("w_dcf"), "revenue_growth": s.get("revenue_growth"),
+        "operating_margin": s.get("operating_margin"),
+    } for name, s in (scenarios or {}).items() if isinstance(s, dict)}
 
 
 def scenario_probabilities(judge_report: dict | None) -> tuple[dict[str, float], str]:
-    """The judge's rubric-anchored probabilities; normalized to sum 1. Fallback: a deterministic
-    mapping from leaning + conviction (for cached judge reports predating the schema)."""
-    if judge_report:
-        raw = judge_report.get("scenario_probabilities")
-        if isinstance(raw, dict):
-            vals = {k: float(raw.get(k, 0) or 0) for k in ("bull", "base", "bear")}
+    raw = (judge_report or {}).get("scenario_probabilities")
+    if isinstance(raw, dict):
+        vals = {k: number(raw.get(k)) for k in ("bull", "base", "bear")}
+        if all(v is not None and v >= 0 for v in vals.values()) and sum(vals.values()) > 0:
             total = sum(vals.values())
-            if total > 0:
-                return {k: round(v / total, 3) for k, v in vals.items()}, "judge"
-    # Fallback: tilt 25/50/25 by leaning, scaled by conviction.
+            return {k: v / total for k, v in vals.items()}, "judge"
+    if judge_report is None:
+        return {"bull": .25, "base": .5, "bear": .25}, "declared neutral prior (no current judge)"
     leaning = str((judge_report or {}).get("leaning") or "neutral").lower()
-    conviction = (judge_report or {}).get("conviction")
-    conviction = float(conviction) if isinstance(conviction, (int, float)) else 0.5
-    sign = {"strong_bull": 1.0, "bull": 0.6, "neutral": 0.0,
-            "bear": -0.6, "strong_bear": -1.0}.get(leaning, 0.0)
-    tilt = 0.20 * sign * max(0.0, min(1.0, conviction))
-    p = {"bull": 0.25 + tilt, "base": 0.50, "bear": 0.25 - tilt}
-    total = sum(p.values())
-    return {k: round(v / total, 3) for k, v in p.items()}, "fallback(leaning/conviction)"
+    conviction = number((judge_report or {}).get("conviction"))
+    sign = {"strong_bull": 1., "bull": .6, "neutral": 0., "bear": -.6, "strong_bear": -1.}.get(leaning, 0.)
+    tilt = .20 * sign * max(0., min(1., conviction if conviction is not None else .5))
+    return {"bull": .25 + tilt, "base": .5, "bear": .25 - tilt}, "fallback(leaning/conviction)"
 
 
-async def _through_cycle_pe(db: AsyncSession, ticker: str) -> float | None:
-    """Median (quarter-end price / trailing-4q EPS) over filed history — our own measured
-    through-cycle multiple, for valuing a cyclical's normalized earnings."""
-    fins = (
-        await db.execute(
-            select(Financial.period_end_date, Financial.eps)
-            .where(Financial.ticker == ticker, Financial.eps.is_not(None))
-            .order_by(Financial.period_end_date.asc())
-        )
-    ).all()
-    if len(fins) < 8:
+def forecast_issue(forecast: Forecast, latest_end: date | None, at: date) -> str | None:
+    if (forecast.input_fingerprint or {}).get("compiler") != COMPILER_VERSION:
+        return "Forecast uses the previous compiler; refresh analysis to rebuild the scenario paths."
+    if not 0 <= (at - forecast.as_of).days <= 100:
+        return "Forecast is more than 100 days old or future-dated."
+    qs = ((forecast.projections or {}).get("base") or {}).get("quarters") or []
+    if not qs:
+        return "Forecast has no quarterly earnings path."
+    modeled_actual = _add_months(date.fromisoformat(qs[0]["end_approx"]), -3)
+    if latest_end and latest_end > modeled_actual + timedelta(days=7):
+        return "A newer financial quarter is available; refresh the forecast before using a target."
+    return None
+
+
+def cash_conversion(financials: list[Financial], operating=False) -> tuple[float | None, dict]:
+    # Aggregate a consecutive block, including negative quarters; never cherry-pick positive NI.
+    rows = financials[:8]
+    key = "operating_income" if operating else "net_income"
+    meta = {"basis": "FCF / after-tax operating income" if operating else "FCF / GAAP net income",
+            "quarters": len(rows), "source": "filed OCF less capex; aggregate latest eight quarters"}
+    if len(rows) < 4 or any(number(r.free_cash_flow) is None or number(getattr(r, key)) is None for r in rows):
+        return None, {**meta, "reason": "At least four consecutive quarters of earnings and FCF required"}
+    if any(not 75 <= (a.period_end_date - b.period_end_date).days <= 100 for a, b in zip(rows, rows[1:])):
+        return None, {**meta, "reason": "Cash-flow history has missing quarters"}
+    income = sum(getattr(r, key) for r in rows) * (1 - NORMALIZED_TAX_RATE if operating else 1)
+    fcf = sum(r.free_cash_flow for r in rows)
+    value = fcf / income if income > 0 else None
+    meta.update(start=rows[-1].period_end_date.isoformat(), end=rows[0].period_end_date.isoformat(),
+                income=income, free_cash_flow=fcf, observed_conversion=value)
+    if value is None or not 0 < value <= 3:
+        return None, {**meta, "reason": "Unstable earnings-to-cash bridge; requires an explicit reinvestment model"}
+    return value, meta
+
+
+def _gaap_peer_baseline(rows: list[Financial]) -> dict | None:
+    """A forecast P/E needs a reported GAAP bridge, not only a guessed net factor.
+
+    Require a complete profitable trailing year. Individual loss quarters are retained;
+    an unprofitable trailing year is a transition case, not an earnings-multiple anchor.
+    """
+    recent = sorted(rows, key=lambda r: r.period_end_date, reverse=True)[:4]
+    if len(recent) < 4 or any(
+        number(r.net_income) is None or number(r.operating_income) is None
+        or number(r.revenue) is None or r.revenue <= 0
+        or number(r.shares_outstanding) is None or r.shares_outstanding <= 0
+        for r in recent
+    ):
         return None
-    pes: list[float] = []
-    for i in range(3, len(fins)):
-        ttm_eps = sum(e for _, e in fins[i - 3:i + 1])
-        if ttm_eps <= 0:
+    if any(not 75 <= (a.period_end_date - b.period_end_date).days <= 100
+           for a, b in zip(recent, recent[1:])):
+        return None
+    ni, oi = sum(r.net_income for r in recent), sum(r.operating_income for r in recent)
+    if ni <= 0 or oi <= 0:
+        return None
+    return {"quarters": 4, "net_income": ni, "operating_income": oi,
+            "net_factor": ni / oi, "start": _add_months(recent[-1].period_end_date, -3).isoformat(),
+            "end": recent[0].period_end_date.isoformat(),
+            "source": "reported GAAP income and diluted shares; complete latest four quarters"}
+
+
+def _stock_comp_ratio(rows: list[Financial]) -> float:
+    rows = rows[:8]
+    if len(rows) < 4 or any(number(r.stock_based_comp) is None or number(r.revenue) is None
+                            or r.revenue <= 0 or r.stock_based_comp < 0 for r in rows):
+        raise ValueError("At least four quarters of stock-compensation and revenue data are required to model dilution and repurchase funding.")
+    return sum(r.stock_based_comp for r in rows) / sum(r.revenue for r in rows)
+
+
+async def _comparable_anchor(db, subject, at):
+    """Bulk reads, followed by economic eligibility, freshness, and matching GAAP EPS windows."""
+    if (subject.industry or "").strip().casefold() in {"software - application", "software - infrastructure"}:
+        return None, {"constituents": [], "minimum_peers": 2,
+            "excluded_industry": subject.industry,
+            "earnings_basis": "our GAAP forecast", "earnings_start": at.isoformat(),
+            "earnings_end": _add_months(at, 12).isoformat(),
+            "source": "provider industry classification is insufficient for a business-model match",
+            "reason": "DCF only: the provider software bucket does not establish comparable business models; "
+                      "narrower business-model coverage is required. Return and financial similarity alone are insufficient."}
+    weights = {r.peer: r.weight for r in (await db.execute(select(PeerWeight).where(PeerWeight.ticker == subject.ticker))).scalars()}
+    stocks = list((await db.execute(select(Stock).where(Stock.ticker.in_(list(weights))))).scalars()) if weights else []
+    # Other researched companies may be comparable even before the similarity job has run.
+    if not stocks:
+        stocks = list((await db.execute(select(Stock).where(Stock.sector == subject.sector))).scalars())
+    tickers = [s.ticker for s in stocks if s.ticker != subject.ticker]
+    def latest_query(model, date_col):
+        return select(model).where(model.ticker.in_(tickers), date_col <= at).distinct(model.ticker).order_by(model.ticker, date_col.desc())
+    forecasts = {r.ticker: r for r in (await db.execute(latest_query(Forecast, Forecast.as_of))).scalars()}
+    prices = {r.ticker: r for r in (await db.execute(latest_query(DailyPrice, DailyPrice.date))).scalars()}
+    vals = {r.ticker: r for r in (await db.execute(latest_query(Valuation, Valuation.date))).scalars()}
+    # Only forecast-covered peers can qualify. Load their actual history in one query so a
+    # numeric forecast cannot bypass a missing GAAP earnings baseline (e.g. a default NI/OI).
+    histories = {t: [] for t in forecasts}
+    financial_rows = (await db.execute(select(Financial).where(
+        Financial.ticker.in_(list(forecasts)), Financial.period_end_date <= at
+    ).order_by(Financial.ticker, Financial.period_end_date.desc()))).scalars()
+    for row in financial_rows:
+        if len(histories[row.ticker]) < 8:
+            histories[row.ticker].append(row)
+    fins = {t: rows[0] for t, rows in histories.items() if rows}
+    constituents = []
+    exclusions = {"missing_or_stale_inputs": 0, "economically_unrelated": 0,
+                  "invalid_earnings": 0, "unsupported_gaap_history": 0}
+    excluded_gaap_peers, excluded_funding_peers = [], []
+    for stock in stocks:
+        if stock.ticker == subject.ticker:
             continue
-        end = fins[i][0]
-        px = (
-            await db.execute(
-                select(DailyPrice.close)
-                .where(DailyPrice.ticker == ticker, DailyPrice.date <= end)
-                .order_by(DailyPrice.date.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-        if px:
-            pes.append(px / ttm_eps)
-    if len(pes) < 4:
+        f, px, val, fin = forecasts.get(stock.ticker), prices.get(stock.ticker), vals.get(stock.ticker), fins.get(stock.ticker)
+        if not f or not px or (at - px.date).days > 7 or forecast_issue(f, fin.period_end_date if fin else None, at):
+            exclusions["missing_or_stale_inputs"] += 1
+            continue
+        baseline = _gaap_peer_baseline(histories.get(stock.ticker, []))
+        if baseline is None:
+            exclusions["unsupported_gaap_history"] += 1
+            excluded_gaap_peers.append(stock.ticker)
+            continue
+        cap = val.market_cap if val and (at - val.date).days <= 30 else None
+        econ = forecast_economics(stock, f.projections.get("base") or {}, at, cap, fin.total_debt or 0 if fin else 0)
+        try:
+            conversion, conversion_meta = cash_conversion(histories[stock.ticker])
+            if conversion is None:
+                raise ValueError(conversion_meta["reason"])
+            funded, funding_adjustments = funded_share_path(
+                (f.projections.get("base") or {}).get("quarters") or [], fin.shares_outstanding,
+                conversion=conversion, reference_price=px.close,
+                stock_comp_ratio=_stock_comp_ratio(histories[stock.ticker]))
+        except (ValueError, KeyError, TypeError):
+            excluded_funding_peers.append(stock.ticker)
+            continue
+        eps = window_total(funded, at, _add_months(at, 12), "eps")
+        if econ is None or eps is None or eps <= 0 or not px.close or px.close <= 0:
+            exclusions["invalid_earnings"] += 1
+            continue
+        weight = comparable_weight(subject, econ, weights.get(stock.ticker, 0))
+        if weight <= 0:
+            exclusions["economically_unrelated"] += 1
+            continue
+        constituents.append({"ticker": stock.ticker, "pe": px.close / eps, "weight": weight,
+            "revenue_growth": econ.revenue_growth, "operating_margin": econ.operating_margin,
+            "market_cap": cap, "price": px.close, "price_date": px.date.isoformat(),
+            "forecast_as_of": f.as_of.isoformat(), "eps": eps, "gaap_history": baseline,
+            "funding_adjustments": funding_adjustments})
+    meta = {"constituents": constituents, "exclusions": exclusions, "minimum_peers": 2,
+        "excluded_gaap_peers": excluded_gaap_peers,
+        "excluded_funding_peers": excluded_funding_peers,
+        "gaap_history_requirement": "Complete latest four quarters of reported NI/OI/revenue/shares with positive aggregate NI and OI",
+        "earnings_basis": "our GAAP forecast", "earnings_start": at.isoformat(),
+        "earnings_end": _add_months(at, 12).isoformat(),
+        "source": "peer market price / same-period modeled GAAP EPS; economic-distance weighted median"}
+    if len(constituents) < 2:
+        return None, {**meta, "reason": "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only"}
+    for key in ("pe", "revenue_growth", "operating_margin"):
+        meta[key] = weighted_median([(c[key], c["weight"]) for c in constituents])
+    return meta["pe"], meta
+
+
+async def _through_cycle_pe(db, ticker, at):
+    # Market-cap / reported NI avoids historical price-versus-split-adjusted EPS mismatches.
+    vals = list((await db.execute(select(Valuation).where(Valuation.ticker == ticker, Valuation.date <= at,
+        Valuation.market_cap > 0).order_by(Valuation.date))).scalars())
+    fins = list((await db.execute(select(Financial).where(Financial.ticker == ticker,
+        Financial.filed_date.is_not(None)).order_by(Financial.period_end_date))).scalars())
+    samples = {}
+    for val in vals:
+        known = [f for f in fins if f.filed_date <= val.date and f.period_end_date <= val.date][-4:]
+        if len(known) < 4 or any(f.net_income is None for f in known):
+            continue
+        if any(not 75 <= (b.period_end_date - a.period_end_date).days <= 100 for a, b in zip(known, known[1:])):
+            continue
+        if (val.date - known[-1].period_end_date).days > 150:
+            continue
+        ni = sum(f.net_income for f in known)
+        if ni > 0:
+            samples[(val.date.year, (val.date.month - 1) // 3)] = (val.date, val.market_cap / ni)
+    observations = list(samples.values())
+    if len(observations) < 8 or (max(d for d, _ in observations) - min(d for d, _ in observations)).days < 700:
         return None
-    pes.sort()
-    return pes[len(pes) // 2]
+    return statistics.median(p for _, p in observations)
 
 
-async def _peer_forward_pe(db: AsyncSession, ticker: str) -> float | None:
-    """Median forward P/E across the ticker's peer set (own forward P/E as fallback)."""
-    peers = (
-        await db.execute(select(PeerWeight.peer).where(PeerWeight.ticker == ticker))
-    ).scalars().all()
-    pes: list[float] = []
-    for p in list(peers) + [ticker]:
-        v = (
-            await db.execute(
-                select(Valuation.forward_pe).where(Valuation.ticker == p)
-                .order_by(Valuation.date.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-        if v and 0 < v < 200:
-            pes.append(float(v))
-    if not pes:
-        return None
-    pes.sort()
-    return pes[len(pes) // 2]
-
-
-async def compute_price_target(db: AsyncSession, ticker: str,
-                               judge_report: dict | None) -> PriceTarget | None:
-    """Build + persist today's price target. None when the forecast (4.2) is missing —
-    no model, no target; we don't conjure numbers."""
-    ticker = ticker.upper()
-    forecast = (
-        await db.execute(
-            select(Forecast).where(Forecast.ticker == ticker)
-            .order_by(Forecast.as_of.desc()).limit(1)
-        )
-    ).scalar_one_or_none()
-    if forecast is None or not forecast.projections:
-        logger.info("[pt] %s: no forecast — no price target", ticker)
-        return None
-
+async def compute_price_target(db: AsyncSession, ticker: str, judge_report: dict | None,
+                               *, persist=True, as_of: date | None = None, horizon_months=12) -> PriceTarget:
+    if horizon_months not in (12, 18):
+        raise ValueError("Supported target horizons are 12 and 18 months")
+    if as_of is not None and as_of != date.today():
+        raise ValueError("This live calculator does not support historical dates; use stored dated artifacts for historical review")
+    at, ticker = as_of or date.today(), ticker.upper()
+    target_date = _add_months(at, horizon_months)
+    end = _add_months(target_date, 12)
     stock = await db.get(Stock, ticker)
-    archetype = stock.archetype if stock else None
-
-    async def latest_nonnull(col):
-        """Newest filed value for a balance-sheet column — individual rows can have gaps
-        (e.g. derived Q4s lack EPS-derived shares), so don't insist on the very last row."""
-        return (
-            await db.execute(
-                select(col).where(Financial.ticker == ticker, col.is_not(None))
-                .order_by(Financial.period_end_date.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-
-    val = (
-        await db.execute(
-            select(Valuation).where(Valuation.ticker == ticker)
-            .order_by(Valuation.date.desc()).limit(1)
-        )
-    ).scalar_one_or_none()
-    price_now = (
-        await db.execute(
-            select(DailyPrice.close).where(DailyPrice.ticker == ticker)
-            .order_by(DailyPrice.date.desc()).limit(1)
-        )
-    ).scalar_one_or_none()
-
-    shares = await latest_nonnull(Financial.shares_outstanding) or (
-        val.shares_outstanding if val else None)
-    if not shares:
-        logger.warning("[pt] %s: no share count — no price target", ticker)
-        return None
-    total_debt = await latest_nonnull(Financial.total_debt) or 0.0
-    cash = await latest_nonnull(Financial.cash_and_equivalents) or 0.0
-    net_debt = total_debt - cash
-    market_cap = (val.market_cap if val else None) or (price_now * shares if price_now else None)
-
-    wacc = await build_wacc(db, ticker, market_cap, total_debt)
-    fcf_conv, fcf_conv_source = await historical_fcf_conversion(db, ticker)
-    # Operating (non-GAAP) basis: after-tax operating income, bypassing GAAP NI's below-the-line
-    # noise (equity-stake revaluations). Two DCFs, two price targets, switchable in the UI.
-    fcf_conv_op, fcf_conv_op_source = await operating_fcf_conversion(db, ticker)
-    terminal_g = TERMINAL_G.get(archetype or "", DEFAULT_TERMINAL_G)
-    probs, probs_source = scenario_probabilities(judge_report)
-    w_dcf = W_DCF.get(archetype or "", DEFAULT_W_DCF)
-
-    # Multiple leg setup — basis decides the ruler (the MU lesson, mechanized).
-    ne = await compute_normalized_earnings(db, ticker, archetype=archetype)
-    use_normalized = ne is not None and ne.basis == "cyclical" and ne.normalized_net_income
-    if use_normalized:
-        pe = await _through_cycle_pe(db, ticker)
-        pe = max(PE_BOUNDS_CYCLICAL[0], min(PE_BOUNDS_CYCLICAL[1], pe)) if pe else 14.0
-        multiple_basis = f"normalized mid-cycle EPS × through-cycle P/E {pe:.1f}"
-        normalized_eps = ne.normalized_net_income / shares
-    else:
-        pe = await _peer_forward_pe(db, ticker)
-        pe = max(PE_BOUNDS_GROWTH[0], min(PE_BOUNDS_GROWTH[1], pe)) if pe else 18.0
-        multiple_basis = f"scenario NTM EPS × growth-tilted peer P/E (base {pe:.1f})"
-        normalized_eps = None
-
-    def _blend(dcf_v: float | None, mult_v: float | None) -> float | None:
-        if dcf_v is not None and mult_v is not None:
-            return w_dcf * dcf_v + (1 - w_dcf) * mult_v
-        return dcf_v if dcf_v is not None else mult_v
-
-    # Each scenario's forward EPS growth (NTM → following year) → the growth-tilt for its multiple.
-    def _fwd_growth(p: dict) -> float | None:
-        ntm, nxt = p.get("ntm_eps"), p.get("next_year_eps")
-        return max(-0.5, min(2.0, nxt / ntm - 1)) if (ntm and nxt and ntm > 0) else None
-
-    growths = {n: _fwd_growth((forecast.projections or {}).get(n) or {})
-               for n in ("base", "bull", "bear")}
-    growth_base = growths.get("base")
-
-    def _tilted_pe(name: str) -> float:
-        g = growths.get(name)
-        if g is None or growth_base is None:
-            return pe
-        tilt = max(MULT_TILT_BOUNDS[0], min(MULT_TILT_BOUNDS[1], 1 + GROWTH_PE_BETA * (g - growth_base)))
-        lo, hi = PE_BOUNDS_CYCLICAL if use_normalized else PE_BOUNDS_GROWTH
-        return max(lo, min(hi, pe * tilt))
-
-    scenarios: dict[str, dict] = {}
-    blended_gaap: dict[str, float] = {}      # GAAP net-income basis (current behavior)
-    blended_op: dict[str, float] = {}        # operating (non-GAAP) basis
-    coe_q = (1 + wacc.cost_of_equity) ** 0.25 - 1  # quarterly discount for the excess-cash credit
-    for name in ("base", "bull", "bear"):
-        proj = (forecast.projections or {}).get(name) or {}
-        quarters = proj.get("quarters") or []
-        q_ni = [q.get("net_income") for q in quarters]
-        if len(q_ni) < 8 or any(v is None for v in q_ni):
-            continue
-        # Operating NI = after-tax operating income (NOPAT) — drops the noisy net_factor. Available
-        # only when every projected quarter carries operating_income.
-        q_oi = [q.get("operating_income") for q in quarters]
-        q_ni_op = ([oi * (1 - NORMALIZED_TAX_RATE) for oi in q_oi]
-                   if len(q_oi) >= 8 and not any(v is None for v in q_oi) else None)
-
-        d_gaap = run_dcf(q_ni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
-        d_op = (run_dcf(q_ni_op, fcf_conv_op, wacc.wacc, terminal_g, net_debt, shares)
-                if q_ni_op else None)
-
-        excess_ps = None
-        if use_normalized:
-            # Through-cycle value = mid-cycle EPS × through-cycle P/E PLUS the PV of ALL the cash
-            # the SCENARIO earns above mid-cycle run-rate before full reversion (8 modeled quarters +
-            # DCF fade years 3-5). For cyclicals the normalized leg is already clean, so both modes
-            # share this multiple — only the DCF leg differs.
-            norm_q_ni = ne.normalized_net_income / 4.0
-            excess = sum((ni - norm_q_ni) / (1 + coe_q) ** (i + 1) for i, ni in enumerate(q_ni))
-            norm_annual = ne.normalized_net_income
-            for yr_idx, ni_y in enumerate(d_gaap.ni_years[2:], start=3):  # fade years 3-5
-                excess += (ni_y - norm_annual) / (1 + wacc.cost_of_equity) ** yr_idx
-            excess_ps = excess / shares
-            mult_gaap = normalized_eps * pe + excess_ps
-            mult_op = mult_gaap
-            mult_pe = pe   # cyclicals: through-cycle P/E, not growth-tilted (a stable multiple is the point)
+    f = (await db.execute(select(Forecast).where(Forecast.ticker == ticker, Forecast.as_of <= at)
+                         .order_by(Forecast.as_of.desc()).limit(1))).scalar_one_or_none()
+    px = (await db.execute(select(DailyPrice).where(DailyPrice.ticker == ticker, DailyPrice.date <= at)
+                          .order_by(DailyPrice.date.desc()).limit(1))).scalar_one_or_none()
+    val = (await db.execute(select(Valuation).where(Valuation.ticker == ticker, Valuation.date <= at)
+                           .order_by(Valuation.date.desc()).limit(1))).scalar_one_or_none()
+    fins = list((await db.execute(select(Financial).where(Financial.ticker == ticker, Financial.period_end_date <= at)
+                                 .order_by(Financial.period_end_date.desc()).limit(24))).scalars())
+    probs, prob_source = scenario_probabilities(judge_report)
+    method = {"version": MODEL_VERSION, "status": "unavailable", "issues": [], "warnings": [],
+        "target_date": target_date.isoformat(), "earnings_start": target_date.isoformat(), "earnings_end": end.isoformat(),
+        "earnings_basis": "GAAP", "price_date": px.date.isoformat() if px else None,
+        "street_as_of": val.date.isoformat() if val else None,
+        "financial_end": fins[0].period_end_date.isoformat() if fins else None,
+        "period_note": "Modeled quarter ends and partial-quarter accrual are approximate; earnings windows are calendar aligned.",
+        "fair_value_basis": "probability-weighted present equity DCF", "target_basis": "future equity DCF and forward earnings at the target date",
+        "operating_basis": "Operating cash-conversion sensitivity, fixed 21% normalization tax; not company-reconciled non-GAAP EPS",
+        "policy_source": "Declared model priors; not empirically calibrated. A low price alone does not validate a buy thesis."}
+    values = dict(archetype=stock.archetype if stock else None, horizon_months=horizon_months,
+        fair_value=None, price_target=None, price_at=px.close if px else None, upside=None,
+        probabilities={**probs, "source": prob_source}, scenarios={}, modes={}, method=method,
+        wacc={}, sensitivity={}, forecast_as_of=f.as_of if f else None,
+        street_target_mean=val.target_mean_price if val else None)
+    try:
+        if not stock or not f:
+            raise ValueError("No company forecast available; run analysis to generate scenarios.")
+        if stock.archetype not in {"financial", "cyclical-commodity", "deep-value-turnaround", "platform", "secular-grower", "mature-compounder"}:
+            raise ValueError("Business-model classification is missing; classify the company before selecting a valuation method.")
+        issue = forecast_issue(f, fins[0].period_end_date if fins else None, at)
+        if issue:
+            raise ValueError(issue)
+        if not px or not px.close or px.close <= 0 or (at - px.date).days > 7:
+            raise ValueError("A market price from the last seven days is required.")
+        shares = next((r.shares_outstanding for r in fins if r.shares_outstanding and r.shares_outstanding > 0), None)
+        shares = shares or (val.shares_outstanding if val else None)
+        if not shares or not fins:
+            raise ValueError("Missing filed share count or financial history.")
+        debt = next((r.total_debt for r in fins if r.total_debt is not None), 0)
+        cap = px.close * shares
+        conv, conv_meta = cash_conversion(fins)
+        opconv, op_meta = cash_conversion(fins, operating=True)
+        method.update(fcf_conversion=conv, cash_conversion=conv_meta, operating_cash_conversion=op_meta)
+        if conv is None:
+            raise ValueError(conv_meta["reason"])
+        compensation_rows = fins[:8]
+        sbc_ratio = _stock_comp_ratio(compensation_rows)
+        method["share_funding"] = {"stock_comp_ratio": sbc_ratio, "reference_price": px.close,
+            "source": "aggregate filed stock compensation / revenue, latest eight quarters",
+            "start": compensation_rows[-1].period_end_date.isoformat(), "end": compensation_rows[0].period_end_date.isoformat(),
+            "assumption": "Repurchases are capped at modeled quarterly FCF, with unmet share retirements carried as additional dilution in EPS and DCF. Funding uses a constant reference price; no cash reserves or financing proceeds are assumed.",
+            "adjustments_by_scenario": {}}
+        e = forecast_economics(stock, f.projections.get("base") or {}, at, cap, debt)
+        if e is None:
+            raise ValueError("Forecast must cover the next 24 months with complete revenue and earnings data.")
+        policy = select_policy(e)
+        method.update(policy=policy.to_dict(), terminal_growth=policy.terminal_growth,
+                      w_dcf=policy.dcf_weight, growth=e.revenue_growth, operating_margin=e.operating_margin)
+        ne = await compute_normalized_earnings(db, ticker, archetype=stock.archetype)
+        cyclical = stock.archetype == "cyclical-commodity"
+        normalized_income = ne.normalized_net_income if cyclical and ne else None
+        if cyclical and (not normalized_income or normalized_income <= 0):
+            raise ValueError("Cyclical valuation requires positive normalized earning power.")
+        if cyclical:
+            pe = await _through_cycle_pe(db, ticker, at)
+            anchor = {"pe": pe, "source": "own market-cap / filed TTM NI, quarter-sampled over at least two years"}
+            method["earnings_basis"] = "normalized mid-cycle"
+            method["normalized_net_income"] = normalized_income
+            method["multiple_basis"] = "normalized mid-cycle EPS × own through-cycle P/E"
         else:
-            mult_pe = _tilted_pe(name)   # growth-re-rated P/E for this scenario
-            ntm_eps = proj.get("ntm_eps")
-            mult_gaap = (ntm_eps * mult_pe) if ntm_eps else None
-            # Clean NTM EPS from operating NI — the operating-basis multiple leg.
-            ntm_eps_op = (sum(q_ni_op[:4]) / shares) if q_ni_op else None
-            mult_op = (ntm_eps_op * mult_pe) if ntm_eps_op else None
-
-        b_gaap = _blend(d_gaap.fair_value_per_share, mult_gaap)
-        if b_gaap is None:
-            continue
-        blended_gaap[name] = b_gaap
-        scen = {"dcf": d_gaap.to_dict(),
-                "multiple_value": round(mult_gaap, 2) if mult_gaap else None,
-                "multiple_pe": round(mult_pe, 1),
-                "fwd_growth": round(growths.get(name), 4) if growths.get(name) is not None else None,
-                "excess_earnings_ps": round(excess_ps, 2) if excess_ps is not None else None,
-                "blended": round(b_gaap, 2)}
-        if d_op is not None:
-            b_op = _blend(d_op.fair_value_per_share, mult_op)
-            if b_op is not None:
-                blended_op[name] = b_op
-                scen["dcf_operating"] = d_op.to_dict()
-                scen["multiple_value_operating"] = round(mult_op, 2) if mult_op else None
-                scen["blended_operating"] = round(b_op, 2)
-        scenarios[name] = scen
-
-    if "base" not in blended_gaap:
-        logger.warning("[pt] %s: base scenario incomputable — no price target", ticker)
-        return None
-
-    def _weighted(bv: dict[str, float]) -> float:
-        return sum(probs[s] * bv.get(s, bv["base"]) for s in ("bull", "base", "bear"))
-
-    fair_value_now = _weighted(blended_gaap)              # scalar = GAAP (backward compat)
-    pt_12m = fair_value_now * (1 + wacc.cost_of_equity)
-    modes = {"gaap": {"fair_value": round(fair_value_now, 2), "price_target": round(pt_12m, 2),
-                      "upside": round(pt_12m / price_now - 1, 4) if price_now else None}}
-    if "base" in blended_op:
-        fv_op = _weighted(blended_op)
-        pt_op = fv_op * (1 + wacc.cost_of_equity)
-        modes["operating"] = {"fair_value": round(fv_op, 2), "price_target": round(pt_op, 2),
-                              "upside": round(pt_op / price_now - 1, 4) if price_now else None}
-
-    # Street-method cross-check for cyclicals (user request, 2026-06-12): what OUR earnings are
-    # worth under the STREET's method (NTM EPS × the market's current forward multiple, no
-    # reversion assumed). Not blended into the PT — a triangulation anchor, so the reversion-
-    # anchored number is never read in isolation. Redundant for stable names (their multiple leg
-    # already IS forward-P/E-based).
-    forward_check: dict | None = None
-    if use_normalized:
-        base_ntm_eps = (forecast.projections.get("base") or {}).get("ntm_eps")
-        fwd_pe = (val.forward_pe if val and val.forward_pe and 0 < val.forward_pe < 200 else None) \
-            or await _peer_forward_pe(db, ticker)
-        if base_ntm_eps and fwd_pe:
-            fwd_pe = max(6.0, min(25.0, float(fwd_pe)))  # peak-cycle forward multiples compress
-            forward_check = {
-                "value": round(base_ntm_eps * fwd_pe, 2),
-                "ntm_eps": base_ntm_eps,
-                "fwd_pe": round(fwd_pe, 1),
-                "note": "our NTM EPS × market fwd P/E — the street's method applied to OUR earnings (no reversion)",
-            }
-
-    base_qni = [q["net_income"] for q in forecast.projections["base"]["quarters"]]
-    grid = sensitivity_grid(base_qni, fcf_conv, wacc.wacc, terminal_g, net_debt, shares)
-
-    today = date.today()
-    row = (
-        await db.execute(
-            select(PriceTarget).where(PriceTarget.ticker == ticker, PriceTarget.as_of == today)
-        )
-    ).scalar_one_or_none()
-    values = dict(
-        archetype=archetype,
-        horizon_months=HORIZON_MONTHS,
-        fair_value=round(fair_value_now, 2),
-        price_target=round(pt_12m, 2),
-        price_at=float(price_now) if price_now else None,
-        upside=round(pt_12m / price_now - 1, 4) if price_now else None,
-        probabilities={**probs, "source": probs_source},
-        scenarios=scenarios,
-        modes=modes,
-        method={"w_dcf": w_dcf, "multiple_basis": multiple_basis,
-                "fcf_conversion": round(fcf_conv, 3), "fcf_conversion_source": fcf_conv_source,
-                "fcf_conversion_operating": round(fcf_conv_op, 3),
-                "operating_tax_rate": NORMALIZED_TAX_RATE,
-                "operating_basis": "after-tax operating income (NOPAT) — strips below-the-line "
-                                   "non-operating items (e.g. equity-stake revaluations)",
-                "terminal_growth": terminal_g, "earnings_basis": ne.basis if ne else "unknown",
-                "forward_multiple_check": forward_check},
-        wacc=wacc.to_dict(),
-        sensitivity=grid,
-        forecast_as_of=forecast.as_of,
-        street_target_mean=val.target_mean_price if val else None,
-    )
-    if row:
-        for k, v in values.items():
-            setattr(row, k, v)
+            pe, anchor = await _comparable_anchor(db, e, at)
+            method["multiple_basis"] = "GAAP EPS for 12 months after target date × economically matched peer P/E"
+        method["comparable_anchor"] = anchor
+        if pe is None:
+            method["warnings"].append(anchor.get("reason", "Insufficient through-cycle multiple history; DCF only"))
+        if val and (at - val.date).days > 30:
+            method["warnings"].append("Street target snapshot is more than 30 days old; compare its date before drawing conclusions.")
+        discount = await build_wacc(db, ticker, cap, debt)
+        values["wacc"] = {**discount.to_dict(), "applied_discount_rate": "cost_of_equity"}
+        scenarios, funded_projections, funding_notes = {}, {}, []
+        for name in ("base", "bull", "bear"):
+            proj = f.projections.get(name) or {}
+            qs, funding_adjustments = funded_share_path(proj.get("quarters") or [], shares,
+                conversion=conv, reference_price=px.close, stock_comp_ratio=sbc_ratio)
+            funded_projections[name] = qs
+            method["share_funding"]["adjustments_by_scenario"][name] = funding_adjustments
+            if funding_adjustments:
+                extra = qs[-1]["shares"] / proj["quarters"][-1]["shares"] - 1
+                funding_notes.append(f"{name} +{extra:.1%}")
+            eps = window_total(qs, target_date, end, "eps")
+            economics = forecast_economics(stock, proj, at, cap, debt)
+            if eps is None or economics is None:
+                raise ValueError(f"{name} forecast does not cover the target-date earnings window through {end}.")
+            sp = select_policy(economics)
+            dcf = equity_dcf(qs, conv, discount.cost_of_equity, sp, at, target_date, shares,
+                             normalized_income=normalized_income, reference_price=px.close, stock_comp_ratio=sbc_ratio)
+            mult_pe, factor = None, None
+            if pe is not None and eps > 0 and sp.dcf_weight < 1:
+                mult_pe, factor = (pe, 1.) if cyclical else adjusted_multiple(pe, economics, anchor["revenue_growth"], anchor["operating_margin"])
+            mult_eps = normalized_income * (1 + sp.terminal_growth) ** (horizon_months / 12) / dcf["target_shares"] if cyclical else eps
+            multiple = mult_eps * mult_pe if mult_pe is not None else None
+            weight = sp.dcf_weight if multiple is not None else 1.
+            blended = weight * dcf["price_at_horizon"] + (1 - weight) * multiple if multiple is not None else dcf["price_at_horizon"]
+            op = None
+            if opconv is not None:
+                try:
+                    op = equity_dcf(qs, opconv, discount.cost_of_equity, sp, at, target_date, shares,
+                                    operating=True, normalized_income=normalized_income,
+                                    reference_price=px.close, stock_comp_ratio=sbc_ratio)
+                except ValueError as exc:
+                    method["warnings"].append(f"{name.capitalize()} operating sensitivity unavailable: {exc}")
+            scenarios[name] = {"dcf": dcf, "dcf_operating": op,
+                "multiple_value": round(multiple, 2) if multiple is not None else None, "multiple_pe": mult_pe,
+                "multiple_adjustment": factor, "eps_at_horizon": eps, "multiple_eps": mult_eps,
+                "w_dcf": weight, "blended": round(blended, 2),
+                "blended_operating": op["price_at_horizon"] if op else None,
+                "revenue_growth": economics.revenue_growth, "operating_margin": economics.operating_margin,
+                "policy": sp.to_dict(), "forecast_adjustments": proj.get("adjustments", []),
+                "funding_adjustments": funding_adjustments, "funded_quarters": qs}
+        if funding_notes:
+            method["warnings"].append("Cash-limited buybacks increase ending shares versus the requested path ("
+                + ", ".join(funding_notes) + "). EPS and both valuation legs include this additional dilution.")
+        def weighted(key, mode=None):
+            return sum(probs[n] * (s[mode][key] if mode else s[key]) for n, s in scenarios.items())
+        fv, pt = weighted("fair_value_per_share", "dcf"), weighted("blended")
+        modes = {"gaap": {"fair_value": round(fv, 2), "price_target": round(pt, 2), "upside": round(pt / px.close - 1, 4)}}
+        if all(s["dcf_operating"] for s in scenarios.values()):
+            opfv, oppt = weighted("fair_value_per_share", "dcf_operating"), weighted("price_at_horizon", "dcf_operating")
+            modes["operating"] = {"fair_value": round(opfv, 2), "price_target": round(oppt, 2), "upside": round(oppt / px.close - 1, 4)}
+        method["status"] = "ready"
+        method["w_dcf"] = scenarios["base"]["w_dcf"]
+        base_dcf = scenarios["base"]["dcf"]["price_at_horizon"]
+        base_multiple = scenarios["base"]["multiple_value"]
+        if base_multiple is not None and base_dcf > 0 and abs(base_multiple / base_dcf - 1) > .35:
+            method["warnings"].append(f"The base methods disagree materially: DCF ${base_dcf:.0f}, comparable earnings ${base_multiple:.0f}. Review growth duration, cash conversion and the peer multiple before relying on the blended target.")
+        if scenarios["bear"]["blended"] > scenarios["base"]["blended"] or scenarios["bull"]["blended"] < scenarios["base"]["blended"]:
+            method["warnings"].append("Scenario prices cross: review the growth, cash conversion, and dilution assumptions before relying on the range.")
+        rates = [discount.cost_of_equity + d for d in (-.01, 0, .01)]
+        growths = [policy.terminal_growth + d for d in (-.005, 0, .005)]
+        grid = [[equity_dcf(funded_projections["base"], conv, r, replace(policy, terminal_growth=g),
+                at, target_date, shares, normalized_income=normalized_income, reference_price=px.close, stock_comp_ratio=sbc_ratio)["fair_value_per_share"]
+                if r > g else None for g in growths] for r in rates]
+        values.update(fair_value=round(fv, 2), price_target=round(pt, 2), upside=round(pt / px.close - 1, 4),
+                      scenarios=scenarios, modes=modes, sensitivity={"discount_basis": "cost_of_equity", "rates": rates, "terminal_growths": growths, "grid": grid})
+    except (ValueError, KeyError, TypeError, OverflowError) as exc:
+        method["status"] = "unavailable"
+        method["issues"].append(str(exc))
+        logger.info("[pt] %s unavailable: %s", ticker, exc)
+    row = None
+    if persist:
+        row = (await db.execute(select(PriceTarget).where(PriceTarget.ticker == ticker, PriceTarget.as_of == at))).scalar_one_or_none()
+    if row is None:
+        row = PriceTarget(ticker=ticker, as_of=at, **values)
+        if persist:
+            db.add(row)
     else:
-        row = PriceTarget(ticker=ticker, as_of=today, **values)
-        db.add(row)
-    await db.commit()
-    logger.info("[pt] %s: PT(12m) $%.2f (fv $%.2f, P=%s, w_dcf=%.2f, %s) vs price %s",
-                ticker, pt_12m, fair_value_now, probs, w_dcf, multiple_basis,
-                f"${price_now:.2f}" if price_now else "n/a")
+        for key, value in values.items():
+            setattr(row, key, value)
+    if persist:
+        await db.commit()
     return row

@@ -68,7 +68,7 @@ export default function DecisionPanel({ decision }: Props) {
             fontWeight: 600,
           }}
         >
-          Decision
+          Decision · {decision.date}
         </div>
       </div>
       <p
@@ -84,7 +84,7 @@ export default function DecisionPanel({ decision }: Props) {
       >
         {decision.reasoning}
       </p>
-      {decision.price_target && <PriceTargetBlock pt={decision.price_target} />}
+      {decision.price_target && <PriceTargetBlock pt={decision.price_target} signal={decision.final_signal} />}
       {decision.position_sizing && <SizingBlock sizing={decision.position_sizing} />}
     </Card>
   );
@@ -107,6 +107,7 @@ function ScenarioLegsTable({
   const dcfOf = (s: string) => (op ? scenarios[s]?.dcf_operating : scenarios[s]?.dcf);
   const multOf = (s: string) => (op ? scenarios[s]?.multiple_operating : scenarios[s]?.multiple);
   const blendOf = (s: string) => (op ? scenarios[s]?.blended_operating : scenarios[s]?.blended);
+  const hasMultiple = !op && cols.some((s) => multOf(s) != null);
   const fmt = (v: number | null | undefined) => (v != null ? `$${v.toFixed(0)}` : '—');
   const cell: React.CSSProperties = {
     padding: '2px 10px 2px 0',
@@ -131,20 +132,22 @@ function ScenarioLegsTable({
         </tr>
       </thead>
       <tbody>
+        {hasMultiple && <>
         <tr>
-          <td style={label}>DCF</td>
+          <td style={label}>DCF at target date</td>
           {cols.map((s) => (
             <td key={s} style={cell}>{fmt(dcfOf(s))}</td>
           ))}
         </tr>
         <tr>
-          <td style={label}>Multiple</td>
+          <td style={label}>Forward-earnings value</td>
           {cols.map((s) => (
             <td key={s} style={cell}>{fmt(multOf(s))}</td>
           ))}
         </tr>
+        </>}
         <tr>
-          <td style={{ ...label, color: 'var(--color-ink-2)' }}>Blended</td>
+          <td style={{ ...label, color: 'var(--color-ink-2)' }}>Scenario target</td>
           {cols.map((s) => (
             <td key={s} style={{ ...cell, fontWeight: 600, color: 'var(--color-ink)' }}>
               {fmt(blendOf(s))}
@@ -157,7 +160,7 @@ function ScenarioLegsTable({
 }
 
 function BasisToggle({ basis, onChange }: { basis: PtBasis; onChange: (b: PtBasis) => void }) {
-  const opts: [PtBasis, string][] = [['gaap', 'GAAP'], ['operating', 'Non-GAAP']];
+  const opts: [PtBasis, string][] = [['gaap', 'GAAP'], ['operating', 'Operating DCF sensitivity']];
   return (
     <div style={{ display: 'inline-flex', marginTop: 6, border: '1px solid var(--color-rule)', borderRadius: 6, overflow: 'hidden', width: 'fit-content' }}>
       {opts.map(([key, lbl]) => {
@@ -167,7 +170,7 @@ function BasisToggle({ basis, onChange }: { basis: PtBasis; onChange: (b: PtBasi
             key={key}
             onClick={() => onChange(key)}
             title={key === 'operating'
-              ? 'Value the core business on after-tax operating income (NOPAT), excluding below-the-line items'
+              ? 'Sensitivity using an operating earnings-to-cash bridge; not company-reported non-GAAP EPS'
               : 'Value on reported GAAP net income'}
             style={{
               fontSize: 10, fontWeight: 500, padding: '3px 9px', border: 'none', cursor: 'pointer',
@@ -183,10 +186,17 @@ function BasisToggle({ basis, onChange }: { basis: PtBasis; onChange: (b: PtBasi
   );
 }
 
-function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> }) {
+function PriceTargetBlock({ pt, signal }: { pt: NonNullable<Decision['price_target']>; signal: string }) {
   const hasOperating = pt.modes?.operating?.price_target != null;
-  const [basis, setBasis] = useState<PtBasis>('gaap');
-  if (pt.price_target == null) return null;
+  const [selectedBasis, setBasis] = useState<PtBasis>('gaap');
+  const basis = hasOperating ? selectedBasis : 'gaap';
+  if (pt.price_target == null || pt.method?.status !== 'ready') return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-rule-soft)', fontSize: 12, lineHeight: 1.6 }}>
+      <strong>{pt.method?.status === 'refresh_required' ? 'Valuation needs a refresh' : 'Valuation unavailable'}</strong>
+      <p style={{ margin: '4px 0', color: 'var(--color-ink-2)' }}>{pt.method?.issues?.join(' ') || 'Run analysis to build dated scenarios with the current model.'}</p>
+      <span style={{ color: 'var(--color-ink-3)' }}>Last calculation {pt.as_of} · forecast {pt.forecast_as_of || 'unavailable'}</span>
+    </div>
+  );
   const p = pt.probabilities || {};
   const probTxt = ['bull', 'base', 'bear']
     .map((k) => `${k} ${typeof p[k] === 'number' ? ((p[k] as number) * 100).toFixed(0) : '—'}%`)
@@ -217,7 +227,7 @@ function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> })
             color: 'var(--color-ink-3)',
           }}
         >
-          Price target · {pt.horizon_months}mo
+          {basis === 'operating' ? 'DCF target' : 'Target'} · {pt.method.target_date || `${pt.horizon_months}mo`}
         </span>
         <span
           style={{
@@ -238,10 +248,16 @@ function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> })
           {shownUpside != null && (
             <>
               {shownUpside >= 0 ? '+' : ''}
-              {(shownUpside * 100).toFixed(1)}% vs price
+              {(shownUpside * 100).toFixed(1)}% vs reference price
             </>
           )}
-          {pt.street_target_mean != null && <>{' · street $'}{pt.street_target_mean.toFixed(0)}</>}
+          {pt.street_target_mean != null && <>{' · street $'}{pt.street_target_mean.toFixed(0)} ({pt.method.street_as_of})</>}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
+          Reference ${pt.price_at?.toFixed(2) ?? '—'} · {pt.method.price_date}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--color-ink-3)' }}>
+          Present DCF ${(m?.fair_value ?? pt.fair_value)?.toFixed(0) ?? '—'} · {pt.as_of}
         </span>
         {hasOperating && <BasisToggle basis={basis} onChange={setBasis} />}
       </div>
@@ -256,35 +272,52 @@ function PriceTargetBlock({ pt }: { pt: NonNullable<Decision['price_target']> })
             textWrap: 'pretty' as const,
           }}
         >
-          P({probTxt}) · {pt.method?.w_dcf != null ? `${(pt.method.w_dcf * 100).toFixed(0)}% DCF / ${(100 - pt.method.w_dcf * 100).toFixed(0)}% multiples` : ''}
-          {pt.method?.multiple_basis ? ` · ${pt.method.multiple_basis}` : ''}
-          {typeof pt.wacc?.wacc === 'number' ? ` · WACC ${((pt.wacc.wacc as number) * 100).toFixed(1)}%` : ''}
+          P({probTxt}) · {pt.probabilities.source === 'judge' ? 'Judge weights' : 'Provisional weights'} · {basis === 'operating' ? 'DCF sensitivity' : pt.method?.w_dcf != null ? `Base method: ${(pt.method.w_dcf * 100).toFixed(0)}% DCF / ${(100 - pt.method.w_dcf * 100).toFixed(0)}% multiples` : ''}
+          {basis === 'gaap' && pt.method.w_dcf !== 1 && pt.method?.multiple_basis ? ` · ${pt.method.multiple_basis}` : ''}
+          {typeof pt.wacc?.cost_of_equity === 'number' ? ` · Cost of equity ${(pt.wacc.cost_of_equity * 100).toFixed(1)}%` : ''}
           {typeof pt.wacc?.beta === 'number' ? ` (β ${(pt.wacc.beta as number).toFixed(2)})` : ''}
         </p>
         {pt.scenarios && <ScenarioLegsTable scenarios={pt.scenarios} probabilities={pt.probabilities} basis={basis} />}
         {hasOperating && (
           <p style={{ fontSize: 10.5, color: 'var(--color-ink-3)', margin: '6px 0 0', fontStyle: 'italic' }}>
             {basis === 'operating'
-              ? 'Operating basis: after-tax operating income (NOPAT) — strips below-the-line items like equity-stake revaluations.'
-              : 'GAAP basis: reported net income. Toggle to Operating to value the core business ex-non-operating items.'}
+              ? 'Operating DCF only, without the comparable-earnings blend. Uses a historical operating earnings-to-cash bridge and a 21% normalization tax; not company-reported non-GAAP EPS.'
+              : 'GAAP earnings basis. Scenario targets value the cash flows and earnings remaining at the future target date.'}
           </p>
         )}
-        {pt.method?.forward_multiple_check && (
-          <p
-            style={{
-              fontSize: 12,
-              lineHeight: 1.6,
-              color: 'var(--color-warn-fg, var(--color-ink-2))',
-              margin: '6px 0 0',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            street-method check: ${pt.method.forward_multiple_check.value.toFixed(0)}
-            {' '}(our NTM ${pt.method.forward_multiple_check.ntm_eps.toFixed(2)} × fwd P/E{' '}
-            {pt.method.forward_multiple_check.fwd_pe.toFixed(1)}, no reversion) — the PT assumes
-            mean reversion; this line shows our earnings on the street&apos;s method
+        <p style={{ fontSize: 11, color: 'var(--color-ink-3)', margin: '8px 0' }}>
+          Forecast {pt.forecast_as_of}
+          {basis === 'gaap' && Object.values(pt.scenarios || {}).some((s) => s.multiple != null) && <> · Multiple earnings window {pt.method.earnings_start} to {pt.method.earnings_end}</>}
+        </p>
+        {shownUpside != null && shownUpside < -.2 && ['BUY', 'STRONG_BUY'].includes(signal) && (
+          <p style={{ fontSize: 12, color: 'var(--color-warn-fg)', margin: '8px 0' }}>
+            Valuation and the buy thesis disagree. Review the growth, margin and multiple assumptions before adding capital; a lower price alone would not confirm the thesis.
           </p>
         )}
+        {(pt.method.warnings || []).map((warning) => <p key={warning} style={{ fontSize: 11, color: 'var(--color-ink-2)' }}>{warning}</p>)}
+        <details style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--color-ink-2)', marginTop: 8 }}>
+          <summary style={{ cursor: 'pointer' }}>Why this model and these assumptions</summary>
+          <p>{pt.method.policy?.rationale}. {pt.method.policy?.source}.</p>
+          <p>Scenario economics below compare revenue in the second forecast year with the first; margins cover that second year.</p>
+          {SCENARIO_ORDER.map((name) => {
+            const scenario = pt.scenarios?.[name];
+            if (!scenario) return null;
+            return <p key={name}>
+              <strong style={{ textTransform: 'capitalize' }}>{name}</strong>
+              {scenario.revenue_growth != null && <> · revenue growth {(scenario.revenue_growth * 100).toFixed(1)}%</>}
+              {scenario.operating_margin != null && <> · operating margin {(scenario.operating_margin * 100).toFixed(1)}%</>}
+              {basis === 'gaap' && scenario.w_dcf != null && <> · DCF weight {(scenario.w_dcf * 100).toFixed(0)}%</>}
+            </p>;
+          })}
+          <p>{pt.method.comparable_anchor?.source}. {pt.method.comparable_anchor?.reason}</p>
+          {Boolean(pt.method.comparable_anchor?.constituents?.length) && <p>Peers: {pt.method.comparable_anchor?.constituents?.map((c) => `${c.ticker} ${c.pe.toFixed(1)}× (weight ${c.weight.toFixed(2)})`).join(' · ')}</p>}
+          <p>Cash conversion: {pt.method.cash_conversion?.observed_conversion?.toFixed(2) ?? '—'}× · {pt.method.cash_conversion?.source} · {pt.method.cash_conversion?.start} to {pt.method.cash_conversion?.end}.</p>
+          {pt.method.share_funding && <p>
+            Stock compensation: {(pt.method.share_funding.stock_comp_ratio * 100).toFixed(1)}% of revenue · {pt.method.share_funding.source} · {pt.method.share_funding.start} to {pt.method.share_funding.end}.
+            {' '}Buybacks needed to reach the modeled share count reduce distributable cash flow, priced at a constant ${pt.method.share_funding.reference_price.toFixed(2)} per share. {pt.method.share_funding.assumption}
+          </p>}
+          <p>{pt.method.period_note} Growth-duration and multiple adjustments are declared assumptions, not calibrated forecasts. The DCF assumes zero net borrowing and uses historical cash conversion; financing and repurchase funding need review.</p>
+        </details>
       </div>
     </div>
   );

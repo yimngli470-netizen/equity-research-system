@@ -179,23 +179,49 @@ export interface ResearchNote {
 }
 
 export interface PriceTargetInfo {
+  as_of: string;
+  forecast_as_of: string | null;
+  price_at: number | null;
   fair_value: number | null;
   price_target: number | null;
   horizon_months: number;
   upside: number | null;
   probabilities: Record<string, number | string>;
   // Per-scenario legs: the DCF value vs the multiple value (the spread = the expectations gap).
-  // Operating (non-GAAP) variants present when an operating DCF was computed.
+  // Operating cash-conversion variants present when an operating DCF was computed.
   scenarios?: Record<string, {
-    dcf: number | null; multiple: number | null; blended: number | null;
+    dcf: number | null; dcf_today?: number | null; multiple: number | null; blended: number | null;
+    eps_at_horizon?: number | null; multiple_pe?: number | null; w_dcf?: number;
+    revenue_growth?: number; operating_margin?: number;
     dcf_operating?: number | null; multiple_operating?: number | null; blended_operating?: number | null;
   }>;
-  // Dual-basis price targets — GAAP vs operating (non-GAAP, NOPAT). Toggle in the UI.
+  // Dual-basis price targets — GAAP vs operating cash-conversion sensitivity. Toggle in the UI.
   modes?: Record<string, { fair_value: number | null; price_target: number | null; upside: number | null }> | null;
   method: {
-    w_dcf: number;
-    multiple_basis: string;
-    terminal_growth: number;
+    version?: string;
+    status?: 'ready' | 'unavailable' | 'refresh_required';
+    issues?: string[];
+    warnings?: string[];
+    target_date?: string;
+    earnings_start?: string;
+    earnings_end?: string;
+    price_date?: string;
+    street_as_of?: string;
+    policy?: { maturity_year: number; rationale: string; source: string };
+    comparable_anchor?: { source: string; reason?: string; constituents?: { ticker: string; pe: number; weight: number; forecast_as_of: string }[] };
+    cash_conversion?: { observed_conversion?: number; source?: string; start?: string; end?: string };
+    share_funding?: {
+      stock_comp_ratio: number;
+      reference_price: number;
+      source: string;
+      start: string;
+      end: string;
+      assumption: string;
+    };
+    period_note?: string;
+    w_dcf?: number;
+    multiple_basis?: string;
+    terminal_growth?: number;
     earnings_basis: string;
     // Cyclicals only: our NTM EPS × market fwd P/E — the street's method on OUR earnings.
     forward_multiple_check?: { value: number; ntm_eps: number; fwd_pe: number; note: string } | null;

@@ -1,4 +1,8 @@
-"""Deterministic DCF (roadmap 4.3) — an artifact, not a gesture.
+"""Legacy June 2026 DCF, retained for inspection of historical artifacts only.
+
+The live calculator uses equity.py and target.py. This earlier implementation mixes an
+after-financing cash proxy with WACC and must not be used for new valuations; see the
+September 2026 valuation audit and repair documentation.
 
 Consumes the forecast model's quarterly net-income path (4.2), converts to FCF via the company's
 own HISTORICAL FCF/NI conversion (measured, not assumed), extends years 3-5 by fading growth toward

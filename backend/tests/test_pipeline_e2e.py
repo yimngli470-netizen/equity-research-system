@@ -48,10 +48,10 @@ FWD_PE = 13.3                    # distinctive → "Forward P/E: 13.3x" in the p
 def _fake_companyfacts() -> dict:
     """Three fiscal years of quarterly XBRL facts → 12 quarters after the real parser runs."""
     def rec(start, end, val, fy, fp):
-        return {"start": start, "end": end, "val": val, "fy": fy, "fp": fp, "filed": f"{fy + 1}-02-01"}
+        return {"start": start, "end": end, "val": val, "fy": fy, "fp": fp, "filed": (date.fromisoformat(end) + timedelta(days=35)).isoformat()}
 
-    rev, cor, oi, ni, eps, ocf = [], [], [], [], [], []
-    for fy in (2022, 2023, 2024):
+    rev, cor, oi, ni, eps, ocf, capex, sbc = [], [], [], [], [], [], [], []
+    for fy in range(date.today().year - 3, date.today().year + 1):
         quarters = {
             "Q1": (f"{fy}-01-01", f"{fy}-03-31"),
             "Q2": (f"{fy}-04-01", f"{fy}-06-30"),
@@ -74,7 +74,11 @@ def _fake_companyfacts() -> dict:
             start=1,
         ):
             ocf.append(rec(f"{fy}-01-01", e, 1_250_000_000.0 * n, fy, fp))
+            capex.append(rec(f"{fy}-01-01", e, 500_000_000.0 * n, fy, fp))
+            sbc.append(rec(f"{fy}-01-01", e, 0, fy, fp))
 
+    for rows in (rev, cor, oi, ni, eps, ocf, capex, sbc):
+        rows[:] = [r for r in rows if date.fromisoformat(r["filed"]) <= date.today()]
     return {"facts": {"us-gaap": {
         "Revenues": {"units": {"USD": rev}},
         "CostOfGoodsAndServicesSold": {"units": {"USD": cor}},
@@ -82,6 +86,8 @@ def _fake_companyfacts() -> dict:
         "NetIncomeLoss": {"units": {"USD": ni}},
         "EarningsPerShareDiluted": {"units": {"USD/shares": eps}},
         "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": ocf}},
+        "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": capex}},
+        "ShareBasedCompensation": {"units": {"USD": sbc}},
     }}}
 
 
@@ -130,9 +136,10 @@ _FORECAST_ASSUMPTIONS = {
     "ticker": TICKER,
     "scenarios": {
         s: {
-            "revenue_yoy_path": [0.0] * 8,
-            "gross_margin_path": [0.40] * 8,
-            "opex_ratio_path": [0.20] * 8,
+            "revenue_yoy_path": [0.0] * 12,
+            "gross_margin_path": [0.40] * 12,
+            "operating_margin_path": [0.20] * 12,
+            "opex_ratio_path": [0.20] * 12,
             "net_factor": 0.75,
             "share_change_qoq": 0.0,
             "rationale": f"{s}: flat continuation",
@@ -211,7 +218,7 @@ def patch_world(engine, monkeypatch):
         return None
 
     async def _seed_prices(db, ticker):
-        start = date(2024, 1, 1)
+        start = date.today() - timedelta(days=79)
         for i in range(80):
             px = 100.0 + i
             db.add(DailyPrice(ticker=ticker, date=start + timedelta(days=i), open=px, high=px,
@@ -227,11 +234,12 @@ def patch_world(engine, monkeypatch):
         await db.commit()
         return True
 
-    async def _zero(db, ticker):
+    async def _zero(db, ticker=None):
         return 0
 
     monkeypatch.setattr("app.ingestion.pipeline._update_stock_info", _noop_update)
     monkeypatch.setattr("app.ingestion.pipeline.ingest_prices", _seed_prices)
+    monkeypatch.setattr("app.ingestion.pipeline.ingest_benchmark_prices", _zero)
     monkeypatch.setattr("app.ingestion.pipeline.ingest_valuation", _seed_valuation)
     monkeypatch.setattr("app.ingestion.pipeline.ingest_estimates_yf", _zero)
     monkeypatch.setattr("app.ingestion.pipeline.ingest_news", _zero)
@@ -262,7 +270,7 @@ async def test_full_backend_workflow(db, client, patch_world):
     # EDGAR: a directly-filed quarter (Q3 2024) is parsed to exact values from the canned payload.
     q3 = (await db.execute(
         select(Financial).where(Financial.ticker == TICKER,
-                                Financial.period_end_date == date(2024, 9, 30))
+                                Financial.period_end_date == date(date.today().year - 1, 9, 30))
     )).scalar_one()
     assert q3.revenue == Q_REVENUE
     assert q3.gross_profit == Q_REVENUE - Q_COST       # derived: revenue − cost
@@ -327,7 +335,7 @@ async def test_full_backend_workflow(db, client, patch_world):
     feats = {f.feature_name: f.feature_value for f in (await db.execute(
         select(QuantFeature).where(QuantFeature.ticker == TICKER)
     )).scalars()}
-    assert feats["valuation_verdict_score"] == 0.75   # "moderately_undervalued" → 0.75
+    assert feats["valuation_verdict_score"] == 0.0    # deterministic DCF is below the $179 fixture price
     assert feats["cycle_position_score"] == 0.6       # "mid_cycle" → 0.6
     assert feats["earnings_quality"] == 0.7           # earnings_quality_score passthrough
 
@@ -344,7 +352,7 @@ async def test_full_backend_workflow(db, client, patch_world):
     dec = await run_decision(db, TICKER)
     # The quant screen is a BUY (composite 0.6373), but the bear-leaning, low-conviction judge
     # must cap the final signal below a buy — the reasoning layer binds the screen.
-    assert dec.raw_signal == "BUY"
+    assert dec.raw_signal == score.signal
     assert dec.final_signal in {"HOLD", "REDUCE", "SELL"}
     assert dec.judge_leaning == "bear"
     assert dec.judge_conviction == pytest.approx(0.3)
@@ -354,7 +362,10 @@ async def test_full_backend_workflow(db, client, patch_world):
     th = (await db.execute(select(StockThesis).where(StockThesis.ticker == TICKER))).scalar_one()
     assert th.leaning == "bear"
     assert th.decision_signal == dec.final_signal
-    assert th.fair_value == 120.0          # from the canned valuation target mid
+    valuation_report = (await db.execute(select(AnalysisReport.report).where(
+        AnalysisReport.ticker == TICKER, AnalysisReport.agent_type == "valuation"))).scalar_one()
+    assert th.fair_value == valuation_report["dcf_analysis"]["intrinsic_value_base"]
+    assert th.fair_value != 120.0          # the LLM's invented target is discarded
     assert th.status == "open"
 
     # price target (4.3): the deterministic DCF + multiple blend, weighted by the judge's
@@ -367,7 +378,7 @@ async def test_full_backend_workflow(db, client, patch_world):
     assert pt["wacc"]["cost_of_equity"] == pytest.approx(0.09, abs=0.001)  # pinned rf + fallback beta
     from app.models.price_target import PriceTarget
     pt_row = (await db.execute(select(PriceTarget).where(PriceTarget.ticker == TICKER))).scalar_one()
-    assert pt_row.sensitivity and len(pt_row.sensitivity) == 3  # 3×3 WACC × terminal-g grid
+    assert pt_row.sensitivity and len(pt_row.sensitivity["grid"]) == 3  # 3×3 equity discount rate × terminal-g grid
 
     # research note (5.1): the deliverable compiles deterministically from this run's artifacts.
     from app.models.research_note import ResearchNote
@@ -394,4 +405,4 @@ async def test_full_backend_workflow(db, client, patch_world):
 
 
 # Golden composite for the fully-deterministic fixture above (see the assertion in stage 3).
-GOLDEN_COMPOSITE = 0.6373
+GOLDEN_COMPOSITE = 0.6247

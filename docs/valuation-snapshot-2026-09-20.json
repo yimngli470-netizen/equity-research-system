@@ -1,0 +1,605 @@
+[
+  {
+    "ticker": "AVGO",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 357.6099853515625,
+    "price_date": "2026-09-18",
+    "street": 531.8468,
+    "target": 236.06,
+    "fair_value": 183.84,
+    "scenarios": {
+      "base": {
+        "target": 239.51,
+        "dcf_today": 173.26,
+        "dcf_future": 182.6,
+        "multiple": 277.46,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 371.79,
+        "dcf_today": 312.93,
+        "dcf_future": 344.21,
+        "multiple": 390.17,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 93.42,
+        "dcf_today": 75.91,
+        "dcf_future": 73.78,
+        "multiple": 129.88,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "The base methods disagree materially: DCF $183, comparable earnings $277. Review growth duration, cash conversion and the peer multiple before relying on the blended target."
+    ]
+  },
+  {
+    "ticker": "FIG",
+    "as_of": "2026-09-20",
+    "forecast_as_of": null,
+    "version": "economics-2026-09-20.3",
+    "status": "unavailable",
+    "price": 22.690000534057617,
+    "price_date": "2026-09-18",
+    "street": 30.8,
+    "target": null,
+    "fair_value": null,
+    "scenarios": {},
+    "issues": [
+      "No company forecast available; run analysis to generate scenarios."
+    ],
+    "warnings": []
+  },
+  {
+    "ticker": "GLW",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 150.1300048828125,
+    "price_date": "2026-09-18",
+    "street": 192.4375,
+    "target": 34.51,
+    "fair_value": 34.06,
+    "scenarios": {
+      "base": {
+        "target": 35.53,
+        "dcf_today": 35.27,
+        "dcf_future": 35.53,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 48.0,
+        "dcf_today": 46.16,
+        "dcf_future": 48.0,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 18.97,
+        "dcf_today": 19.55,
+        "dcf_future": 18.97,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only"
+    ]
+  },
+  {
+    "ticker": "GOOGL",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 349.5400085449219,
+    "price_date": "2026-09-18",
+    "street": 428.15927,
+    "target": 179.41,
+    "fair_value": 163.62,
+    "scenarios": {
+      "base": {
+        "target": 184.35,
+        "dcf_today": 167.93,
+        "dcf_future": 184.35,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 247.58,
+        "dcf_today": 224.81,
+        "dcf_future": 247.58,
+        "multiple": null,
+        "funding_adjusted_quarters": 12
+      },
+      "bear": {
+        "target": 101.38,
+        "dcf_today": 93.83,
+        "dcf_future": 101.38,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only",
+      "Cash-limited buybacks increase ending shares versus the requested path (bull +1.0%). EPS and both valuation legs include this additional dilution."
+    ]
+  },
+  {
+    "ticker": "INTU",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 303.19000244140625,
+    "price_date": "2026-09-18",
+    "street": 405.6,
+    "target": 361.78,
+    "fair_value": 349.41,
+    "scenarios": {
+      "base": {
+        "target": 368.77,
+        "dcf_today": 355.75,
+        "dcf_future": 368.77,
+        "multiple": null,
+        "funding_adjusted_quarters": 5
+      },
+      "bull": {
+        "target": 462.87,
+        "dcf_today": 442.31,
+        "dcf_future": 462.87,
+        "multiple": null,
+        "funding_adjusted_quarters": 5
+      },
+      "bear": {
+        "target": 246.72,
+        "dcf_today": 243.82,
+        "dcf_future": 246.72,
+        "multiple": null,
+        "funding_adjusted_quarters": 3
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "DCF only: the provider software bucket does not establish comparable business models; narrower business-model coverage is required. Return and financial similarity alone are insufficient.",
+      "Bull operating sensitivity unavailable: Repurchases through 2026-10-31 cannot be funded by projected quarterly FCF alone; cash reserves and borrowing are not modeled",
+      "Cash-limited buybacks increase ending shares versus the requested path (base +1.0%, bull +1.8%, bear +0.6%). EPS and both valuation legs include this additional dilution."
+    ]
+  },
+  {
+    "ticker": "ISRG",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 393.3299865722656,
+    "price_date": "2026-09-18",
+    "street": 476.34482,
+    "target": 160.53,
+    "fair_value": 152.49,
+    "scenarios": {
+      "base": {
+        "target": 163.4,
+        "dcf_today": 155.15,
+        "dcf_future": 163.4,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 214.38,
+        "dcf_today": 200.13,
+        "dcf_future": 214.38,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 100.94,
+        "dcf_today": 99.52,
+        "dcf_future": 100.94,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only"
+    ]
+  },
+  {
+    "ticker": "META",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 665.75,
+    "price_date": "2026-09-18",
+    "street": 755.2807,
+    "target": 393.15,
+    "fair_value": 356.74,
+    "scenarios": {
+      "base": {
+        "target": 397.05,
+        "dcf_today": 359.81,
+        "dcf_future": 397.05,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 575.36,
+        "dcf_today": 519.62,
+        "dcf_future": 575.36,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 203.15,
+        "dcf_today": 187.71,
+        "dcf_future": 203.15,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only"
+    ]
+  },
+  {
+    "ticker": "MRVL",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 244.25,
+    "price_date": "2026-09-18",
+    "street": 289.0411,
+    "target": 65.96,
+    "fair_value": 55.3,
+    "scenarios": {
+      "base": {
+        "target": 67.66,
+        "dcf_today": 54.02,
+        "dcf_future": 58.81,
+        "multiple": 73.57,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 116.33,
+        "dcf_today": 104.56,
+        "dcf_future": 119.51,
+        "multiple": 114.21,
+        "funding_adjusted_quarters": 1
+      },
+      "bear": {
+        "target": 12.2,
+        "dcf_today": 8.58,
+        "dcf_future": 7.81,
+        "multiple": 20.35,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Cash-limited buybacks increase ending shares versus the requested path (bull +0.1%). EPS and both valuation legs include this additional dilution."
+    ]
+  },
+  {
+    "ticker": "MSFT",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 493.7799987792969,
+    "price_date": "2026-09-18",
+    "street": 572.91516,
+    "target": 255.38,
+    "fair_value": 240.18,
+    "scenarios": {
+      "base": {
+        "target": 254.77,
+        "dcf_today": 239.71,
+        "dcf_future": 254.77,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 325.19,
+        "dcf_today": 303.81,
+        "dcf_future": 325.19,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 186.78,
+        "dcf_today": 177.5,
+        "dcf_future": 186.78,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "DCF only: the provider software bucket does not establish comparable business models; narrower business-model coverage is required. Return and financial similarity alone are insufficient."
+    ]
+  },
+  {
+    "ticker": "MU",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 1015.7999877929688,
+    "price_date": "2026-09-18",
+    "street": 1513.1111,
+    "target": 130.87,
+    "fair_value": 169.34,
+    "scenarios": {
+      "base": {
+        "target": 114.77,
+        "dcf_today": 161.08,
+        "dcf_future": 114.77,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 217.46,
+        "dcf_today": 249.26,
+        "dcf_future": 217.46,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 76.46,
+        "dcf_today": 105.96,
+        "dcf_future": 76.46,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Insufficient through-cycle multiple history; DCF only"
+    ]
+  },
+  {
+    "ticker": "NOW",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 135.47000122070312,
+    "price_date": "2026-09-18",
+    "street": 144.27522,
+    "target": 59.65,
+    "fair_value": 58.51,
+    "scenarios": {
+      "base": {
+        "target": 60.68,
+        "dcf_today": 59.4,
+        "dcf_future": 60.68,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 78.59,
+        "dcf_today": 75.41,
+        "dcf_future": 78.59,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 38.65,
+        "dcf_today": 39.84,
+        "dcf_future": 38.65,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "DCF only: the provider software bucket does not establish comparable business models; narrower business-model coverage is required. Return and financial similarity alone are insufficient."
+    ]
+  },
+  {
+    "ticker": "NVDA",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 222.27000427246094,
+    "price_date": "2026-09-18",
+    "street": 327.7,
+    "target": 348.51,
+    "fair_value": 194.98,
+    "scenarios": {
+      "base": {
+        "target": 366.9,
+        "dcf_today": 186.04,
+        "dcf_future": 203.21,
+        "multiple": 476.03,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 556.55,
+        "dcf_today": 348.21,
+        "dcf_future": 386.52,
+        "multiple": 669.9,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 103.69,
+        "dcf_today": 59.63,
+        "dcf_future": 60.95,
+        "multiple": 183.07,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "The base methods disagree materially: DCF $203, comparable earnings $476. Review growth duration, cash conversion and the peer multiple before relying on the blended target."
+    ]
+  },
+  {
+    "ticker": "SPCX",
+    "as_of": "2026-09-20",
+    "forecast_as_of": null,
+    "version": "economics-2026-09-20.3",
+    "status": "unavailable",
+    "price": 152.7100067138672,
+    "price_date": "2026-09-18",
+    "street": 222.42105,
+    "target": null,
+    "fair_value": null,
+    "scenarios": {},
+    "issues": [
+      "No company forecast available; run analysis to generate scenarios."
+    ],
+    "warnings": []
+  },
+  {
+    "ticker": "TSLA",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 364.2699890136719,
+    "price_date": "2026-09-18",
+    "street": 396.93738,
+    "target": 39.41,
+    "fair_value": 36.35,
+    "scenarios": {
+      "base": {
+        "target": 34.2,
+        "dcf_today": 31.85,
+        "dcf_future": 34.2,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 81.73,
+        "dcf_today": 74.42,
+        "dcf_future": 81.73,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 7.52,
+        "dcf_today": 7.29,
+        "dcf_future": 7.52,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only"
+    ]
+  },
+  {
+    "ticker": "TTD",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "unavailable",
+    "price": 13.920000076293945,
+    "price_date": "2026-09-18",
+    "street": 13.6,
+    "target": null,
+    "fair_value": null,
+    "scenarios": {},
+    "issues": [
+      "Operating funding gap through 2027-03-30: projected FCF is negative; cash reserves and financing are not modeled"
+    ],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only",
+      "Base operating sensitivity unavailable: Repurchases through 2026-09-30 cannot be funded by projected quarterly FCF alone; cash reserves and borrowing are not modeled"
+    ]
+  },
+  {
+    "ticker": "UBER",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 70.5,
+    "price_date": "2026-09-18",
+    "street": 101.2413,
+    "target": 67.57,
+    "fair_value": 62.39,
+    "scenarios": {
+      "base": {
+        "target": 64.59,
+        "dcf_today": 59.69,
+        "dcf_future": 64.59,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 120.6,
+        "dcf_today": 110.74,
+        "dcf_future": 120.6,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 20.51,
+        "dcf_today": 19.46,
+        "dcf_future": 20.51,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "DCF only: the provider software bucket does not establish comparable business models; narrower business-model coverage is required. Return and financial similarity alone are insufficient."
+    ]
+  },
+  {
+    "ticker": "VRT",
+    "as_of": "2026-09-20",
+    "forecast_as_of": "2026-09-20",
+    "version": "economics-2026-09-20.3",
+    "status": "ready",
+    "price": 249.38999938964844,
+    "price_date": "2026-09-18",
+    "street": 338.15384,
+    "target": 103.97,
+    "fair_value": 101.09,
+    "scenarios": {
+      "base": {
+        "target": 105.59,
+        "dcf_today": 103.1,
+        "dcf_future": 105.59,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bull": {
+        "target": 162.98,
+        "dcf_today": 153.14,
+        "dcf_future": 162.98,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      },
+      "bear": {
+        "target": 41.73,
+        "dcf_today": 45.02,
+        "dcf_future": 41.73,
+        "multiple": null,
+        "funding_adjusted_quarters": 0
+      }
+    },
+    "issues": [],
+    "warnings": [
+      "Fewer than two fresh, economically eligible GAAP forecast peers; DCF only"
+    ]
+  }
+]

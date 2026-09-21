@@ -324,21 +324,14 @@ async def run_decision(
     # judge's probabilities. Best-effort; None when no forecast exists (we don't conjure numbers).
     price_target: dict | None = None
     try:
-        from app.valuation_model.target import compute_price_target, scenario_summary
+        from app.valuation_model.target import compute_price_target
+        from app.valuation_model.presentation import price_target_payload
         pt_row = await compute_price_target(db, ticker, judge_report)
         if pt_row is not None:
-            price_target = {
-                "fair_value": pt_row.fair_value,
-                "price_target": pt_row.price_target,
-                "horizon_months": pt_row.horizon_months,
-                "upside": pt_row.upside,
-                "probabilities": pt_row.probabilities,
-                "scenarios": scenario_summary(pt_row.scenarios),
-                "modes": pt_row.modes,   # GAAP vs operating (non-GAAP) dual basis
-                "method": pt_row.method,
-                "wacc": pt_row.wacc,
-                "street_target_mean": pt_row.street_target_mean,
-            }
+            price_target = price_target_payload(pt_row)
+            if pt_row.price_target is not None and pt_row.upside is not None and pt_row.upside < -.20 and final_signal in ("BUY", "STRONG_BUY"):
+                adjustments.append("Valuation conflicts with the buy thesis: the scenario-weighted target is more than 20% below the reference price. Review assumptions and thesis validity before adding capital.")
+
     except Exception:
         logger.exception("[decision] price target failed for %s", ticker)
 
@@ -435,6 +428,15 @@ async def run_decision(
         await snapshot_thesis(db, ticker, decision_signal=final_signal)
     except Exception:
         logger.exception("[thesis] snapshot failed for %s", ticker)
+
+    # Offer this run's judge kill_criteria as CANDIDATES on the standing kill-signal list. Pure
+    # DB work (no LLM) and idempotent on (ticker, signal) — nothing becomes active without the
+    # user accepting it in the UI. Best-effort: never break the decision.
+    try:
+        from app.kill_signals import sync_judge_candidates
+        await sync_judge_candidates(db, ticker)
+    except Exception:
+        logger.exception("[kill] judge candidate sync failed for %s", ticker)
 
     # Grade any PAST thesis whose predictions have now come due (3.2). Cheap no-op when nothing is
     # due; an LLM grading pass only fires when a kill-criterion's by_date has passed.

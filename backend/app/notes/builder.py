@@ -103,16 +103,26 @@ async def _gather(db: AsyncSession, ticker: str) -> dict:
     }
 
 
+def _current_valuation(g: dict) -> dict:
+    """One freshness decision for every valuation section in a newly compiled note."""
+    if "current_pt" not in g:
+        from app.valuation_model.presentation import price_target_payload
+        ends = [r.period_end_date for r in g.get("financials", [])]
+        g["current_pt"] = price_target_payload(g["pt"], latest_financial_end=max(ends) if ends else None) if g["pt"] else {}
+    return g["current_pt"]
+
+
 def _summary_payload(g: dict) -> dict:
     """The compact, diffable fingerprint of the current view."""
     d, pt, fc, judge = g["decision"], g["pt"], g["forecast"], g["judge"] or {}
     sizing = (d.position_sizing if d else None) or {}
     val_summary = ((g["validation"] or {}).get("summary")) or {}
+    current_pt = _current_valuation(g)
     return {
         "rating": d.final_signal if d else None,
         "confidence": d.confidence if d else None,
-        "price_target": pt.price_target if pt else None,
-        "upside": pt.upside if pt else None,
+        "price_target": current_pt.get("price_target"),
+        "upside": current_pt.get("upside"),
         "judge_leaning": judge.get("leaning"),
         "judge_conviction": judge.get("conviction"),
         "ntm_eps": fc.base_ntm_eps if fc else None,
@@ -203,7 +213,7 @@ def _render(ticker: str, g: dict, summary: dict, changes: list[str], prior_date:
         L.append(f"| NTM EPS | {_f(fc.base_ntm_eps)} | | |")
         L.append(f"| NTM revenue | {_b(fc.base_ntm_revenue)} | | |")
         if pt:
-            L.append(f"| 12-mo target | {_f(pt.price_target, ',.0f', '$')} "
+            L.append(f"| {pt.horizon_months}-mo target | {_f(summary['price_target'], ',.0f', '$')} "
                      f"| {_f(pt.street_target_mean, ',.0f', '$')} | |")
         bases = (fc.assumptions or {}).get("assumption_bases") or []
         if bases:
@@ -215,17 +225,27 @@ def _render(ticker: str, g: dict, summary: dict, changes: list[str], prior_date:
 
     # Valuation decomposition
     if pt:
-        from app.valuation_model.target import scenario_summary
-        legs = scenario_summary(pt.scenarios)
+        current_pt = _current_valuation(g)
+        m = current_pt["method"]
+        valid = m.get("status") == "ready"
+        legs = current_pt["scenarios"]
         L.append("\n## Valuation")
         L.append("| | bear | base | bull |")
         L.append("|---|---|---|---|")
-        for row_label, key in (("DCF", "dcf"), ("Multiple", "multiple"), ("Blended", "blended")):
+        for row_label, key in (("DCF at target date", "dcf"), ("Forward earnings", "multiple"), ("Scenario target", "blended")):
             L.append(f"| {row_label} | " + " | ".join(
                 _f((legs.get(s) or {}).get(key), ",.0f", "$") for s in ("bear", "base", "bull")) + " |")
         w = pt.wacc or {}
-        m = pt.method or {}
-        L.append(f"\nWACC {_f(w.get('wacc'), '.1%')} (rf {_f(w.get('risk_free'), '.2%')}, "
+        L.append(f"\nCalculated {pt.as_of}; forecast {pt.forecast_as_of}; target date {m.get('target_date', 'unknown')}. "
+                 f"Multiple earnings window: {m.get('earnings_start', 'unknown')} to {m.get('earnings_end', 'unknown')}. "
+                 f"Reference price {_f(pt.price_at, ',.2f', '$')} on {m.get('price_date', 'unknown')}.")
+        if not valid:
+            L.append("\n**Valuation unavailable / refresh required.** " + " ".join(m.get("issues") or []))
+        if m.get("policy"):
+            L.append("\n" + m["policy"].get("rationale", ""))
+        for warning in m.get("warnings") or []:
+            L.append("\n" + warning)
+        L.append(f"\nCost of equity {_f(w.get('cost_of_equity'), '.1%')} (rf {_f(w.get('risk_free'), '.2%')}, "
                  f"β {_f(w.get('beta'), '.2f')} {w.get('beta_source', '')}) · "
                  f"{_f(m.get('w_dcf'), '.0%')} DCF / {_f(1 - m['w_dcf'], '.0%') if isinstance(m.get('w_dcf'), (int, float)) else '—'} multiples · "
                  f"{m.get('multiple_basis', '')}")

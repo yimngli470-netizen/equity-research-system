@@ -270,7 +270,21 @@ async def get_analysis_reports(
     query = query.order_by(AnalysisReport.run_date.desc()).limit(10)
 
     result = await db.execute(query)
-    return result.scalars().all()
+    rows = result.scalars().all()
+    responses = [AnalysisReportResponse.model_validate(row) for row in rows]
+    if any(row.agent_type == "valuation" for row in rows):
+        from app.valuation_model.presentation import valuation_report_payload
+        from app.models.price_target import PriceTarget
+        current_target = (await db.execute(select(PriceTarget)
+            .where(PriceTarget.ticker == ticker.upper()).order_by(PriceTarget.as_of.desc()).limit(1))).scalar_one_or_none()
+        latest_end = (await db.execute(select(Financial.period_end_date)
+            .where(Financial.ticker == ticker.upper(), Financial.period_end_date <= date.today())
+            .order_by(Financial.period_end_date.desc()).limit(1))).scalar_one_or_none()
+        for response in responses:
+            if response.agent_type == "valuation":
+                response.report = valuation_report_payload(response.report, price_target=current_target,
+                    report_date=response.run_date, latest_financial_end=latest_end)
+    return responses
 
 
 @router.get("/{ticker}/freshness")

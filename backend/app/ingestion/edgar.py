@@ -5,8 +5,8 @@ This is the planned source-of-truth for the `financials` table (ANALYST_ROADMAP.
 history with real fiscal-period labels, and every number traces to an SEC filing (the
 verifiability spine the long-term analyst needs).
 
-This module currently EXTRACTS + RECONCILES only — it does not yet write to the DB. The
-replace-vs-alongside decision (roadmap open decision #1) is made after we see MU reconcile.
+This module extracts and reconciles filed facts, then upserts the authoritative financials
+with source provenance. Stale non-EDGAR duplicates are removed by the ingestion entry point.
 
 Real-world XBRL gotchas handled here:
   * Tag evolution — revenue is filed as SalesRevenueNet (pre-2018) then
@@ -21,6 +21,7 @@ Real-world XBRL gotchas handled here:
 
 import asyncio
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -51,6 +52,9 @@ CONCEPT_TAGS: dict[str, list[str]] = {
     "gross_profit": ["GrossProfit"],  # else derived: revenue - cost_of_revenue
     "operating_income": ["OperatingIncomeLoss"],
     "net_income": ["NetIncomeLoss"],
+    # ProfitLoss includes minority earnings: it is NOT an unconditional synonym.
+    "consolidated_profit": ["ProfitLoss"],
+    "minority_net_income": ["NetIncomeLossAttributableToNoncontrollingInterest"],
     "eps": ["EarningsPerShareDiluted"],
     "operating_cash_flow": [
         "NetCashProvidedByUsedInOperatingActivities",
@@ -59,6 +63,7 @@ CONCEPT_TAGS: dict[str, list[str]] = {
     "capex": [
         "PaymentsToAcquirePropertyPlantAndEquipment",
         "PaymentsToAcquireProductiveAssets",
+        "PaymentsForCapitalImprovements",
     ],
     # balance sheet (instant)
     "total_assets": ["Assets"],
@@ -73,7 +78,8 @@ CONCEPT_TAGS: dict[str, list[str]] = {
     "debt_lt_total": ["LongTermDebt"],  # fallback when the nc/current split isn't filed
     "debt_st_borrowings": ["ShortTermBorrowings", "CommercialPaper"],
     # share counts (roadmap 4.1 — dilution awareness for the forecast model)
-    "shares_outstanding_instant": ["CommonStockSharesOutstanding", "CommonStockSharesIssued"],
+    # Issued shares include treasury stock and must never stand in for outstanding shares.
+    "shares_outstanding_instant": ["CommonStockSharesOutstanding"],
     "shares_diluted_wavg": ["WeightedAverageNumberOfDilutedSharesOutstanding"],
     # capital-return / dilution flows (cumulative YTD, like cash flow)
     "stock_based_comp": ["ShareBasedCompensation"],
@@ -273,6 +279,10 @@ def _flow_quarterly(
     recomputed later from Q4 net income / diluted shares.
     """
     recs = _concept_facts(facts, concept, unit)
+    return _quarterly_from_records(recs, derive_q4=derive_q4)
+
+
+def _quarterly_from_records(recs: list[dict], *, derive_q4: bool = True) -> dict:
     q = _three_month_map(recs)
     if not derive_q4:
         return q
@@ -290,6 +300,46 @@ def _flow_quarterly(
     return q
 
 
+def _reconciled_net_income_records(facts: dict) -> list[dict]:
+    """Preserve parent NI; fill gaps only with independently reconciled ProfitLoss.
+
+    A missing minority-interest tag is not evidence of zero. Accept either an explicit
+    same-filing, same-duration minority deduction, or agreement with diluted EPS times
+    diluted weighted shares within half a cent of EPS. Matching accession AND duration
+    also prevents mixing annual/quarterly contexts or pre/post-split share bases.
+    """
+    direct = _concept_facts(facts, "net_income", "USD")
+    direct_periods = {(r.get("start"), r.get("end")) for r in direct}
+
+    def index(concept: str, unit: str) -> dict:
+        return {(r.get("start"), r.get("end"), r.get("accn")): r
+                for r in _concept_facts(facts, concept, unit) if r.get("accn")}
+
+    eps = index("eps", "USD/shares")
+    shares = index("shares_diluted_wavg", "shares")
+    minority = index("minority_net_income", "USD")
+    result = list(direct)
+    for r in _concept_facts(facts, "consolidated_profit", "USD"):
+        if (r.get("start"), r.get("end")) in direct_periods or not r.get("accn"):
+            continue
+        key = (r.get("start"), r.get("end"), r["accn"])
+        profit = r.get("val")
+        if not isinstance(profit, (int, float)) or not math.isfinite(profit):
+            continue
+        nci = minority.get(key)
+        if nci is not None and math.isfinite(nci["val"]):
+            result.append({**r, "val": profit - nci["val"], "_derived": True,
+                           "_basis": "ProfitLoss minus explicit minority net income"})
+            continue
+        ep, sh = eps.get(key), shares.get(key)
+        if ep is None or sh is None or not math.isfinite(ep["val"]) or not math.isfinite(sh["val"]) or sh["val"] <= 0:
+            continue
+        if abs(profit / sh["val"] - ep["val"]) <= .005000001:
+            result.append({**r, "_derived": True,
+                           "_basis": "ProfitLoss reconciled to diluted EPS within $0.005"})
+    return result
+
+
 # ── assembly ─────────────────────────────────────────────────────────────────
 
 def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter]:
@@ -303,7 +353,7 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
     cor = _flow_quarterly(facts, "cost_of_revenue")
     gp = _flow_quarterly(facts, "gross_profit")
     oi = _flow_quarterly(facts, "operating_income")
-    ni = _flow_quarterly(facts, "net_income")
+    ni = _quarterly_from_records(_reconciled_net_income_records(facts))
     eps = _flow_quarterly(facts, "eps", unit="USD/shares", derive_q4=False)
     ocf = _ytd_standalone(_concept_facts(facts, "operating_cash_flow", "USD"))
     capex = _ytd_standalone(_concept_facts(facts, "capex", "USD"))
@@ -316,6 +366,8 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
     debt_lt_total = _instant_map(facts, "debt_lt_total")
     debt_st = _instant_map(facts, "debt_st_borrowings")
     shares_inst = _instant_map(facts, "shares_outstanding_instant", unit="shares")
+    # Annual diluted share means cannot recover Q4, even with day weights: option
+    # dilution and anti-dilutive exclusions are determined separately for each period.
     shares_wavg = _flow_quarterly(facts, "shares_diluted_wavg", unit="shares", derive_q4=False)
     sbc = _ytd_standalone(_concept_facts(facts, "stock_based_comp", "USD"))
     buybacks = _ytd_standalone(_concept_facts(facts, "buybacks", "USD"))
@@ -373,14 +425,18 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
             eq.total_debt = lt_tot + st
             eq.derived.append("total_debt")
 
-        # shares_outstanding (4.1): instant count at the balance-sheet date when filed; else the
-        # quarter's weighted-average diluted count; else derived from NI/EPS (diluted, last resort).
-        sh = shares_inst.get(end_s)
-        if sh is None:
-            wv = shares_wavg.get((fy, fp))
-            sh = wv["val"] if wv else None
-            if sh is not None:
-                eq.derived.append("shares_outstanding")
+        # Conservative current diluted-share proxy: the greater of the filed quarterly
+        # diluted mean and period-end basic outstanding. A period-end issuance must not
+        # disappear just because the historical quarter's average is lower. The exact
+        # diluted mean, not this proxy, is used in the EPS reconciliation above.
+        # CommonStockSharesIssued is excluded because it includes treasury stock.
+        wv = shares_wavg.get((fy, fp))
+        diluted = wv["val"] if wv and wv.get("end") == end_s else None
+        candidates = [v for v in (diluted, shares_inst.get(end_s))
+                      if isinstance(v, (int, float)) and math.isfinite(v) and v > 0]
+        sh = max(candidates) if candidates else None
+        if sh is not None and sh == diluted:
+            eq.derived.append("shares_outstanding")
         if sh is None and eq.net_income and eq.eps:
             sh = abs(eq.net_income / eq.eps)
             eq.derived.append("shares_outstanding")
@@ -409,7 +465,7 @@ def extract_quarters(ticker: str, limit: int | None = None) -> list[EdgarQuarter
 # ── ingestion ─────────────────────────────────────────────────────────────────
 # NOTE: EDGAR is the source of truth for the income-statement + cash-flow spine, and (4.1,
 # 2026-06-11) the balance-sheet completion: total_debt (composed from LT nc/current + ST
-# borrowings), shares_outstanding (instant → weighted-diluted → NI/EPS fallback), SBC and
+# borrowings), shares_outstanding (max of quarterly diluted/basic instant → NI/EPS fallback), SBC and
 # buybacks (YTD-differenced flows, like OCF).
 
 # Fields scoring/forecasting depend on — all covered by the EDGAR extraction.

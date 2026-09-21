@@ -1,6 +1,9 @@
 """Valuation Analyst Agent — multiples analysis, DCF assessment, target price range."""
 
 import logging
+import json
+import hashlib
+from app.valuation_model.economics import MODEL_VERSION
 from datetime import date
 
 from sqlalchemy import select
@@ -78,7 +81,16 @@ class ValuationAgent(BaseAgent):
         from app.agents import fingerprints as fp
         from app.forecast.engine import _latest_forecast
         f = await _latest_forecast(db, ticker)
+        from app.models.forecast import Forecast
+        stock = await db.get(Stock, ticker)
+        peers = (await db.execute(select(Forecast.ticker, Forecast.as_of, Forecast.projections)
+            .join(Stock, Stock.ticker == Forecast.ticker)
+            .where(Stock.industry == stock.industry if stock else False)
+            .distinct(Forecast.ticker).order_by(Forecast.ticker, Forecast.as_of.desc()))).all()
+        peer_marker = hashlib.sha256(json.dumps([(p.ticker, str(p.as_of), p.projections) for p in peers], sort_keys=True).encode()).hexdigest()[:16]
         return {
+            "valuation_model": MODEL_VERSION,
+            "peer_forecasts": peer_marker,
             "financials": await fp.financial_marker(db, ticker),
             "transcript": await fp.transcript_marker(db, ticker),
             "estimates": await fp.estimates_marker(db, ticker),
@@ -105,7 +117,7 @@ class ValuationAgent(BaseAgent):
         # Add analyst consensus estimates (next 4 quarters)
         result = await db.execute(
             select(AnalystEstimate)
-            .where(AnalystEstimate.ticker == ticker)
+            .where(AnalystEstimate.ticker == ticker, AnalystEstimate.period_type != "legacy")
             .where(AnalystEstimate.period_end_date >= date.today())
             .order_by(AnalystEstimate.period_end_date.asc())
             .limit(4)
@@ -130,9 +142,9 @@ class ValuationAgent(BaseAgent):
                     why.append("no analyst revisions in the last 30 days")
                 lines.append(f"  ⚠ STALE ({'; '.join(why)}) — discount heavily; treat as absent.")
             for e in estimates:
-                parts = [f"  {e.period_end_date}:"]
+                parts = [f"  {e.period_type} ending {e.period_end_date} ({e.date_precision}; EPS basis {e.accounting_basis}):"]
                 if e.eps_consensus is not None:
-                    parts.append(f"EPS consensus=${e.eps_consensus:.2f} (low=${e.eps_low:.2f}, high=${e.eps_high:.2f})")
+                    parts.append(f"EPS consensus=${e.eps_consensus:.2f} (low={e.eps_low}, high={e.eps_high})")
                 if e.revenue_consensus is not None:
                     parts.append(f"Rev consensus=${e.revenue_consensus / 1e9:.2f}B")
                 if e.number_of_analysts:
@@ -184,144 +196,102 @@ class ValuationAgent(BaseAgent):
             context += "\n\n--- OUR FORECAST MODEL (4.2; basis-cited, deterministic compile) ---\n"
             context += summarize_forecast(f)
 
+        from app.valuation_model.target import compute_price_target
+        from app.valuation_model.presentation import price_target_payload
+        model = price_target_payload(await compute_price_target(db, ticker, None, persist=False))
+        if not hasattr(self, "_model_values"):
+            self._model_values = {}
+        self._model_values[ticker] = model
+        context += "\n\n=== DETERMINISTIC VALUATION — THE ONLY SOURCE OF NUMERIC VALUE CLAIMS ===\n" + json.dumps(model)
         return context
 
     def get_system_prompt(self) -> str:
-        return """You are a senior valuation analyst. Given a company's financial data, growth rates, current valuation multiples, analyst consensus estimates, management guidance, and a measured NORMALIZED/MID-CYCLE earnings view, provide a comprehensive valuation assessment.
+        return """You are a senior valuation analyst explaining a deterministic scenario model.
+Use ONLY the supplied evidence. The DETERMINISTIC VALUATION block owns all numeric DCF values,
+price targets, discount rates and probabilities. Do not run your own mental DCF or invent a
+replacement target. Numeric output fields are populated by code after your response.
 
-REGIME-AWARE VALUATION (read first — this changes how you value the stock):
-- A "REGIME / NORMALIZED EARNINGS" block is provided with the cycle position, current vs mid-cycle
-  margins, and normalized earnings. USE IT. The right denominator depends on the business model:
-- If the business is CYCLICAL (cyclical-commodity archetype, or the block shows current margins far
-  above/below mid-cycle, i.e. cycle position "peak"/"trough"): a low SPOT P/E on PEAK earnings is a
-  TRAP, not cheapness. You MUST anchor your fair value on the NORMALIZED (mid-cycle) earnings, and
-  state explicitly whether the current multiple reflects a durable re-rate or a peak-earnings illusion.
-- If the business is a platform / mature-compounder / secular-grower with stable margins (normalized
-  ≈ spot): spot earnings are a fine basis; note margin durability rather than cycle-normalizing.
+Explain whether this company's growth duration, operating margin path, reinvestment/cash conversion,
+dilution and risk justify the chosen method. Companies sharing an archetype can have different
+economics. Small market cap by itself earns no premium. Cyclicals use normalized earning power;
+financial companies need capital/distribution models. Identify unsupported assumptions honestly.
+Compare like periods and accounting bases: fiscal-year estimates are not NTM; provider-unspecified
+EPS is not GAAP. Explain material disagreement with street targets as a difference in assumptions,
+not proof either number is correct. A large downside gap calls for thesis/assumption review,
+not an instruction to wait indefinitely for a lower share price. Our base scenario and the judge's
+probability-weighted headline differ by construction; present DCF and future targets have different dates.
+If the model status is unavailable, say why and leave value judgments unknown. Never fill the gap
+with an invented value. Critique model limitations including the historical cash-conversion proxy,
+zero net borrowing, share funding and declared policy priors. Do not describe those priors as calibrated.
 
-You should assess:
-0. REGIME — Where is this company in its cycle, and which earnings basis is correct (spot vs normalized)?
-1. MULTIPLES ANALYSIS — Are current P/E, P/S, EV/EBITDA multiples justified by growth? Compare to historical and peer ranges. For cyclicals, compute the multiple on normalized earnings too.
-2. GROWTH-ADJUSTED VALUE — PEG ratio interpretation. Is the market fairly pricing the growth?
-3. DCF FRAMEWORK — Provide a simplified DCF assessment with your assumptions for revenue growth (5 years), terminal growth, FCF margin, and WACC. Calculate bull/base/bear intrinsic values.
-4. TARGET PRICE RANGE — Based on multiples and DCF, what's a reasonable price range?
-5. VALUATION VERDICT — Is the stock undervalued, fairly valued, or overvalued at current prices?
-6. CONSENSUS COMPARISON — If analyst estimates are provided, compare your assumptions against the consensus and explain any divergence.
-7. GUIDANCE ASSESSMENT — If management guidance is provided, assess the tone and compare it to consensus expectations.
-8. TRIANGULATION — Reconcile your OWN base fair value against (a) the street price target and (b) management guidance. If your fair value diverges materially from the street, you MUST justify it (see TRIANGULATION POLICY below).
+Keep the explanation compact: summary at most 90 words, model_assessment at most 180 words,
+and each other prose field at most 60 words. The interface already displays all numeric model
+outputs. Do not repeat dollar prices, EPS amounts, percentages, or multiples in prose, and do not
+perform new arithmetic or numeric comparisons in prose. Explain the business assumptions and
+the meaning of differences instead. Compare growth only over matching periods: a reported
+year-over-year quarter and a modeled future year are not interchangeable. Peer distance weights
+are relative closeness scores used in a weighted median; they do not need to sum to one.
+When cash flow constrains buybacks, the calculator carries additional dilution into the funded
+EPS and DCF path. The requested forecast remains in the audit; no revenue or profit is raised
+to fund repurchases. Explain any adjustment as a capital-allocation assumption.
+The headline present DCF weights scenarios, while intrinsic_value_base is the base present DCF;
+the DCF leg in a scenario target is a FUTURE-date value. Never interchange these quantities.
 
-Be specific with numbers. Use the actual financial data provided to justify your assumptions.
-IMPORTANT: Use ONLY the data provided. Do not fabricate numbers. When analyst estimates or guidance are available, explicitly reference them.
-
-You must respond with valid JSON only, no other text. Use this exact schema:
+Respond with JSON only, using these qualitative fields (no numeric target fields):
 {
-  "ticker": "string",
-  "current_price": number,
-  "regime": {
-    "cycle_position": "peak | mid | trough | not_cyclical",
-    "earnings_basis": "spot | normalized — which you used and why",
-    "spot_pe": number,                                  // P/E on current/spot earnings, or null
-    "normalized_pe": number,                            // P/E on mid-cycle earnings, or null if not cyclical
-    "re_rate_vs_peak": "string — is the current multiple a durable re-rate or a peak-earnings illusion?"
-  },
-  "multiples_analysis": {
-    "pe_assessment": "string — is P/E reasonable for this growth?",
-    "ps_assessment": "string — is P/S justified?",
-    "ev_ebitda_assessment": "string",
-    "vs_historical": "premium | in_line | discount",
-    "vs_peers": "premium | in_line | discount"
-  },
-  "dcf_analysis": {
-    "assumptions": {
-      "revenue_growth_rates": [number, number, number, number, number],
-      "terminal_growth": number,
-      "wacc": number,
-      "fcf_margin": number
-    },
-    "intrinsic_value_bear": number,
-    "intrinsic_value_base": number,
-    "intrinsic_value_bull": number,
-    "methodology_note": "string — brief explanation of key assumptions"
-  },
-  "target_price_range": {
-    "low": number,
-    "mid": number,
-    "high": number
-  },
-  "margin_of_safety": number,   // FRACTION, not percent: (fair_value − price)/price. e.g. 0.30 = 30% upside, -0.20 = 20% downside. Range about -1.0 to 1.0.
-  "valuation_verdict": "significantly_undervalued | moderately_undervalued | fairly_valued | moderately_overvalued | significantly_overvalued",
-  "valuation_score": 0.0-1.0,
-  "consensus_comparison": {
-    "your_eps_vs_consensus": "above | in_line | below",
-    "your_revenue_vs_consensus": "above | in_line | below",
-    "divergence_reasoning": "string — why your estimates differ from consensus"
-  },
-  "guidance_assessment": {
-    "management_guidance_tone": "confident | cautious | vague",
-    "guidance_vs_consensus": "above | in_line | below",
-    "key_guidance_points": ["string"]
-  },
-  "triangulation": {
-    "your_fair_value": number,                  // your base-case fair value per share
-    "street_mean_target": number,               // from the ANALYST PRICE TARGET block, or null if absent
-    "divergence_pct": number,                   // (your_fair_value − street_mean_target)/street_mean_target, or null
-    "divergence_justification": "string — REQUIRED if |divergence_pct| > 0.20: a specific, defensible reason you differ from the street (e.g. 'street anchors on peak earnings'); null if within ±20%",
-    "vs_management_guidance": "above | in_line | below",
-    "reconciliation": "string — 1-2 sentences reconciling your fair value with the street and guidance"
-  },
-  "summary": "string — 3-4 sentence valuation assessment"
+ "ticker": "string",
+ "regime": {"cycle_position": "peak | mid | trough | not_cyclical", "earnings_basis": "string", "re_rate_vs_peak": "string"},
+ "multiples_analysis": {"pe_assessment": "string", "ps_assessment": "string", "ev_ebitda_assessment": "string", "vs_historical": "premium | in_line | discount | unknown", "vs_peers": "premium | in_line | discount | unknown"},
+ "model_assessment": "string — critique suitability, growth duration, margin durability, reinvestment and financing assumptions",
+ "consensus_comparison": {"your_eps_vs_consensus": "above | in_line | below | unknown", "your_revenue_vs_consensus": "above | in_line | below | unknown", "divergence_reasoning": "string"},
+ "guidance_assessment": {"management_guidance_tone": "confident | cautious | vague | unknown", "guidance_vs_consensus": "above | in_line | below | unknown", "key_guidance_points": ["string"]},
+ "triangulation": {"divergence_justification": "string", "vs_management_guidance": "above | in_line | below | unknown", "reconciliation": "string"},
+ "summary": "string — concise valuation conclusion and which assumptions would change it"
 }
-
-TRIANGULATION POLICY (important):
-- Your DCF/multiples work sets your fair value; the street price target does NOT (it herds and lags).
-- BUT you must TRIANGULATE: state your fair value, the street mean target, and the % divergence.
-- If your fair value is more than 20% away from the street mean, you MUST give a specific, defensible
-  reason for the gap. A large UNEXPLAINED divergence from the street is not allowed — either justify
-  it (you see something the street doesn't, or vice-versa) or revisit your assumptions.
-- If no street price target is available, set street_mean_target/divergence_pct to null.
-
-CONSENSUS POLICY (important — two different things, weighted differently):
-1. FORWARD EPS/REVENUE CONSENSUS is a meaningful reference. Compare your estimates against
-   it and take material divergences seriously (they may indicate you've missed something).
-   It does NOT lag as badly as price targets. Only discount it if the block is marked STALE
-   (our copy >3 months old, or no analyst revisions recently) — then set consensus_comparison
-   to null.
-2. ANALYST PRICE TARGETS are LOW weight — they are frequently far off and herd around the
-   current price. Use them only as a loose divergence check; never adopt them as your target
-   or let them move your fair value. Your own DCF/multiples work sets the target.
-
-If no analyst estimates are available, set consensus_comparison to null.
-If no transcript/guidance data is available, set guidance_assessment to null."""
+Use null for consensus_comparison or guidance_assessment when evidence is unavailable."""
 
     def get_user_prompt(self, ticker: str, context: str) -> str:
-        return f"""Provide a comprehensive valuation analysis for {ticker}. Assess the regime/cycle first, then multiples, run a simplified DCF, determine a target price range. For a cyclical, value on NORMALIZED (mid-cycle) earnings and say so. If analyst consensus estimates and management guidance are provided, compare your assumptions against them.
-
-{context}
-
-Respond with JSON only."""
+        return f"Explain and challenge the supplied deterministic valuation for {ticker}.\n\n{context}\n\nRespond with JSON only."
 
     def postprocess_report(self, report: dict, ticker: str) -> dict:
-        # Output-contract fix (roadmap 2.6): margin_of_safety must be a FRACTION. Models still
-        # sometimes emit a percent (e.g. 30 meaning 30%); coerce it and clamp to a sane range so the
-        # normalizer (which expects a fraction) doesn't clamp a 30 to 1.0.
         report = super().postprocess_report(report, ticker)
-        mos = report.get("margin_of_safety")
-        if isinstance(mos, (int, float)):
-            if abs(mos) > 1.5:               # almost certainly a percent
-                mos = mos / 100.0
-            report["margin_of_safety"] = max(-1.0, min(5.0, mos))
-
-        # Triangulation (2.3): recompute the street divergence deterministically from the two
-        # numbers so it can't be miscalculated, and flag a large UNexplained gap.
-        tri = report.get("triangulation")
-        if isinstance(tri, dict):
-            fv = tri.get("your_fair_value")
-            street = tri.get("street_mean_target")
-            if isinstance(fv, (int, float)) and isinstance(street, (int, float)) and street > 0:
-                div = (fv - street) / street
-                tri["divergence_pct"] = round(div, 4)
-                if abs(div) > 0.20 and not (tri.get("divergence_justification") or "").strip():
-                    tri["divergence_justification"] = (
-                        "UNJUSTIFIED: fair value diverges >20% from the street mean with no stated reason."
-                    )
+        model = getattr(self, "_model_values", {}).pop(ticker, None) or {}
+        ready = (model.get("method") or {}).get("status") == "ready"
+        scenarios = model.get("scenarios") or {}
+        base = scenarios.get("base") or {}
+        fair = base.get("dcf_today") if ready else None
+        target = base.get("blended") if ready else None
+        price = model.get("price_at")
+        upside = fair / price - 1 if fair is not None and price and ready else None
+        report["valuation_model"] = {"version": MODEL_VERSION, "status": "verified" if ready else "unavailable",
+            "as_of": model.get("as_of"), "forecast_as_of": model.get("forecast_as_of"),
+            "target_date": (model.get("method") or {}).get("target_date"),
+            "issues": (model.get("method") or {}).get("issues") or [],
+            "method": model.get("method"), "source": "same deterministic calculator as the decision price target"}
+        report["current_price"] = price
+        report["dcf_analysis"] = {
+            "intrinsic_value_base": fair,
+            "intrinsic_value_bear": (scenarios.get("bear") or {}).get("dcf_today") if ready else None,
+            "intrinsic_value_bull": (scenarios.get("bull") or {}).get("dcf_today") if ready else None,
+            "assumptions": {"cost_of_equity": (model.get("wacc") or {}).get("cost_of_equity"),
+                            "terminal_growth": (model.get("method") or {}).get("terminal_growth")},
+            "methodology_note": "Present equity DCF, calculated in code. The future target uses the same forecast; the decision headline weights all three scenarios."}
+        vals = [s.get("blended") for s in scenarios.values() if s.get("blended") is not None] if ready else []
+        report["target_price_range"] = {"low": min(vals) if vals else None, "mid": target, "high": max(vals) if vals else None}
+        report["margin_of_safety"] = upside
+        verdict = "unknown" if upside is None else (
+            "significantly_undervalued" if upside >= .30 else "moderately_undervalued" if upside >= .10 else
+            "significantly_overvalued" if upside <= -.30 else "moderately_overvalued" if upside <= -.10 else "fairly_valued")
+        report["valuation_verdict"] = verdict
+        report["valuation_score"] = {"significantly_undervalued": 1., "moderately_undervalued": .75,
+            "fairly_valued": .5, "moderately_overvalued": .25, "significantly_overvalued": 0.}.get(verdict)
+        tri = report.get("triangulation") if isinstance(report.get("triangulation"), dict) else {}
+        street = model.get("street_target_mean")
+        div = target / street - 1 if target is not None and street and ready else None
+        tri.update(your_fair_value=fair, your_target_price=target, street_mean_target=street,
+                   divergence_pct=round(div, 4) if div is not None else None,
+                   comparison_basis="base future target vs street target; present DCF shown separately")
+        if div is not None and abs(div) > .20 and not tri.get("divergence_justification"):
+            tri["divergence_justification"] = "Large divergence remains unexplained; review assumptions before using this target."
+        report["triangulation"] = tri
         return report
