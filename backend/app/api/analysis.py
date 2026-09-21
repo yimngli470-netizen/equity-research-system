@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.agents.orchestrator import AGENTS, run_all_agents
+from app.config import settings
 from app.ingestion.pipeline import ingest_ticker
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -95,11 +96,14 @@ async def run_analysis(request: AnalysisRequest):
 
 @router.get("/agents")
 async def list_agents():
-    """List available agent types and their cache settings."""
+    """List configured models without constructing clients or requiring credentials."""
     return {
         name: {
-            "max_age_days": cls().max_age_days,
-            "model": cls().model,
+            "max_age_days": cls.max_age_days,
+            "model": (
+                "deterministic" if name == "validation"
+                else settings.opus_model if cls.tier == "opus" else settings.sonnet_model
+            ),
         }
         for name, cls in AGENTS.items()
     }

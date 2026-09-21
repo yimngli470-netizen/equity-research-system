@@ -2,4 +2,5 @@
 # LLM calls route through the `claude` CLI using CLAUDE_CODE_OAUTH_TOKEN, billed to your Max/Pro
 # SUBSCRIPTION instead of API credits. Requires the claude CLI in the image + the token in .env
 # (run `claude setup-token` on the host). Shares your 5-hour interactive rate limits.
+# Keep account Settings > Usage > Usage credits OFF to prevent paid overage.
 llm_backend: claude_code

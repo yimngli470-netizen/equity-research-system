@@ -19,7 +19,8 @@ The adapter duck-types only the slice of the Anthropic SDK this codebase uses �
 so the adapter exposes exactly that shape and the call sites need no other change.
 
 Safety: the dev backend FAILS LOUDLY if the CLI or token is missing. It never silently falls back to
-the API key (that would quietly bill credits — the whole point is to avoid that in dev).
+the API key. Paid usage credits are a separate ACCOUNT setting: keep them disabled in Claude's
+Settings > Usage so exhausted subscription limits stop calls rather than charge for overage.
 """
 
 import json
@@ -63,7 +64,7 @@ def _is_usage_limit(text: str) -> bool:
 
 # Notional API-equivalent price per 1M tokens (input, output) by model family — used only to log a
 # rough $ figure so you can see what each call WOULD cost on the API (on the subscription path it's
-# what you're saving). Keep roughly in sync with the claude-api skill price table.
+# an estimate, not a billing receipt). Keep roughly in sync with published model prices.
 _PRICE_PER_MTOK = {
     "opus": (5.0, 25.0),
     "sonnet": (3.0, 15.0),
@@ -93,7 +94,27 @@ def _notional_cost(model: str | None, in_tok: int, out_tok: int) -> float | None
     if fam is None:
         return None
     p_in, p_out = _PRICE_PER_MTOK[fam]
+    if (model or "").startswith("claude-sonnet-5"):
+        p_in, p_out = 2.0, 10.0
     return round(in_tok / 1e6 * p_in + out_tok / 1e6 * p_out, 4)
+
+
+def _subscription_env() -> dict[str, str]:
+    """Keep inherited API/provider settings from overriding the configured subscription token.
+
+    This controls authentication/routing, not the account's paid usage-credits setting.
+    """
+    env = {
+        key: value for key, value in os.environ.items()
+        if not key.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))
+        and key not in {
+            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+            "CCR_OAUTH_TOKEN_FILE", "CLAUDE_CODE_HOST_CREDS_FILE",
+            "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "CLAUDE_CODE_SIMPLE",
+        }
+    }
+    env["CLAUDE_CODE_OAUTH_TOKEN"] = settings.claude_code_oauth_token
+    return env
 
 
 def make_llm_client():
@@ -194,16 +215,20 @@ class ClaudeCodeClient:
             if m.get("role") == "user"
         )
 
-        cmd = [self._cli, "-p", "--output-format", "json", "--model", model]
+        cmd = [
+            self._cli, "-p", "--output-format", "json", "--model", model,
+            # These are plain completions: do not inherit user/project API-key helpers,
+            # provider settings, hooks, skills, or tools from a coding session.
+            "--setting-sources", "", "--tools", "", "--strict-mcp-config",
+            "--mcp-config", '{"mcpServers":{}}',
+            "--disable-slash-commands", "--no-session-persistence",
+        ]
         if system:
             # Replace (not append) Claude Code's default coding system prompt, and strip its dynamic
             # context sections, so the model behaves like a plain completion endpoint.
             cmd += ["--system-prompt", system, "--exclude-dynamic-system-prompt-sections"]
 
-        # Use the subscription token; scrub any API key so the CLI can't bill credits instead.
-        env = dict(os.environ)
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = settings.claude_code_oauth_token
-        env.pop("ANTHROPIC_API_KEY", None)
+        env = _subscription_env()
 
         try:
             proc = subprocess.run(
@@ -230,9 +255,12 @@ class ClaudeCodeClient:
                 raise LLMUsageLimitError(detail)
             raise RuntimeError(f"claude CLI returned an error envelope: {detail}")
 
-        # The CLI reports the real API-equivalent cost (what you're NOT paying in credits) + session.
+        # API-equivalent cost is not a billing receipt; account usage credits control overage.
+        # Log the returned model IDs too: requested IDs can be remapped by the provider.
         logger.info(
-            "LLM via Claude Code CLI (subscription plan): model=%s notional_cost_usd=%s tier=%s session=%s",
-            model, envelope.get("total_cost_usd"), _tier_of(model), envelope.get("session_id"),
+            "LLM via Claude Code CLI (subscription auth): model=%s actual_models=%s "
+            "notional_cost_usd=%s tier=%s session=%s",
+            model, sorted((envelope.get("modelUsage") or {}).keys()),
+            envelope.get("total_cost_usd"), _tier_of(model), envelope.get("session_id"),
         )
         return envelope.get("result", "")

@@ -21,9 +21,12 @@ RUN python -m playwright install --with-deps chromium
 # SUBSCRIPTION instead of API credits. Gated by a build arg so PROD images (LLM_BACKEND=api) stay
 # lean and never ship the CLI. The local docker-compose sets INSTALL_CLAUDE_CLI=1.
 ARG INSTALL_CLAUDE_CLI=0
+# Keep the CLI new enough to recognize the pinned models (Opus 5 needs >=2.1.219).
+# Pin the verified release so a cached dev image cannot keep an older CLI indefinitely.
+ARG CLAUDE_CLI_VERSION=2.1.278
 RUN if [ "$INSTALL_CLAUDE_CLI" = "1" ]; then \
         apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
-        curl -fsSL https://claude.ai/install.sh | bash && \
+        curl -fsSL https://claude.ai/install.sh | bash -s -- "$CLAUDE_CLI_VERSION" && \
         rm -rf /var/lib/apt/lists/*; \
     fi
 ENV PATH="/root/.local/bin:${PATH}"

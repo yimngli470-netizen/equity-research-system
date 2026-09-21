@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     #                               (dev only; shares your 5-hour interactive rate limits).
     # Both are read through the single factory in app/llm/client.py — see make_llm_client().
     app_env: str = "dev"
-    llm_backend: str = "api"
+    llm_backend: str = "claude_code"
     claude_code_oauth_token: str = ""
 
     # LLM model selection — TWO tiers, set in ONE place (override per-env via OPUS_MODEL / SONNET_MODEL
@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     # 404 not_found_error and every agent fails), so keep these current — see the latest ids in
     # CLAUDE.md / the claude-api skill. opus = deep analysis (agents, judge, forecast); sonnet = fast
     # tasks (news, summaries, archetype, KPI, IR repair, grading).
-    opus_model: str = "claude-opus-4-8"
-    sonnet_model: str = "claude-sonnet-4-6"
+    opus_model: str = "claude-opus-5"
+    sonnet_model: str = "claude-sonnet-5"
 
     @property
     def llm_configured(self) -> bool:
