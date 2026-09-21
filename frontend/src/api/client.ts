@@ -344,6 +344,51 @@ export interface ValuationResponse {
   shares_outstanding: number | null;
 }
 
+// ─── Kill signals ──────────────────────────────────────────────────────────
+// Standing per-stock list of what would break the thesis. Distinct from the judge's per-run
+// kill_criteria (immutable, graded): the judge feeds proposals in here as `candidate` rows and
+// the user accepts / edits / dismisses them.
+export type KillSignalStatus = 'candidate' | 'active' | 'tripped' | 'dismissed';
+export type KillSignalSeverity = 'critical' | 'high' | 'medium';
+
+export type KillVerdict = 'tripped' | 'approaching' | 'not_tripped' | 'undetermined';
+
+/** The evaluator's verdict for the most recent reported quarter. Written automatically by
+ *  kill_signals/evaluator.py during ingest — a `tripped` verdict is what flips the signal's
+ *  status, so this is the audit trail behind a red row. */
+export interface KillSignalEvaluation {
+  verdict: KillVerdict;
+  period_end_date: string | null;
+  evidence_quote: string | null;
+  reasoning: string | null;
+  source: string | null;
+  source_url: string | null;
+}
+
+export interface KillSignal {
+  id: number;
+  ticker: string;
+  signal: string;
+  rationale: string | null;
+  source: 'llm' | 'manual' | 'judge';
+  severity: KillSignalSeverity;
+  status: KillSignalStatus;
+  by_date: string | null;
+  origin_as_of: string | null;
+  tripped_on: string | null;
+  tripped_note: string | null;
+  created_at: string | null;
+  evaluation: KillSignalEvaluation | null;
+}
+
+export interface KillSignalBuckets {
+  ticker: string;
+  active: KillSignal[];
+  tripped: KillSignal[];
+  candidates: KillSignal[];
+  dismissed: KillSignal[];
+}
+
 export const api = {
   stocks: {
     list: () => request<Stock[]>('/stocks/'),
@@ -492,6 +537,31 @@ export const api = {
         body: JSON.stringify(concurrency ? { concurrency } : {}),
       }),
     runAllStatus: () => request<RunAllStatus>('/pipeline/run-all/status'),
+  },
+  killSignals: {
+    list: (ticker: string, includeDismissed = false) =>
+      request<KillSignalBuckets>(
+        `/kill-signals/${ticker}${includeDismissed ? '?include_dismissed=true' : ''}`,
+      ),
+    add: (ticker: string, body: { signal: string; rationale?: string | null; severity?: KillSignalSeverity }) =>
+      request<KillSignal>(`/kill-signals/${ticker}`, { method: 'POST', body: JSON.stringify(body) }),
+    update: (
+      id: number,
+      body: Partial<Pick<KillSignal, 'signal' | 'rationale' | 'severity' | 'status' | 'by_date' | 'tripped_note'>>,
+    ) => request<KillSignal>(`/kill-signals/id/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    // Hard-delete. For a JUDGE proposal prefer update({status:'dismissed'}) — a deleted candidate
+    // is re-offered by the next judge run, a dismissed one is not.
+    remove: (id: number) => request<void>(`/kill-signals/id/${id}`, { method: 'DELETE' }),
+    evaluate: (ticker: string, force = false) =>
+      request<{ ticker: string; evaluated: number }>(
+        `/kill-signals/${ticker}/evaluate${force ? '?force=true' : ''}`,
+        { method: 'POST' },
+      ),
+    generate: (ticker: string, force = false) =>
+      request<{ ticker: string; status: string; added: number }>(
+        `/kill-signals/${ticker}/generate${force ? '?force=true' : ''}`,
+        { method: 'POST' },
+      ),
   },
   health: () => request<{ status: string; env: string }>('/health'),
 };

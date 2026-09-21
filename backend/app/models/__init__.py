@@ -11,6 +11,7 @@ from app.models.decision import StockDecision
 from app.models.transcript import EarningsTranscript
 from app.models.estimate import AnalystEstimate
 from app.models.key_metric import TickerKeyMetric, TickerKpiValue
+from app.models.kill_signal import KillSignalEvaluation, TickerKillSignal
 from app.models.onboarding import DevTickerBootstrapStatus
 from app.models.peer import PeerWeight
 from app.models.thesis import StockThesis
@@ -39,6 +40,8 @@ __all__ = [
     "AnalystEstimate",
     "TickerKeyMetric",
     "TickerKpiValue",
+    "TickerKillSignal",
+    "KillSignalEvaluation",
     "DevTickerBootstrapStatus",
     "PeerWeight",
     "StockThesis",

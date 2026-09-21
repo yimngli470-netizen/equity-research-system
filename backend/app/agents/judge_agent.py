@@ -44,6 +44,8 @@ class JudgeAgent(BaseAgent):
             "bull": await fp.report_marker(db, ticker, "bull"),
             "bear": await fp.report_marker(db, ticker, "bear"),
             "record": f"{graded.id}.{graded.graded_at}" if graded else None,
+            # Standing kill signals are part of the judge's prompt — curating them must re-run it.
+            "kill_signals": await fp.kill_signal_marker(db, ticker),
         }
 
     def postprocess_report(self, report: dict, ticker: str) -> dict:

@@ -17,6 +17,7 @@ from app.models.earnings import EarningsEvent
 from app.models.estimate import AnalystEstimate
 from app.models.financial import Financial
 from app.models.key_metric import TickerKpiValue
+from app.models.kill_signal import TickerKillSignal
 from app.models.price import DailyPrice
 from app.models.stock import Stock
 from app.models.transcript import EarningsTranscript
@@ -172,3 +173,25 @@ async def news_materiality(db: AsyncSession, ticker: str,
         for i in items
     )
     return sentiment, (f"{row.id}.{row.version}" if has_high_impact else None)
+
+
+async def kill_signal_marker(db: AsyncSession, ticker: str) -> str | None:
+    """The user's STANDING kill signals as the judge sees them (active + tripped).
+
+    Accepting, editing, or tripping a signal changes the judge's context, so it must break the
+    smart cache — otherwise the cached verdict silently ignores the list. Candidates and dismissed
+    rows are excluded because `format_for_agent` never shows them.
+    """
+    row = (
+        await db.execute(
+            select(
+                func.count(TickerKillSignal.id),
+                func.max(TickerKillSignal.updated_at),
+            )
+            .where(TickerKillSignal.ticker == ticker)
+            .where(TickerKillSignal.status.in_(("active", "tripped")))
+        )
+    ).first()
+    if not row or not row[0]:
+        return None
+    return f"{row[0]}.{row[1].isoformat() if row[1] else ''}"

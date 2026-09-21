@@ -24,6 +24,7 @@ from app.config import settings
 from app.llm import make_llm_client
 from app.ingestion.ir import registry
 from app.models.key_metric import TickerKeyMetric
+from app.models.kill_signal import TickerKillSignal
 from app.models.onboarding import DevTickerBootstrapStatus
 from app.models.stock import Stock
 
@@ -37,6 +38,8 @@ class BootstrapResult:
     ticker: str
     kpi_status: str = "skipped"
     kpi_count: int = 0
+    kill_status: str = "skipped"
+    kill_count: int = 0
     ir_status: str = "skipped"
     ir_url: str | None = None
     ir_artifact_type: str | None = None
@@ -152,14 +155,22 @@ async def bootstrap_ticker(db: AsyncSession, ticker: str, force: bool = False) -
         has_kpis = (await db.execute(
             select(TickerKeyMetric.id).where(TickerKeyMetric.ticker == ticker).limit(1)
         )).scalar_one_or_none()
-        if has_kpis and registry.get_source(ticker):
-            res.kpi_status = res.ir_status = "skipped"
+        has_kills = (await db.execute(
+            select(TickerKillSignal.id).where(TickerKillSignal.ticker == ticker).limit(1)
+        )).scalar_one_or_none()
+        if has_kpis and has_kills and registry.get_source(ticker):
+            res.kpi_status = res.kill_status = res.ir_status = "skipped"
             return res
 
     stock = (await db.execute(select(Stock).where(Stock.ticker == ticker))).scalar_one_or_none()
     info = await asyncio.to_thread(_company_info, ticker, stock)
 
     res.kpi_status, res.kpi_count = await generate_kpi_definitions(db, ticker, info, force)
+
+    # Standing kill signals — the sell-side counterpart to the KPI defs (what to WATCH vs what
+    # would make you SELL). One Sonnet call, idempotent: skipped once the ticker has any.
+    from app.kill_signals import generate_kill_signals
+    res.kill_status, res.kill_count = await generate_kill_signals(db, ticker, info, force)
 
     # IR source is set MANUALLY at add-time (a required field on the add-stock form). Auto-discovery
     # was removed — it guessed the wrong domain too often (IR pages live at non-obvious URLs like
@@ -172,6 +183,9 @@ async def bootstrap_ticker(db: AsyncSession, ticker: str, force: bool = False) -
     # User-facing warnings
     if res.kpi_status == "failed":
         res.warnings.append(f"{ticker}: could not auto-generate KPI definitions.")
+    if res.kill_status == "failed":
+        res.warnings.append(f"{ticker}: could not auto-generate kill signals — add them by hand "
+                            "on the stock page.")
     if res.ir_status == "none":
         res.message = "no IR earnings URL configured — transcripts won't be fetched"
         res.warnings.append(f"{ticker}: {res.message}. Re-add with the IR page URL, or set sources.yaml.")

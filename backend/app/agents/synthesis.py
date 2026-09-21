@@ -116,6 +116,15 @@ async def build_judge_context(db: AsyncSession, ticker: str) -> str:
     if record:
         sections.append("\n=== YOUR PRIOR RECORD ON THIS NAME (graded — calibrate against it) ===")
         sections.append(record)
+
+    # The user's own standing kill signals. Given to the judge so it proposes NEW criteria rather
+    # than restating ones already being tracked — and so an already-TRIPPED signal weighs on the
+    # verdict. Deterministic, no LLM cost.
+    from app.kill_signals import format_for_agent
+    standing = await format_for_agent(db, ticker)
+    if standing:
+        sections.append("\n" + standing)
+
     return "\n".join(sections)
 
 
