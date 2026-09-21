@@ -65,6 +65,11 @@ export default function Dashboard() {
       const data = await api.stocks.list();
       setStocks(data);
 
+      // One bulk call for the whole watchlist (no LLM). Non-fatal: a failure here must not blank
+      // the dashboard, so fall back to "no alerts".
+      const alerts = await api.earningsAlerts().catch(() => []);
+      const alertBy = new Map(alerts.filter((a) => a.stale).map((a) => [a.ticker, a]));
+
       // For each stock, fetch latest score + decision in parallel.
       // N+1 query — acceptable for a personal watchlist of ~10 stocks.
       const enriched = await Promise.all(
@@ -83,6 +88,12 @@ export default function Dashboard() {
             signal: decision ? decision.final_signal : score ? score.signal : null,
             flag_count: decision ? decision.risk_flags.length : 0,
             last_run: fmtRelativeTime(decision?.created_at ?? decision?.date ?? score?.date ?? null),
+            earnings_alert: (() => {
+              const a = alertBy.get(s.ticker);
+              return a && a.severity !== 'ok'
+                ? { severity: a.severity, reason: a.reason }
+                : null;
+            })(),
           };
         }),
       );
@@ -255,6 +266,37 @@ export default function Dashboard() {
           >
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* Post-earnings notice. The system stays pull-model: this tells you a company reported
+          since its earnings analysis ran, and you decide whether to spend the LLM call. */}
+      {!loading && rows.some((r) => r.earnings_alert) && (
+        <div
+          style={{
+            border: '1px solid var(--color-rule)',
+            borderLeft: '2px solid var(--color-neg-fg)',
+            borderRadius: 6,
+            background: 'var(--color-surface-2)',
+            padding: '12px 16px',
+            marginBottom: 16,
+            fontSize: 12.5,
+            lineHeight: 1.6,
+            color: 'var(--color-ink-2)',
+          }}
+        >
+          <strong style={{ color: 'var(--color-ink)' }}>Earnings analysis is behind</strong> on{' '}
+          {rows
+            .filter((r) => r.earnings_alert)
+            .map((r) => r.ticker)
+            .join(', ')}
+          . Open the stock and run the pipeline to refresh it.
+          <div style={{ fontSize: 11, color: 'var(--color-ink-3)', marginTop: 4 }}>
+            {rows
+              .filter((r) => r.earnings_alert)
+              .map((r) => `${r.ticker}: ${r.earnings_alert!.reason}`)
+              .join(' · ')}
+          </div>
         </div>
       )}
 

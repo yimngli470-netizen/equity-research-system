@@ -146,6 +146,18 @@ async def add_stock(stock_in: StockCreate, db: AsyncSession = Depends(get_db)):
     return stock
 
 
+@router.get("/earnings-alerts")
+async def earnings_alerts(db: AsyncSession = Depends(get_db)):
+    """Which watchlist names have reported since their earnings agent last ran.
+
+    Notification only — the pull model is intact, nothing here triggers an LLM call. Declared
+    ABOVE /{ticker} so "earnings-alerts" isn't captured as a ticker path param.
+    """
+    from app.earnings_watch import earnings_alerts as build
+
+    return await build(db)
+
+
 @router.get("/{ticker}", response_model=StockWithLatestPrice)
 async def get_stock(ticker: str, db: AsyncSession = Depends(get_db)):
     stock = await db.get(Stock, ticker.upper())

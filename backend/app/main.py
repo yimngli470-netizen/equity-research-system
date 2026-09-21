@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.analysis import router as analysis_router
 from app.api.decision import router as decision_router
 from app.api.ingestion import router as ingestion_router
+from app.api.kill_signals import router as kill_signals_router
 from app.api.notes import router as notes_router
 from app.api.pipeline import router as pipeline_router
 from app.api.portfolio import router as portfolio_router
@@ -30,9 +31,14 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup — the daily DATA refresh (no LLM; see ingestion/daily_job.py). All LLM analysis
+    # stays pull-model; this only keeps filings current so staleness can be detected.
+    from app.ingestion.daily_job import start_scheduler, stop_scheduler
+
+    start_scheduler()
     yield
     # Shutdown
+    stop_scheduler()
 
 
 app = FastAPI(
@@ -58,6 +64,7 @@ app.include_router(decision_router)
 app.include_router(notes_router)
 app.include_router(track_record_router)
 app.include_router(universe_router)
+app.include_router(kill_signals_router)
 app.include_router(portfolio_router)
 app.include_router(pipeline_router)
 

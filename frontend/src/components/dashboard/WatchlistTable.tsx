@@ -5,6 +5,7 @@ import SignalBadge from '../primitives/SignalBadge';
 import Sparkline, { genSparkSeed } from '../primitives/Sparkline';
 import { fmtPrice } from '../primitives/format';
 import type { WatchlistRow } from './rows';
+import EarningsAlertDot from './EarningsAlertDot';
 
 interface Props {
   rows: WatchlistRow[];
@@ -79,7 +80,10 @@ export default function WatchlistTable({ rows }: Props) {
                   transition: 'background .12s ease',
                 }}
               >
-                <td style={{ padding: pad, fontWeight: 600, color: 'var(--color-ink)', fontSize: 13 }}>{s.ticker}</td>
+                <td style={{ padding: pad, fontWeight: 600, color: 'var(--color-ink)', fontSize: 13 }}>
+                  {s.ticker}
+                  <EarningsAlertDot alert={s.earnings_alert} />
+                </td>
                 <td style={{ padding: pad, maxWidth: 240 }}>
                   <div
                     style={{

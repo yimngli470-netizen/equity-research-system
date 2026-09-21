@@ -62,8 +62,15 @@ async def _update_stock_info(ticker: str) -> None:
             logger.exception("Failed to update stock info for %s", ticker)
 
 
-async def ingest_ticker(ticker: str) -> IngestionResult:
-    """Run all ingestion steps for a single ticker."""
+async def ingest_ticker(ticker: str, *, data_only: bool = False) -> IngestionResult:
+    """Run all ingestion steps for a single ticker.
+
+    data_only=True skips every step that makes an LLM call — bootstrap (KPI/kill-signal
+    generation), archetype classification, transcript fetch (the summarizer runs inline), and KPI
+    value extraction. What remains is pure API/scrape work: prices, EDGAR financials, valuation,
+    consensus, news, segments, surprises. This is what the unattended daily job runs, so that job
+    can be stated flatly to cost ZERO LLM tokens — see ingestion/daily_job.py.
+    """
     result = IngestionResult(ticker=ticker)
 
     # Auto-populate sector/industry from yfinance
@@ -73,13 +80,14 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
         # Auto-bootstrap a new ticker (idempotent; no cost once configured): generate its
         # KPI definitions + auto-discover its IR source. Surfaces warnings to the UI when IR
         # discovery can't be confirmed; full detail recorded in ticker_onboarding.
-        try:
-            from app.ingestion.bootstrap import bootstrap_ticker
-            boot = await bootstrap_ticker(db, ticker)
-            result.warnings.extend(boot.warnings)
-        except Exception as e:
-            logger.exception("Bootstrap failed for %s", ticker)
-            result.warnings.append(f"bootstrap: {e}")
+        if not data_only:
+            try:
+                from app.ingestion.bootstrap import bootstrap_ticker
+                boot = await bootstrap_ticker(db, ticker)
+                result.warnings.extend(boot.warnings)
+            except Exception as e:
+                logger.exception("Bootstrap failed for %s", ticker)
+                result.warnings.append(f"bootstrap: {e}")
 
         # Prices
         try:
@@ -111,15 +119,16 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
         # Business-model archetype (roadmap 1.1) — grounded-LLM label computed from the EDGAR
         # financials just ingested. Idempotent: the LLM call only fires once per ticker (or on
         # force). Conditions peer-relative normalization (1.3) + archetype weights (1.4).
-        try:
-            from app.ingestion.archetype import classify_archetype
-            arch = await classify_archetype(db, ticker)
-            result.archetype = arch.archetype
-            if arch.status == "insufficient_data":
-                result.warnings.append(f"{ticker}: too little financial history to classify archetype.")
-        except Exception as e:
-            logger.exception("Archetype classification failed for %s", ticker)
-            result.errors.append(f"archetype: {e}")
+        if not data_only:
+            try:
+                from app.ingestion.archetype import classify_archetype
+                arch = await classify_archetype(db, ticker)
+                result.archetype = arch.archetype
+                if arch.status == "insufficient_data":
+                    result.warnings.append(f"{ticker}: too little financial history to classify archetype.")
+            except Exception as e:
+                logger.exception("Archetype classification failed for %s", ticker)
+                result.errors.append(f"archetype: {e}")
 
         # Valuation snapshot
         try:
@@ -145,22 +154,36 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
 
         # Transcripts run unconditionally — orchestrator falls back to IR scraper
         # when FMP is unavailable or doesn't cover the ticker.
-        from app.ingestion.transcripts import ingest_transcripts
-        try:
-            result.transcripts = await ingest_transcripts(db, ticker)
-        except Exception as e:
-            logger.exception("Transcript ingestion failed for %s", ticker)
-            result.errors.append(f"transcripts: {e}")
+        if not data_only:
+            from app.ingestion.transcripts import ingest_transcripts
+            try:
+                result.transcripts = await ingest_transcripts(db, ticker)
+            except Exception as e:
+                logger.exception("Transcript ingestion failed for %s", ticker)
+                result.errors.append(f"transcripts: {e}")
 
         # Per-ticker KPI value extraction (roadmap 0.5) — pull defined-KPI values from the
         # transcript with evidence + provenance. Idempotent per (ticker, period): the LLM
         # call only fires once per new quarter.
-        try:
-            from app.ingestion.kpi_extractor import extract_kpis
-            await extract_kpis(db, ticker)
-        except Exception as e:
-            logger.exception("KPI extraction failed for %s", ticker)
-            result.errors.append(f"kpi_extraction: {e}")
+        if not data_only:
+            try:
+                from app.ingestion.kpi_extractor import extract_kpis
+                await extract_kpis(db, ticker)
+            except Exception as e:
+                logger.exception("KPI extraction failed for %s", ticker)
+                result.errors.append(f"kpi_extraction: {e}")
+
+        # Kill-signal evaluation — did any pre-registered sell condition actually happen this
+        # quarter? One Sonnet call, idempotent per (ticker, period), runs after KPI extraction so
+        # it can use the extracted values as evidence. A `tripped` verdict flips the signal
+        # automatically; see kill_signals/evaluator.py for why it never un-trips.
+        if not data_only:
+            try:
+                from app.kill_signals import evaluate_kill_signals
+                await evaluate_kill_signals(db, ticker)
+            except Exception as e:
+                logger.exception("Kill-signal evaluation failed for %s", ticker)
+                result.warnings.append(f"kill_signals: {e}")
 
         # Segment persistence (roadmap 4.1) — deterministic parse of the transcript summary's
         # segment breakouts into the `segments` table (no LLM; the summarizer extracted once).
@@ -189,15 +212,22 @@ async def ingest_ticker(ticker: str) -> IngestionResult:
     return result
 
 
-async def run_full_ingestion(tickers: list[str] | None = None) -> list[IngestionResult]:
+async def run_full_ingestion(
+    tickers: list[str] | None = None,
+    *,
+    recompute_peers: bool | None = None,
+) -> list[IngestionResult]:
     """Run the full ingestion pipeline.
 
     Args:
         tickers: Specific tickers to ingest. If None, ingests all active stocks.
+        recompute_peers: Whether to recompute the cross-sectional peer-weight grid afterwards.
+            None (default) = auto: only on a full-universe run. See the recompute block below.
 
     Returns:
         List of IngestionResult for each ticker.
     """
+    full_run = tickers is None
     if tickers is None:
         async with async_session() as db:
             result = await db.execute(
@@ -223,11 +253,23 @@ async def run_full_ingestion(tickers: list[str] | None = None) -> list[Ingestion
 
     # Peer-closeness weights (roadmap 1.2) are CROSS-SECTIONAL — they depend on the whole
     # universe, so recompute once after every ticker is ingested, not per-ticker.
-    try:
-        from app.measurement.peers import recompute_peer_weights
-        async with async_session() as db:
-            await recompute_peer_weights(db)
-    except Exception:
-        logger.exception("Peer-weight recompute failed")
+    #
+    # But ONLY on a full-universe run. The grid is O(n²) (~357k rows / minutes of CPU at 598
+    # names), and refreshing one ticker barely moves it — so the per-stock "Run Full Pipeline"
+    # button used to pay the whole cost for a 6s ingest, wedging the UI for ~3 minutes.
+    # Pass recompute_peers=True to force it (e.g. from a scheduled/maintenance job).
+    should_recompute = full_run if recompute_peers is None else recompute_peers
+    if should_recompute:
+        try:
+            from app.measurement.peers import recompute_peer_weights
+            async with async_session() as db:
+                await recompute_peer_weights(db)
+        except Exception:
+            logger.exception("Peer-weight recompute failed")
+    else:
+        logger.info(
+            "[peers] skipped recompute for partial ingest (%d ticker(s)) — cross-sectional "
+            "weights refresh on a full run or with recompute_peers=True", len(tickers),
+        )
 
     return results

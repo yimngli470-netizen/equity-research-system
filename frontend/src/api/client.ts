@@ -415,6 +415,20 @@ export interface KillSignalBuckets {
   dismissed: KillSignal[];
 }
 
+// ─── Post-earnings staleness ───────────────────────────────────────────────
+// Notification only: the pull model is intact and nothing here triggers an LLM call. `stale`
+// means the company reported (or a new transcript landed) since the earnings agent last ran.
+export interface EarningsAlert {
+  ticker: string;
+  stale: boolean;
+  severity: 'reported' | 'transcript' | 'ok';
+  reason: string;
+  latest_period: string | null;
+  analyzed_period: string | null;
+  last_run: string | null;
+  latest_transcript: string | null;
+}
+
 export const api = {
   stocks: {
     list: () => request<Stock[]>('/stocks/'),
@@ -564,6 +578,7 @@ export const api = {
       }),
     runAllStatus: () => request<RunAllStatus>('/pipeline/run-all/status'),
   },
+  earningsAlerts: () => request<EarningsAlert[]>('/stocks/earnings-alerts'),
   killSignals: {
     list: (ticker: string, includeDismissed = false) =>
       request<KillSignalBuckets>(

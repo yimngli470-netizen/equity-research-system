@@ -11,4 +11,7 @@ export interface WatchlistRow {
   signal: string | null;
   flag_count: number;
   last_run: string | null;
+  // Post-earnings notification: set when the company has reported since the earnings agent last
+  // ran. Purely informational — the user decides whether to spend the LLM call.
+  earnings_alert: { severity: 'reported' | 'transcript'; reason: string } | null;
 }

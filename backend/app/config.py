@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     opus_model: str = "claude-opus-5"
     sonnet_model: str = "claude-sonnet-5"
 
+    # ── Daily data refresh ───────────────────────────────────────────────────────────────────────
+    # The ONE scheduled job. It calls ingest_ticker(data_only=True), which skips every LLM step —
+    # so it costs $0 in tokens and never touches your 5-hour subscription limit. Its only purpose
+    # is to keep filings/prices current so post-earnings staleness can be DETECTED; running the
+    # analysis stays a manual click (see ingestion/daily_job.py and earnings_watch.py).
+    # Set DAILY_DATA_JOB=false to turn it off entirely.
+    daily_data_job: bool = True
+    daily_data_job_hour: int = 7
+    daily_data_job_timezone: str = "America/New_York"
+
     @property
     def llm_configured(self) -> bool:
         """Whether the ACTIVE backend has the credential it needs. Use this to gate optional LLM

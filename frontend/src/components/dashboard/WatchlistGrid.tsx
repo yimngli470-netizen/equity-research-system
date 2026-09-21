@@ -5,6 +5,7 @@ import SignalBadge from '../primitives/SignalBadge';
 import Sparkline, { genSparkSeed } from '../primitives/Sparkline';
 import { fmtPrice } from '../primitives/format';
 import type { WatchlistRow } from './rows';
+import EarningsAlertDot from './EarningsAlertDot';
 
 interface Props {
   rows: WatchlistRow[];
@@ -48,6 +49,7 @@ function GridCard({ s }: { s: WatchlistRow }) {
             }}
           >
             {s.ticker}
+            <EarningsAlertDot alert={s.earnings_alert} />
           </div>
           <div
             style={{
