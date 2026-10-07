@@ -146,7 +146,7 @@ async def _comparable_anchor(db, subject, at):
     tickers = [s.ticker for s in stocks if s.ticker != subject.ticker]
     def latest_query(model, date_col):
         return select(model).where(model.ticker.in_(tickers), date_col <= at).distinct(model.ticker).order_by(model.ticker, date_col.desc())
-    forecasts = {r.ticker: r for r in (await db.execute(latest_query(Forecast, Forecast.as_of))).scalars()}
+    forecasts = {r.ticker: r for r in (await db.execute(latest_query(Forecast, Forecast.as_of).order_by(Forecast.id.desc()))).scalars()}
     prices = {r.ticker: r for r in (await db.execute(latest_query(DailyPrice, DailyPrice.date))).scalars()}
     vals = {r.ticker: r for r in (await db.execute(latest_query(Valuation, Valuation.date))).scalars()}
     # Only forecast-covered peers can qualify. Load their actual history in one query so a
@@ -250,7 +250,7 @@ async def compute_price_target(db: AsyncSession, ticker: str, judge_report: dict
     end = _add_months(target_date, 12)
     stock = await db.get(Stock, ticker)
     f = (await db.execute(select(Forecast).where(Forecast.ticker == ticker, Forecast.as_of <= at)
-                         .order_by(Forecast.as_of.desc()).limit(1))).scalar_one_or_none()
+                         .order_by(Forecast.as_of.desc(), Forecast.id.desc()).limit(1))).scalar_one_or_none()
     px = (await db.execute(select(DailyPrice).where(DailyPrice.ticker == ticker, DailyPrice.date <= at)
                           .order_by(DailyPrice.date.desc()).limit(1))).scalar_one_or_none()
     val = (await db.execute(select(Valuation).where(Valuation.ticker == ticker, Valuation.date <= at)

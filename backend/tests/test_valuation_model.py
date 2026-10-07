@@ -252,18 +252,27 @@ async def test_forecast_cache_reuses_compiler_inputs_but_invalidates_archetype(d
             "share_change_qoq": 0} for s in ("bull", "base", "bear")}}
     monkeypatch.setattr("app.forecast.assumptions.generate_assumptions", assumptions)
     await seed_model(db, "CACHE", date.today())
+    monkeypatch.setattr("app.forecast.engine.COMPILER_VERSION", "prior-compiler")
     first, reused = await ensure_forecast(db, "CACHE")
     assert not reused and len(calls) == 1
-    first.input_fingerprint = {**first.input_fingerprint, "compiler": "prior-compiler"}
-    await db.commit()
+    monkeypatch.setattr("app.forecast.engine.COMPILER_VERSION", COMPILER_VERSION)
     rebuilt, reused = await ensure_forecast(db, "CACHE")
     assert not reused and len(calls) == 1
     assert rebuilt.input_fingerprint["compiler"] == COMPILER_VERSION
-    # Promoting an old fingerprint's recorded label preserves its dated evidence.
-    rebuilt.input_fingerprint = {k:v for k,v in rebuilt.input_fingerprint.items() if k != "archetype"}
+    assert rebuilt.id != first.id and rebuilt.revision_of == first.id
+    assert first.input_fingerprint["compiler"] == "prior-compiler"
+    # A separately inserted legacy fixture has no archetype fingerprint. Reading it may
+    # infer its already-recorded archetype for cache comparison, but may not rewrite it.
+    from sqlalchemy import inspect
+    values = {c.key: getattr(rebuilt, c.key) for c in inspect(Forecast).columns
+              if c.key not in {"id", "writer_version", "revision_of", "content_sha256", "evidence_id"}}
+    values["input_fingerprint"] = {k: v for k, v in rebuilt.input_fingerprint.items() if k != "archetype"}
+    legacy = Forecast(**values)
+    db.add(legacy)
     await db.commit()
     _, reused = await ensure_forecast(db, "CACHE")
     assert reused and len(calls) == 1
+    assert "archetype" not in legacy.input_fingerprint
     stock = await db.get(Stock, "CACHE")
     stock.archetype = "mature-compounder"
     await db.commit()

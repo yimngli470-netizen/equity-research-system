@@ -8,7 +8,7 @@ is the label stream ("our EPS vs actual vs street") that feeds calibration (M4b)
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, Integer, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Date, DateTime, Float, Integer, String, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,6 @@ from app.database import Base
 
 class Forecast(Base):
     __tablename__ = "forecasts"
-    __table_args__ = (UniqueConstraint("ticker", "as_of", name="uq_forecast_ticker_asof"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(10), index=True)
@@ -39,6 +38,12 @@ class Forecast(Base):
 
     # Smart-cache fingerprint of the inputs (financials/transcript/estimates + prompt hash).
     input_fingerprint: Mapped[dict | None] = mapped_column(JSONB)
+
+    # Immutable revisions. Legacy rows retain their IDs, original outcomes and null hashes.
+    writer_version: Mapped[str] = mapped_column(String(30), default="legacy-v1", server_default="legacy-v1")
+    revision_of: Mapped[int | None] = mapped_column(ForeignKey("forecasts.id"))
+    content_sha256: Mapped[str | None] = mapped_column(String(64))
+    evidence_id: Mapped[str | None] = mapped_column(ForeignKey("research_evidence.id"))
 
     # Grading (filled as forecasted quarters resolve). status: 'open' | 'graded'.
     status: Mapped[str] = mapped_column(String(20), default="open")

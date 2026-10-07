@@ -136,12 +136,14 @@ async def _own_track_record(db: AsyncSession, ticker: str) -> str | None:
     theses = (
         await db.execute(
             select(StockThesis).where(StockThesis.ticker == ticker)
-            .order_by(StockThesis.as_of.desc()).limit(4)
+            .order_by(StockThesis.as_of.desc(), StockThesis.id.desc()).limit(4)
         )
     ).scalars().all()
     if not theses:
         return None
-    lines: list[str] = []
+    from app.thesis.market_marks import latest_market_marks, LEGACY_GRADING_NOTICE
+    marks = await latest_market_marks(db, ticker)
+    lines: list[str] = [LEGACY_GRADING_NOTICE]
     for th in theses:
         head = (f"- {th.as_of}: leaning={th.leaning} conviction={th.conviction} "
                 f"decision={th.decision_signal} (price then ${th.price_at:.2f})" if th.price_at else
@@ -152,11 +154,15 @@ async def _own_track_record(db: AsyncSession, ticker: str) -> str | None:
             for idx, p in sorted((outcome.get("predictions") or {}).items()):
                 kc = (th.kill_criteria or [])
                 pred_txt = kc[int(idx)].get("prediction", "?")[:90] if int(idx) < len(kc) else "?"
-                lines.append(f"    [{p.get('result', '?').upper()}] \"{pred_txt}\"")
+                lines.append(f"    [FROZEN LEGACY {p.get('result', '?').upper()}] \"{pred_txt}\"")
             if outcome.get("realized_return") is not None:
                 xr = outcome.get("excess_return")
-                lines.append(f"    return {outcome['realized_return']:+.1%}"
+                lines.append(f"    frozen legacy return {outcome['realized_return']:+.1%}"
                              + (f" (vs SPY {xr:+.1%})" if xr is not None else ""))
         else:
-            lines.append("    [still open — not yet graded]")
+            lines.append("    [legacy grading frozen / no registered event grade]")
+        if th.id in marks:
+            mark = marks[th.id]
+            lines.append(f"    market diagnostic at {mark['mark_date']}: price return {mark['realized_return']:+.1%}, "
+                         f"excess vs SPY {mark['excess_return']:+.1%}; {mark['note']}")
     return "\n".join(lines)

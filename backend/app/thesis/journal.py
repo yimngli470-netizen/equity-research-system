@@ -1,18 +1,15 @@
-"""Thesis journal writer (roadmap 3.1).
+"""Append-only thesis opinions. Price/score refreshes do not create new opinions.
 
-`snapshot_thesis` captures the current verdict as an immutable record. It runs as the last step of
-Run-Full-Pipeline (called from the decision engine) — NOT on a background scheduler. One thesis per
-ticker per day (upsert by date), so re-running the pipeline the same day refreshes that day's call
-rather than spamming the journal.
+Same-day changes append a new row linked to the prior revision. Legacy grades remain
+attached to their original IDs. Narrative kill criteria are not probability events.
 """
 
 import logging
-from datetime import date
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accountability.store import append_revision
 from app.models.analysis import AnalysisReport
 from app.models.price import DailyPrice
 from app.models.score import StockScore
@@ -27,7 +24,7 @@ async def _latest_report(db: AsyncSession, ticker: str, agent_type: str) -> dict
         await db.execute(
             select(AnalysisReport)
             .where(AnalysisReport.ticker == ticker, AnalysisReport.agent_type == agent_type)
-            .order_by(AnalysisReport.run_date.desc())
+            .order_by(AnalysisReport.run_date.desc(), AnalysisReport.id.desc())
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -66,64 +63,30 @@ async def snapshot_thesis(db: AsyncSession, ticker: str, decision_signal: str | 
     ).scalar_one_or_none()
     price = (
         await db.execute(
-            select(DailyPrice.close).where(DailyPrice.ticker == ticker)
+            select(DailyPrice).where(DailyPrice.ticker == ticker)
             .order_by(DailyPrice.date.desc()).limit(1)
         )
     ).scalar_one_or_none()
 
     conviction = judge.get("conviction")
     values = {
-        "ticker": ticker,
-        "as_of": date.today(),
         "archetype": stock.archetype if stock else None,
         "leaning": judge.get("leaning"),
         "conviction": float(conviction) if isinstance(conviction, (int, float)) else None,
         "verdict_summary": (judge.get("verdict_summary") or judge.get("synthesis") or "")[:2000] or None,
         "fair_value": _fair_value(valuation),
-        "price_at": float(price) if price is not None else None,
+        "price_at": float(price.close) if price is not None and price.close is not None else None,
         "composite": score.composite_score if score else None,
         "signal": score.signal if score else None,
         "decision_signal": decision_signal,
         "kill_criteria": judge.get("kill_criteria") or [],
-        "status": "open",
     }
 
-    # Dedup vs the latest existing thesis (smart caching, 2026-06-11): with cheap daily pipeline
-    # runs, an unchanged judge verdict must NOT journal a new identical thesis each day — that's
-    # pseudo-replication (one opinion counted 30×) and it poisons calibration. Only journal when
-    # the OPINION changed: leaning/conviction/verdict/kill-criteria/fair value/binding signal.
-    latest = (
-        await db.execute(
-            select(StockThesis).where(StockThesis.ticker == ticker)
-            .order_by(StockThesis.as_of.desc()).limit(1)
-        )
-    ).scalar_one_or_none()
-    if latest is not None and latest.as_of != date.today():
-        same_opinion = all(
-            getattr(latest, k) == values[k]
-            for k in ("leaning", "conviction", "verdict_summary", "fair_value",
-                      "decision_signal", "kill_criteria")
-        )
-        if same_opinion:
-            logger.info("[thesis] %s: verdict unchanged since %s — not journaling a duplicate",
-                        ticker, latest.as_of)
-            return latest
-
-    # Upsert today's thesis. Don't clobber grading already done for today.
-    stmt = insert(StockThesis).values(**values).on_conflict_do_update(
-        constraint="uq_thesis_ticker_asof",
-        set_={k: values[k] for k in (
-            "archetype", "leaning", "conviction", "verdict_summary", "fair_value",
-            "price_at", "composite", "signal", "decision_signal", "kill_criteria",
-        )},
-    )
-    await db.execute(stmt)
+    inputs = {"judge": judge, "valuation": valuation,
+              "score": {"date": str(score.date), "composite": score.composite_score,
+                        "signal": score.signal} if score else None,
+              "price_at": values["price_at"], "price_date": price.date.isoformat() if price else None}
+    row = await append_revision(db, StockThesis, ticker, values, inputs, identity_fields=(
+        "leaning", "conviction", "verdict_summary", "fair_value", "decision_signal", "kill_criteria"))
     await db.commit()
-    logger.info("[thesis] snapshot %s as_of=%s leaning=%s conviction=%s kills=%d",
-                ticker, values["as_of"], values["leaning"], values["conviction"],
-                len(values["kill_criteria"]))
-    return (
-        await db.execute(
-            select(StockThesis).where(StockThesis.ticker == ticker, StockThesis.as_of == date.today())
-        )
-    ).scalar_one_or_none()
+    return row

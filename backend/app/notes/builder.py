@@ -13,6 +13,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.thesis.market_marks import latest_market_marks, LEGACY_GRADING_NOTICE
 from app.models.analysis import AnalysisReport
 from app.models.decision import StockDecision
 from app.models.financial import Financial
@@ -64,7 +65,7 @@ async def _gather(db: AsyncSession, ticker: str) -> dict:
     ).scalar_one_or_none()
     forecast = (
         await db.execute(select(Forecast).where(Forecast.ticker == ticker)
-                         .order_by(Forecast.as_of.desc()).limit(1))
+                         .order_by(Forecast.as_of.desc(), Forecast.id.desc()).limit(1))
     ).scalar_one_or_none()
     score = (
         await db.execute(select(StockScore).where(StockScore.ticker == ticker)
@@ -80,7 +81,7 @@ async def _gather(db: AsyncSession, ticker: str) -> dict:
     ).scalars().all()
     theses = (
         await db.execute(select(StockThesis).where(StockThesis.ticker == ticker)
-                         .order_by(StockThesis.as_of.desc()).limit(5))
+                         .order_by(StockThesis.as_of.desc(), StockThesis.id.desc()).limit(5))
     ).scalars().all()
 
     return {
@@ -92,6 +93,7 @@ async def _gather(db: AsyncSession, ticker: str) -> dict:
         "price": float(price) if price is not None else None,
         "financials": fins,
         "theses": theses,
+        "market_marks": await latest_market_marks(db, ticker),
         "judge": await _latest_report(db, ticker, "judge"),
         "bull": await _latest_report(db, ticker, "bull"),
         "bear": await _latest_report(db, ticker, "bear"),
@@ -295,17 +297,23 @@ def _render(ticker: str, g: dict, summary: dict, changes: list[str], prior_date:
             L.append(f"\n*{sizing['rationale']}*")
 
     # Track record on this name
-    graded = [t for t in g["theses"] if t.outcome]
+    L.append("\n" + LEGACY_GRADING_NOTICE)
+    marks = g.get("market_marks", {})
+    graded = [t for t in g["theses"] if t.outcome or t.id in marks]
     if graded:
         L.append("\n## Track record on this name")
         for t in graded[:3]:
             o = t.outcome or {}
             L.append(f"- {t.as_of}: {t.leaning} (conv {_f(t.conviction, '.2f')}) → "
-                     f"hit-rate {_f(o.get('hit_rate'), '.0%')}, return {_pct(o.get('realized_return'))}"
+                     f"frozen legacy hit-rate {_f(o.get('hit_rate'), '.0%')}, frozen return {_pct(o.get('realized_return'))}"
                      + (f", vs SPY {_pct(o.get('excess_return'))}" if o.get("excess_return") is not None else ""))
+            if t.id in marks:
+                mark = marks[t.id]
+                L.append(f"  - Separate market mark {mark['mark_date']}: {_pct(mark['realized_return'])}, "
+                         f"vs SPY {_pct(mark['excess_return'])}. {mark['note']}")
     fc_out = (fc.outcome or {}) if fc else {}
     if fc_out.get("quarters"):
-        L.append(f"- Forecast accuracy: MAPE {_f(fc_out.get('mape'), '.1%')} over "
+        L.append(f"- Frozen legacy forecast MAPE: {_f(fc_out.get('mape'), '.1%')} over "
                  f"{len(fc_out['quarters'])} resolved quarter(s)")
 
     # Financials appendix

@@ -86,7 +86,7 @@ class ValuationAgent(BaseAgent):
         peers = (await db.execute(select(Forecast.ticker, Forecast.as_of, Forecast.projections)
             .join(Stock, Stock.ticker == Forecast.ticker)
             .where(Stock.industry == stock.industry if stock else False)
-            .distinct(Forecast.ticker).order_by(Forecast.ticker, Forecast.as_of.desc()))).all()
+            .distinct(Forecast.ticker).order_by(Forecast.ticker, Forecast.as_of.desc(), Forecast.id.desc()))).all()
         peer_marker = hashlib.sha256(json.dumps([(p.ticker, str(p.as_of), p.projections) for p in peers], sort_keys=True).encode()).hexdigest()[:16]
         return {
             "valuation_model": MODEL_VERSION,

@@ -103,6 +103,9 @@ export interface Decision {
 }
 
 export interface TrackRecordSummary {
+  mean_marked_excess_return: number | null;
+  theses_with_market_marks: number;
+  market_mark_note: string;
   theses_total: number;
   theses_open: number;
   theses_graded: number;
@@ -115,6 +118,8 @@ export interface TrackRecordSummary {
 }
 
 export interface ThesisRow {
+  market_mark?: { mark_date: string; note: string } | null;
+  return_source?: string;
   ticker: string;
   as_of: string;
   archetype: string | null;
@@ -165,7 +170,21 @@ export interface CalibrationSegment {
   buckets: CalibrationBucket[];
 }
 
+export interface EventProbabilityReport {
+  n_primary_submissions: number;
+  n_scored: number;
+  n_unique_events: number;
+  n_event_clusters: number;
+  by_forecaster: Record<string, {
+    n_registered: number; n_scored: number; n_abstained: number;
+    brier: number | null; log_loss: number | null; log_loss_infinite: boolean;
+  }>;
+  note: string;
+}
+
 export interface CalibrationReport {
+  event_probabilities?: EventProbabilityReport;
+  legacy_diagnostics?: { semantics: string; overall: CalibrationSegment; by_archetype: CalibrationSegment[] };
   overall: CalibrationSegment;
   by_archetype: CalibrationSegment[];
   note: string;

@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accountability.store import append_revision
 from app.forecast import assumptions as assumptions_mod
 from app.forecast.drivers import build_driver_history
 from app.forecast.model import COMPILER_VERSION, HORIZON, ScenarioPath, aggregate, compile_scenario
@@ -42,7 +43,7 @@ async def _latest_forecast(db: AsyncSession, ticker: str) -> Forecast | None:
     return (
         await db.execute(
             select(Forecast).where(Forecast.ticker == ticker)
-            .order_by(Forecast.as_of.desc()).limit(1)
+            .order_by(Forecast.as_of.desc(), Forecast.id.desc()).limit(1)
         )
     ).scalar_one_or_none()
 
@@ -85,9 +86,6 @@ async def ensure_forecast(db: AsyncSession, ticker: str, mode: str = "smart") ->
         if (latest is not None
                 and previous_fingerprint == fingerprint
                 and latest.as_of >= date.today() - timedelta(days=SMART_MAX_AGE_DAYS)):
-            if latest.input_fingerprint != fingerprint:
-                latest.input_fingerprint = fingerprint
-                await db.commit()
             logger.info("[forecast] %s: inputs unchanged since %s — reusing (no LLM)",
                         ticker, latest.as_of)
             return latest, True
@@ -140,12 +138,6 @@ async def ensure_forecast(db: AsyncSession, ticker: str, mode: str = "smart") ->
                  if (next_q_eps is not None and street) else None)
 
     stock = await db.get(Stock, ticker)
-    today = date.today()
-    row = (
-        await db.execute(
-            select(Forecast).where(Forecast.ticker == ticker, Forecast.as_of == today)
-        )
-    ).scalar_one_or_none()
     values = dict(
         archetype=stock.archetype if stock else None,
         horizon_quarters=HORIZON,
@@ -158,12 +150,11 @@ async def ensure_forecast(db: AsyncSession, ticker: str, mode: str = "smart") ->
         eps_vs_street_next_q=vs_street,
         input_fingerprint=fingerprint,
     )
-    if row:
-        for k, v in values.items():
-            setattr(row, k, v)
-    else:
-        row = Forecast(ticker=ticker, as_of=today, status="open", **values)
-        db.add(row)
+    from dataclasses import asdict
+    inputs = {"fingerprint": fingerprint, "drivers": [
+        {**asdict(q), "end": q.end.isoformat()} for q in drivers.quarters],
+        "medians": drivers.medians, "street_eps": street}
+    row = await append_revision(db, Forecast, ticker, values, inputs)
     await db.commit()
 
     logger.info("[forecast] %s: base NTM EPS %s (bull %s / bear %s), next-q vs street %s",

@@ -1,9 +1,7 @@
 """Track-record API (roadmap 5.2) — makes the accountability loop visible.
 
-Read-only views over the journal + forecast grading + calibration: the thesis ledger (with
-benchmark-relative outcomes), forecast accuracy (ours vs street vs actual), and the calibration
-curve. Much of it reads "pending" early — that is the point: the loop is wired and accruing, and
-this is where it surfaces as graded history lands.
+Read-only registered event scores, frozen legacy grades and separate dated market marks.
+Only explicitly registered events accrue new fundamental grades under accountability-v2.
 """
 
 from fastapi import APIRouter, Depends
@@ -14,13 +12,23 @@ from app.database import get_db
 from app.models.forecast import Forecast
 from app.models.thesis import StockThesis
 from app.thesis.calibration import compute_calibration
+from app.thesis.market_marks import latest_market_marks, LEGACY_GRADING_NOTICE, MARK_NOTE
 
 router = APIRouter(prefix="/api/track-record", tags=["track-record"])
 
 
-def _thesis_row(t: StockThesis) -> dict:
+def _thesis_row(t: StockThesis, mark: dict | None = None) -> dict:
     o = t.outcome or {}
+    returns = mark or o
     return {
+        "id": t.id,
+        "revision_of": t.revision_of,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "writer_version": t.writer_version,
+        "evidence_id": t.evidence_id,
+        "grading_note": LEGACY_GRADING_NOTICE,
+        "market_mark": mark,
+        "return_source": "separate_market_mark" if mark else "frozen_legacy_outcome",
         "ticker": t.ticker,
         "as_of": str(t.as_of),
         "archetype": t.archetype,
@@ -31,8 +39,8 @@ def _thesis_row(t: StockThesis) -> dict:
         "status": t.status,
         "graded_at": str(t.graded_at) if t.graded_at else None,
         "hit_rate": o.get("hit_rate"),
-        "realized_return": o.get("realized_return"),
-        "excess_return": o.get("excess_return"),
+        "realized_return": returns.get("realized_return"),
+        "excess_return": returns.get("excess_return"),
         "n_kill_criteria": len(t.kill_criteria or []),
         "n_graded_predictions": len((o.get("predictions") or {})),
     }
@@ -43,6 +51,12 @@ def _forecast_row(f: Forecast) -> dict:
     qs = (o.get("quarters") or {})
     beats = [v.get("beat_street") for v in qs.values() if "beat_street" in v]
     return {
+        "id": f.id,
+        "revision_of": f.revision_of,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+        "writer_version": f.writer_version,
+        "evidence_id": f.evidence_id,
+        "grading_note": LEGACY_GRADING_NOTICE,
         "ticker": f.ticker,
         "as_of": str(f.as_of),
         "archetype": f.archetype,
@@ -63,7 +77,8 @@ async def list_theses(db: AsyncSession = Depends(get_db)):
     rows = (
         await db.execute(select(StockThesis).order_by(StockThesis.as_of.desc(), StockThesis.id.desc()))
     ).scalars().all()
-    return [_thesis_row(t) for t in rows]
+    marks = await latest_market_marks(db)
+    return [_thesis_row(t, marks.get(t.id)) for t in rows]
 
 
 @router.get("/forecasts")
@@ -82,6 +97,7 @@ async def summary(db: AsyncSession = Depends(get_db)):
     forecasts = (await db.execute(select(Forecast))).scalars().all()
 
     graded = [t for t in theses if t.status == "graded"]
+    marks = await latest_market_marks(db)
     excess = [t.outcome["excess_return"] for t in graded
               if t.outcome and t.outcome.get("excess_return") is not None]
     hit_rates = [t.outcome["hit_rate"] for t in graded
@@ -97,12 +113,14 @@ async def summary(db: AsyncSession = Depends(get_db)):
         "theses_open": sum(1 for t in theses if t.status == "open"),
         "theses_graded": len(graded),
         "mean_excess_return": avg(excess),
+        "mean_marked_excess_return": avg([m["excess_return"] for m in marks.values()]),
+        "theses_with_market_marks": len(marks),
+        "market_mark_note": MARK_NOTE,
         "mean_hit_rate": avg(hit_rates),
         "forecasts_total": len(forecasts),
         "forecasts_graded": len(fc_graded),
         "forecast_mape": avg(mapes),
-        "note": ("The loop is wired and accruing; graded counts grow as kill-criteria dates pass "
-                 "and forecast quarters file. Early reads are mostly 'open' by design."),
+        "note": LEGACY_GRADING_NOTICE,
     }
 
 
@@ -110,3 +128,10 @@ async def summary(db: AsyncSession = Depends(get_db)):
 async def calibration(db: AsyncSession = Depends(get_db)):
     """Conviction calibration (3.3) — re-exposed here so the track-record page is one stop."""
     return await compute_calibration(db)
+
+
+@router.get("/events")
+async def event_scores(db: AsyncSession = Depends(get_db)):
+    """Registered primary probabilities, coverage and resolving evidence lineage."""
+    from app.accountability.store import probability_report
+    return await probability_report(db)

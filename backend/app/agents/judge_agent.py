@@ -37,7 +37,7 @@ class JudgeAgent(BaseAgent):
             await db.execute(
                 select(StockThesis.id, StockThesis.graded_at)
                 .where(StockThesis.ticker == ticker, StockThesis.outcome.is_not(None))
-                .order_by(StockThesis.as_of.desc()).limit(1)
+                .order_by(StockThesis.as_of.desc(), StockThesis.id.desc()).limit(1)
             )
         ).first()
         return {

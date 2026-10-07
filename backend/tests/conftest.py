@@ -26,6 +26,9 @@ def db_url() -> AsyncIterator[str]:
     """asyncpg URL for the test database — env override, else an ephemeral testcontainer."""
     override = os.getenv("TEST_DATABASE_URL")
     if override:
+        from sqlalchemy.engine import make_url
+        if not (make_url(override).database or "").endswith("_test"):
+            raise RuntimeError("TEST_DATABASE_URL must name a disposable *_test database; tests truncate tables")
         yield override
         return
 

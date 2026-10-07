@@ -1,6 +1,6 @@
 """Thesis journal (roadmap 3.1) — an immutable per-run snapshot of the analyst's verdict.
 
-Each Run-Full-Pipeline writes one thesis per ticker (deduped by date): the judge's leaning +
+Each changed pipeline result appends one thesis revision per ticker: the judge's leaning +
 conviction + DATED kill-criteria, the valuation fair value, and the price/composite/decision at the
 time. This is the record the accountability loop grades against later (3.2 grades the kill-criteria
 once their `by_date` passes; 3.3 turns the graded history into calibration). Snapshots are immutable
@@ -9,7 +9,7 @@ inputs — grading only fills the `outcome`/`status` fields, never rewrites the 
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Date, DateTime, Float, String, Text, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,7 +18,6 @@ from app.database import Base
 
 class StockThesis(Base):
     __tablename__ = "stock_theses"
-    __table_args__ = (UniqueConstraint("ticker", "as_of", name="uq_thesis_ticker_asof"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(10), index=True)
@@ -37,6 +36,12 @@ class StockThesis(Base):
 
     # The falsifiable, dated predictions from the judge (2.5) — what gets graded.
     kill_criteria: Mapped[list] = mapped_column(JSONB, default=list)
+
+    # Immutable revisions. Legacy rows retain their IDs, original outcomes and null hashes.
+    writer_version: Mapped[str] = mapped_column(String(30), default="legacy-v1", server_default="legacy-v1")
+    revision_of: Mapped[int | None] = mapped_column(ForeignKey("stock_theses.id"))
+    content_sha256: Mapped[str | None] = mapped_column(String(64))
+    evidence_id: Mapped[str | None] = mapped_column(ForeignKey("research_evidence.id"))
 
     # Grading (filled by 3.2 once predictions come due). status: 'open' | 'graded'.
     status: Mapped[str] = mapped_column(String(20), default="open")

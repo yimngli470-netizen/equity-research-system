@@ -1,20 +1,7 @@
-"""Calibration (roadmap 3.3) — does the analyst's stated conviction match reality?
+"""Event-probability scores plus explicitly labeled legacy conviction diagnostics.
 
-The accountability loop closes here. 3.1 journals a dated, falsifiable thesis (judge leaning +
-conviction); 3.2 grades its kill-criteria once they come due (hit/miss/partial) plus a deterministic
-price move. This module turns that graded history into **calibration**: a Brier-style score and a
-reliability curve, segmented by archetype — the answer to "when it says 70%, how often is it right?"
-
-Two outcome views per graded thesis (both in [0,1]):
-  - prediction hit-rate (`outcome.hit_rate`): did the judge's falsifiable predictions come true?
-  - directional success: did the *call* make money — bullish→price up, bearish→price down?
-
-Conviction is the forecast probability; the outcome is the realized result. Brier = mean((p−o)²),
-lower is better; the over/under-confidence gap = mean(conviction) − mean(outcome). The reliability
-curve buckets theses by conviction and reports observed vs predicted per bucket.
-
-Pure deterministic stats over the journal — no LLM, no network. Cheap (one query + arithmetic), so
-it can back a live endpoint and feed the position sizer's trust-shrink.
+Generic conviction is not a probability of thesis success or a directional return.
+Legacy arithmetic is retained for historical inspection, never used to size trades.
 """
 
 import logging
@@ -147,32 +134,26 @@ async def compute_calibration(db: AsyncSession) -> dict:
         by_arch.setdefault(r["archetype"], []).append(r)
     segments = [_summarize(arch, arch_rows).to_dict() for arch, arch_rows in sorted(by_arch.items())]
 
+    from app.accountability.store import probability_report
+    # Compatibility fields deliberately contain no probability scores derived from conviction.
     return {
+        "overall": _summarize("all", []).to_dict(),
+        "by_archetype": [],
+        "event_probabilities": await probability_report(db),
+        "legacy_diagnostics": {
+        "semantics": "Legacy conviction/outcome squared differences, not probability calibration",
+        "grading_version": "legacy-v1",
         "overall": overall.to_dict(),
         "by_archetype": segments,
-        "note": (
-            "Calibration needs time and graded outcomes to be meaningful; small n is informational. "
-            "overconfidence_gap > 0 means stated conviction has run ahead of realized success."
-        ),
+        },
+        "note": "Only registered event probabilities receive proper scores. Generic conviction remains a separate legacy diagnostic; it does not change position sizing.",
     }
 
 
 async def calibration_shrink(db: AsyncSession, archetype: str | None) -> tuple[float, str | None]:
-    """A trust multiplier in (0,1] for the position sizer (3.4): shrink size when this archetype's
-    history shows the analyst has been *overconfident* (stated conviction > realized success).
+    """No sizing adjustment from an uncalibrated conviction/outcome comparison.
 
-    Returns (factor, note). factor=1.0 (no shrink) until there's enough graded history (n≥5); then
-    factor = 1 − clamp(overconfidence_gap, 0, 0.5), so a persistent 0.3 gap trims size by 30%. An
-    *under*-confident track record never inflates size — the sizer is asymmetric on the cautious side.
+    A future event-score-to-risk policy needs a separate reviewed design; even a
+    proper Brier score alone is not a validated sizing model.
     """
-    rows = await _graded_rows(db)
-    seg = [r for r in rows if archetype and r["archetype"] == archetype] or rows
-    if len(seg) < 5:
-        return 1.0, None
-    rep = _summarize(archetype or "all", seg)
-    gap = rep.overconfidence_gap
-    if gap is None or gap <= 0:
-        return 1.0, None
-    factor = round(1.0 - min(gap, 0.5), 3)
-    return factor, (f"calibration: {len(seg)} graded {archetype or 'all'} theses overconfident by "
-                    f"{gap:+.2f} → size ×{factor}")
+    return 1.0, None

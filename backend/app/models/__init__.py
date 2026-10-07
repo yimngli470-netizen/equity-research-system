@@ -55,3 +55,5 @@ __all__ = [
     "PanelVersion",
     "PanelRow",
 ]
+
+from app.models.accountability import (ResearchEvidence, ResearchEvent, ResearchSubmission, ResearchResolution, ResearchGradeCall)

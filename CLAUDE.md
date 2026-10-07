@@ -59,6 +59,64 @@ Five mocked billing regressions verify the local routing protections without spe
 Live subscription smoke checks returned both requested model IDs; the rebuilt image passed all
 92 backend tests, and the frontend production build passed.
 
+## Accountability v2 — Phase 2 review, October 6
+
+Developed in the isolated `/Users/yiming/Desktop/equity-research-thesis-phase2` checkout and
+committed to `main` after independent review; **not yet deployed to the running app or
+migrated in the production DB**. The cross-project execution plan is
+`/Users/yiming/Desktop/stock-knowledge-pipeline/plan.md`. Phase 2 is complete and pauses
+for user review before Phase 3; this is unrelated to the running technical Paper008.
+
+- Changed opinions/forecasts append immutable revisions, including on the same day.
+  Thesis identity uses leaning, conviction, summary, fair value, decision and kill criteria;
+  price/score refreshes alone reuse the latest opinion without altering its original snapshot.
+  Forecast identity still uses full content/inputs. Evidence is hashed and retained.
+- New grades require explicit `EventContract` registration and captured `Observation`
+  vintages through `app/accountability`. An approximate projection end or narrative kill
+  criterion is not a resolvable event. No automatic retrospective event/probability creation.
+- Numeric/price events resolve deterministically on exact issuer, period, metric, unit,
+  basis, publication-window and vintage rules. Fundamental packets exclude prices. For
+  qualitative events, an explicitly supplied adjudicator receives only its event's eligible
+  evidence. IDs, labels and quoted spans are validated before saving any batch outcome.
+  Primary cutoff cannot follow release-window start; submissions at the cutoff are rejected.
+  Equality events require an explicit finite absolute tolerance in the metric's units.
+- Legacy EPS/narrative grading is visibly frozen under accountability-v2. Saved outcomes
+  remain intact. Append-only market marks separately update stock/SPY close-price changes
+  and show their date in the track record, judge context and newly generated notes. These
+  exclude dividends/fees and may lack historical adjustment provenance; they are not trade
+  P&L, total returns or fundamental evidence. New fundamental grades require registered events.
+- Unresolved/disputed attempts remain unscored and can receive later evidence. The declared
+  expiry policy can end collection without assigning a miss. First releases/restatements and
+  original grades remain inspectable; observations never become mutable financial-row aliases.
+- Generic conviction is retained under `legacy_diagnostics`, not called a probability.
+  Only the first registered event submission per forecaster contributes proper Brier/log-loss
+  scores. Revisions and event clusters are reported separately. Exact-zero probability errors
+  have explicit infinite log loss. Legacy conviction no longer changes the sizing multiplier.
+- Qualitative call admission is durable and per event/evidence packet, even if batch members
+  change. Numeric results persist before inference; final answers/failures also commit.
+  No automatic retries. The explicit `retry_transport_failure` service requires operator
+  identity/reason and adapter evidence confirming non-execution, creates a linked new receipt,
+  and rejects uncertain timeouts, interrupted calls, invalid responses and changed packets.
+  No live adapter or scheduler invokes this recovery. Use a dedicated DB session for an
+  adjudicator; the per-issuer lock remains held during inference. Revisit concurrency before
+  adding Phase 7 workers. Default pipeline grading is code-only;
+  it does not launch a qualitative model, Jev, or a background research job.
+- Migration `f6a2c9e01844` adds five tables and revision metadata, drops daily uniqueness, and
+  installs update/delete guards. It preserves legacy rows/outcomes. Review the migration plan
+  in `research/thesis-led/phase-2/review.json` in the planning project before deployment.
+  Back up production and coordinate backend/schema deployment; do not hot-copy ORM changes
+  into the running bind mount without its migration. Downgrade refuses nonempty new history.
+
+Checks after Claude review fixes: 153 backend tests (92 existing + 39 Phase 2 + 22 review
+regressions), 62 accountability/end-to-end tests on
+an actual Alembic-migrated disposable DB, separate upgrade/downgrade/history-preservation
+rehearsal, and frontend TypeScript/Vite production build. All external/model boundaries were
+mocked or blocked by isolated container networking. No real analyst/Jev calls.
+Latest review response, complete patch and exact source snapshot:
+`/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-2/claude-followup-001/`.
+The original Phase 2 packet remains historical. Pulling this commit into the bind-mounted
+primary checkout is a deployment: back up, run `alembic upgrade head`, then restart the backend.
+
 ## Testing
 One end-to-end test (`backend/tests/test_pipeline_e2e.py`) drives the full backend workflow —
 `ingest_ticker` → `run_all_agents` → `calculate_score` → the screen API — in a single run. Only the

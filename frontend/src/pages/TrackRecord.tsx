@@ -36,21 +36,25 @@ export default function TrackRecord() {
         Analyst Track Record
       </h1>
       <p style={{ fontSize: 13, color: 'var(--color-ink-3)', margin: '0 0 24px', maxWidth: '70ch' }}>
-        Every call is journaled, then graded against what happened — return vs the S&amp;P 500, the
-        judge&apos;s falsifiable predictions, and our EPS forecasts vs the street. This is the only
-        evidence that earns reliance, and it can&apos;t be backfilled.
+        Changed predictions are saved as separate revisions. Only explicitly registered events
+        with eligible evidence receive new grades. Historical grades remain visible as legacy
+        diagnostics; they are not validated probability scores.
       </p>
 
-      {summary && <SummaryStrip s={summary} pct={pct} num={num} />}
+      {summary && <>
+        <p style={{ color: 'var(--color-ink-2)' }}>{summary.note}</p>
+        <SummaryStrip s={summary} pct={pct} num={num} />
+        <p style={{ fontSize: 12, color: 'var(--color-ink-2)' }}>{summary.market_mark_note}</p>
+      </>}
 
-      {/* Conviction calibration */}
+      {/* Event scores and preserved legacy diagnostics */}
       {calib && <CalibrationCard calib={calib} pct={pct} num={num} />}
 
       {/* Thesis ledger */}
       <Card padding={20} style={{ marginBottom: 18 }}>
         <SectionTitle>Thesis ledger</SectionTitle>
         <Table
-          head={['Ticker', 'Date', 'Leaning', 'Conv.', 'Decision', 'Status', 'Hit rate', 'Return', 'vs SPY']}
+          head={['Ticker', 'Date', 'Leaning', 'Conv.', 'Decision', 'Status', 'Legacy hit rate', 'Price return', 'vs SPY', 'Mark date']}
         >
           {theses.map((t, i) => (
             <tr key={i} style={rowStyle}>
@@ -63,6 +67,7 @@ export default function TrackRecord() {
               <Td mono>{t.hit_rate == null ? '—' : pct(t.hit_rate)}</Td>
               <Td mono tone={t.realized_return}>{pct(t.realized_return, true)}</Td>
               <Td mono tone={t.excess_return}>{pct(t.excess_return, true)}</Td>
+              <Td muted>{t.market_mark?.mark_date ?? 'frozen legacy'}</Td>
             </tr>
           ))}
         </Table>
@@ -71,7 +76,7 @@ export default function TrackRecord() {
 
       {/* Forecast accuracy */}
       <Card padding={20} style={{ marginBottom: 18 }}>
-        <SectionTitle>Forecast accuracy — our EPS vs street</SectionTitle>
+        <SectionTitle>Forecast ledger and legacy accuracy — our EPS vs street</SectionTitle>
         <Table
           head={['Ticker', 'Date', 'Next-q (ours)', 'Street', 'Δ', 'NTM (ours)', 'Status', 'Resolved', 'MAPE', 'Beat street']}
         >
@@ -106,10 +111,10 @@ function SummaryStrip({
 }) {
   const cells: [string, string, string][] = [
     ['Theses', `${s.theses_graded} / ${s.theses_total}`, 'graded / total'],
-    ['Mean excess return', pct(s.mean_excess_return, true), 'vs S&P 500'],
-    ['Mean hit rate', s.mean_hit_rate == null ? '—' : pct(s.mean_hit_rate), 'kill-criteria'],
+    ['Marked excess return', pct(s.mean_marked_excess_return, true), `${s.theses_with_market_marks} price diagnostics`],
+    ['Legacy hit rate', s.mean_hit_rate == null ? '—' : pct(s.mean_hit_rate), 'kill-criteria'],
     ['Forecasts', `${s.forecasts_graded} / ${s.forecasts_total}`, 'graded / total'],
-    ['Forecast MAPE', s.forecast_mape == null ? '—' : pct(s.forecast_mape), 'EPS error'],
+    ['Legacy forecast MAPE', s.forecast_mape == null ? '—' : pct(s.forecast_mape), 'EPS error'],
   ];
   return (
     <Card padding={20} style={{ marginBottom: 18 }}>
@@ -142,28 +147,41 @@ function CalibrationCard({
   pct: (v: number | null | undefined, signed?: boolean) => string;
   num: (v: number | null | undefined, d?: number) => string;
 }) {
-  const o = calib.overall;
+  const o = calib.legacy_diagnostics?.overall ?? calib.overall;
+  const events = calib.event_probabilities;
   return (
     <Card padding={20} style={{ marginBottom: 18 }}>
-      <SectionTitle>Conviction calibration</SectionTitle>
+      <SectionTitle>Event probability scores</SectionTitle>
+      <p style={{ fontSize: 12, color: 'var(--color-ink-2)' }}>{calib.note}</p>
+      {events && events.n_primary_submissions > 0 ? (
+        <Table head={['Forecaster', 'Registered', 'Scored', 'Brier', 'Log loss']}>
+          {Object.entries(events.by_forecaster).map(([name, scores]) => (
+            <tr key={name} style={rowStyle}>
+              <Td>{name}</Td><Td mono>{scores.n_registered}</Td><Td mono>{scores.n_scored}</Td>
+              <Td mono>{num(scores.brier, 3)}</Td>
+              <Td mono>{scores.log_loss_infinite ? '∞' : num(scores.log_loss, 3)}</Td>
+            </tr>
+          ))}
+        </Table>
+      ) : <Empty>No registered event probabilities yet. Narrative conviction has no probability score.</Empty>}
+      <SectionTitle>Legacy conviction diagnostics</SectionTitle>
       {o.n_graded === 0 ? (
         <Empty>
-          No graded theses yet — calibration needs ~30–50 resolved calls to be meaningful (the
-          one input that can&apos;t be bought; it accrues one graded thesis at a time).
+          No legacy graded theses. These historical comparisons do not establish probability calibration.
         </Empty>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 28, marginBottom: 14, fontSize: 12, color: 'var(--color-ink-2)' }}>
             <span>n = <b>{o.n_graded}</b></span>
-            <span>Brier (directional): <b style={{ fontFamily: 'var(--font-mono)' }}>{num(o.brier_directional, 3)}</b></span>
+            <span>Legacy squared error: <b style={{ fontFamily: 'var(--font-mono)' }}>{num(o.brier_directional, 3)}</b></span>
             <span>
-              Over/under-confidence:{' '}
+              Conviction minus directional hit rate:{' '}
               <b style={{ fontFamily: 'var(--font-mono)', color: (o.overconfidence_gap ?? 0) > 0.05 ? 'var(--color-neg-fg)' : 'var(--color-ink)' }}>
                 {pct(o.overconfidence_gap, true)}
               </b>
             </span>
           </div>
-          <Table head={['Conviction bucket', 'n', 'Said (avg)', 'Actually right', 'Verdict']}>
+          <Table head={['Conviction bucket', 'n', 'Conviction (avg)', 'Direction hit rate', 'Difference']}>
             {o.buckets.filter((b) => b.n > 0).map((b, i) => {
               const said = b.mean_conviction ?? 0;
               const got = b.mean_directional;
@@ -175,7 +193,7 @@ function CalibrationCard({
                   <Td mono>{pct(b.mean_conviction)}</Td>
                   <Td mono>{got == null ? '—' : pct(got)}</Td>
                   <Td muted>
-                    {gap == null ? 'pending' : Math.abs(gap) < 0.08 ? 'calibrated' : gap > 0 ? 'overconfident' : 'underconfident'}
+                    {gap == null ? 'unavailable' : pct(gap, true)}
                   </Td>
                 </tr>
               );

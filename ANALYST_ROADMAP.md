@@ -1,5 +1,43 @@
 # Roadmap: From Quant Screener → Reliable AI Research Analyst
 
+## October 6, 2026 — Phase 2 Claude-review repairs, reviewed and committed
+
+P1–P6 are addressed in the same isolated checkout. Dated stock/SPY price diagnostics
+resume separately, while legacy EPS/narrative grading is visibly frozen. Forecasts
+cannot be registered/submitted after the eligible release window begins. Daily price
+and score changes no longer duplicate an unchanged thesis; original snapshots remain.
+Numeric outcomes persist even if qualitative inference fails. Equality contracts require
+an explicit tolerance. Explicit operator recovery is possible only for confirmed
+no-response calls, with a new linked receipt; timeouts alone are not proof and are blocked.
+
+153 backend tests pass, including 22 new review regressions; 62 also pass against the
+actual migrated guards. Migration rehearsal and frontend build pass. Claude re-ran the suite
+on a disposable database and approved; committed to `main`, **not deployed or migrated**.
+No live application or database changes and no real model calls. The updated plan adds statistical
+decision gates, semiconductor comparisons and provider-specific budget coordination;
+these do not activate research phases. Read the point-by-point response and updated patch
+in the planning project's `research/thesis-led/phase-2/claude-followup-001/`.
+The original packet below is preserved as history. Phase 3 is not started or authorized.
+
+## October 6, 2026 — thesis-led Phase 2, awaiting review
+
+The new thesis-led plan lives in `/Users/yiming/Desktop/stock-knowledge-pipeline/plan.md`.
+Phase 2 is implemented in the isolated `equity-research-thesis-phase2` worktree; no production
+migration or live application change has occurred. See `CLAUDE.md` Accountability v2 and
+`research/thesis-led/phase-2/review.json` in the planning project for exact changes and limitations.
+
+The prior roadmap's claim that generic conviction forms a calibrated probability is superseded:
+keep it as narrative conviction. New proper scores belong to precisely registered binary events.
+Legacy grades remain preserved, explicitly labeled, and excluded from sizing calibration.
+Immutable revisions, exact-period/vintage resolution, unresolved retries on genuinely new evidence,
+strict grader validation, and no rerolls are implemented and tested. The ordinary pipeline no
+longer invents quarter matches or grades vague legacy text. Event and observation adapters are
+explicit; external source collection and the AI-infrastructure study belong to Phase 3.
+
+131 tests pass; 40 of those also pass with actual migrated DB guards. Migration compatibility
+and frontend build pass. Zero real model calls or live data changes. Pause here for user review;
+no Phase 3, live deployment, new forecasting experiment, or paper strategy is started implicitly.
+
 > Status: planning. Authored 2026-05-29. This is the long-term plan; near-term we finish the
 > screener and harden data. See `CLAUDE.md` for current system state, `PROJECT_PLAN.md` for the
 > original architecture.
