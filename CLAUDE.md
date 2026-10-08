@@ -64,7 +64,8 @@ Live subscription smoke checks returned both requested model IDs; the rebuilt im
 Developed in the isolated `/Users/yiming/Desktop/equity-research-thesis-phase2` checkout and
 committed to `main` after independent review; **not yet deployed to the running app or
 migrated in the production DB**. The cross-project execution plan is
-`/Users/yiming/Desktop/stock-knowledge-pipeline/plan.md`. Phase 2 is complete and pauses
+`/Users/yiming/Desktop/stock-knowledge-pipeline/plan.md`; its scope for this repository is
+snapshotted in [`docs/thesis-led-plan.md`](docs/thesis-led-plan.md) (canonical plan wins on conflict). Phase 2 is complete and pauses
 for user review before Phase 3; this is unrelated to the running technical Paper008.
 
 - Changed opinions/forecasts append immutable revisions, including on the same day.
