@@ -6,9 +6,9 @@
 > this snapshot at each phase gate. Sections that govern work in this repository are
 > copied verbatim apart from absolute paths; Phase 1–2 history is condensed.
 
-**Status:** Phase 2 is complete, independently reviewed and committed (`b07555e`).
-It is **not yet deployed or migrated** in the running app. **Phase 3 is not authorized**;
-each phase needs an explicit user instruction after its review.
+**Status:** Phase 3 is complete, awaiting user review. Its base is Claude’s published
+Phase 2 (`b07555e`) and plan snapshot (`e79cfae`). The running app and database have not
+been deployed or migrated. **Pause before Phase 4**; only the user can release that gate.
 
 ## Objective
 
@@ -155,6 +155,30 @@ Stop with an explicit coverage report rather than collecting indefinitely.
 
 **Gate:** review evidence quality, competing theses, missing sources and thesis
 cards. No paper positions or claims of forecast accuracy are created in this phase.
+
+### Phase 3 review packet — October 7
+
+Implemented in `/Users/yiming/Desktop/equity-research-thesis-phase3`: immutable external
+source/capture/pack records, reviewed exact spans, source clocks/coverage, duplicate
+clusters and industry-agent context/cache/citation receipts. See
+[`thesis-evidence.md`](thesis-evidence.md) for commands, operational boundaries and limits.
+The canonical artifacts are in
+`/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-3/`:
+`industry-study.md`, three `thesis-{NVDA,MU,AVGO}.json` cards, `evidence-pack.json`,
+`review.json`, `verification.json` and the phase-only patch.
+
+Eighteen primary documents: twelve direct HTML captures, six limited web sections;
+failed direct transports and originals retained. Management delivery checks are
+retrospective, and162 EPS sensitivity cases are not calibrated forecasts or price targets.
+Independent customer utilization/project returns, longer management history, confirmed
+future release dates and entry valuation remain explicit gaps. 171 backend tests and80
+checks on actual migrated guards pass; real-pack import rehearsal creates zero events
+or forecasts. No separate analyst/Jev calls; coordinating subscription/search overhead
+is additional and unmetered. No production change, holdout access or Paper008 change.
+A local scoped commit is prepared for review; no automatic push or deployment.
+
+**Stop for user review before Phase 4.** Coordinated Phase2/3 app/schema deployment is
+still a separate review decision.
 
 ## Phase 4 — Evaluate Jev on real financial evidence
 

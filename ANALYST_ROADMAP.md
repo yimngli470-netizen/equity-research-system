@@ -1,5 +1,21 @@
 # Roadmap: From Quant Screener → Reliable AI Research Analyst
 
+## October 7, 2026 — thesis-led Phase 3 complete, review pending
+
+The user authorized Phase 3 after confirming Claude published Phase 2. The isolated
+`equity-research-thesis-phase3` checkout adds immutable external source captures,
+reviewed evidence packs, industry-agent context/citation receipts and cache invalidation.
+One dated AI-infrastructure study covers NVDA/MU/AVGO with competing explanations,
+management delivery checks, falsifiers, gaps and explicit valuation sensitivities.
+See `docs/thesis-evidence.md` and the canonical planning project's Phase 3 review packet.
+
+171 backend tests and 80 checks on migrated guards pass, including a real-pack import
+rehearsal. Eighteen primary documents: twelve direct captures, six limited web sections;
+original failures remain. No live analyst/Jev calls, production deployment, new events,
+portfolio activation or Paper008 changes. Pause for review before Phase 4. Older progress
+entries below describe their historical authorization state, not the current gate.
+
+
 ## October 6, 2026 — Phase 2 Claude-review repairs, reviewed and committed
 
 P1–P6 are addressed in the same isolated checkout. Dated stock/SPY price diagnostics

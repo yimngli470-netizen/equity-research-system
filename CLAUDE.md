@@ -118,6 +118,15 @@ Latest review response, complete patch and exact source snapshot:
 The original Phase 2 packet remains historical. Pulling this commit into the bind-mounted
 primary checkout is a deployment: back up, run `alembic upgrade head`, then restart the backend.
 
+## Thesis-led Phase 3 — external evidence, October 7
+
+Phase 3 is implemented in the isolated `equity-research-thesis-phase3` worktree on
+published Phase 2; not deployed. Read [`docs/thesis-evidence.md`](docs/thesis-evidence.md)
+for collection, exact-citation packs, import/retrieval commands, cache behavior and limits.
+Research artifacts and the dated NVDA/MU/AVGO study remain in the canonical planning
+project's `research/thesis-led/phase-3/`. Complete only this phase, then pause for user
+review before Phase 4. Paper008's independent finite experiment remains unchanged.
+
 ## Testing
 One end-to-end test (`backend/tests/test_pipeline_e2e.py`) drives the full backend workflow —
 `ingest_ticker` → `run_all_agents` → `calculate_score` → the screen API — in a single run. Only the
