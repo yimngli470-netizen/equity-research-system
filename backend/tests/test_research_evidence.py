@@ -151,10 +151,54 @@ async def test_industry_context_cache_invalidates_and_invalid_answer_not_used(db
     await agent.build_context(db,'NVDA')
     bad={'summary':'Unsupported', 'external_evidence_assessment':{'claims':[{'claim':'Fake', 'kind':'reported_result','citations':['invented']}]}}
     await agent._save_report(db,'NVDA',bad,await agent._full_fingerprint(db,'NVDA'))
-    assert 'error' in bad and bad['raw']['summary']=='Unsupported'
+    assert 'error' not in bad and bad['summary']=='Unsupported'
+    assert bad['external_evidence_assessment'] is None
+    assert bad['external_evidence_status']['status']=='invalid'
     evidence=await db.get(ResearchEvidence,bad['evidence_receipt'])
     assert evidence.payload['response']['summary']=='Unsupported'
     assert 'error' not in evidence.payload['response']
+    assert evidence.payload['response']['external_evidence_assessment']['claims'][0]['citations']==['invented']
+    await db.commit()
+    # Invalid optional evidence must not cause repeated paid/subscription calls.
+    assert await agent._get_cached(db,'NVDA') is not None
+    assert await agent._get_smart_cached(db,'NVDA',await agent._full_fingerprint(db,'NVDA')) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('assessment', [None, {'claims': [], 'coverage_gaps': []},
+    {'claims': [{'claim': 'General inference', 'kind': 'inference', 'citations': []}]}])
+async def test_industry_without_pack_keeps_core_and_discards_external_assessment(db, assessment):
+    from app.agents.industry_agent import IndustryAgent
+    await seed_stock(db,'JNJ',sector='Healthcare',industry='Pharmaceuticals')
+    agent=object.__new__(IndustryAgent)
+    await agent.build_context(db,'JNJ')
+    report={'summary':'Core industry analysis','external_evidence_assessment':assessment}
+    fp=await agent._full_fingerprint(db,'JNJ')
+    await agent._save_report(db,'JNJ',report,fp)
+    await db.commit()
+    assert report['summary']=='Core industry analysis' and 'error' not in report
+    assert report['external_evidence_assessment'] is None
+    assert report['external_evidence_status']=={'status':'not_supplied'}
+    evidence=await db.get(ResearchEvidence,report['evidence_receipt'])
+    assert evidence.payload['response']['external_evidence_assessment']==assessment
+    assert await agent._get_cached(db,'JNJ') is not None
+    assert await agent._get_smart_cached(db,'JNJ',fp) is not None
+
+
+@pytest.mark.asyncio
+async def test_industry_failed_context_cannot_reuse_prior_supplied_packet(db):
+    from app.agents.industry_agent import IndustryAgent
+    await seed_stock(db,'NVDA')
+    agent=object.__new__(IndustryAgent)
+    await agent.build_context(db,'NVDA')
+    assert 'NVDA' in agent._supplied_evidence
+    with patch('app.agents.industry_agent.get_computed_metrics',AsyncMock(side_effect=ValueError('context failed'))):
+        with pytest.raises(ValueError,match='context failed'):
+            await agent.build_context(db,'NVDA')
+    assert 'NVDA' not in agent._supplied_evidence
+    failure={'error':'context failed'}
+    await agent._save_report(db,'NVDA',failure)
+    assert 'evidence_receipt' not in failure
 
 
 def test_date_literal_cannot_launder_wrong_date():

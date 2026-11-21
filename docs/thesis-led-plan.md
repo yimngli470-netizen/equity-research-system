@@ -1,14 +1,19 @@
-# Thesis-led research plan — equity-research-system scope
+# Thesis-led investment research and Jev evaluation
 
-> **Scoped snapshot, 2026-10-07.** The canonical, complete plan (with review packets and
-> the dated review log) is `/Users/yiming/Desktop/stock-knowledge-pipeline/plan.md`, with machine-readable state in
-> `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/state.json`. If they disagree, the canonical plan wins. Refresh
-> this snapshot at each phase gate. Sections that govern work in this repository are
-> copied verbatim apart from absolute paths; Phase 1–2 history is condensed.
+Created: 2026-10-06 (America/Los_Angeles)
 
-**Status:** Phase 3 is complete, awaiting user review. Its base is Claude’s published
-Phase 2 (`b07555e`) and plan snapshot (`e79cfae`). The running app and database have not
-been deployed or migrated. **Pause before Phase 4**; only the user can release that gate.
+**Current phase: 3 — external evidence pipeline and industry study.**
+**Status: Phase 3 complete, awaiting review. Pause before Phase 4; application changes are not deployed.**
+
+Latest review follow-up: Claude's Phase 3 findings are addressed in the isolated
+checkout and append-only [review packet](research/thesis-led/phase-3/claude-followup-001/response.md).
+C1 is fixed; 175 backend tests and 84 migrated-schema checks pass. Three recorded
+subscription evaluations consumed 51,629 input and 52,066 output tokens in 666.25
+seconds: two reports passed citation membership, with substantive semantic errors
+recorded; Broadcom's answer failed JSON parsing and was not rerolled. Twenty-four
+primary documents and dated reverse-valuation diagnostics are retained. These are
+process results, not forecast or trading validation. Phase 4 remains unapproved.
+The user separately authorized repairing Paper008 after this review follow-up.
 
 ## Objective
 
@@ -24,26 +29,36 @@ invalidate the thesis. Earnings, guidance and transcripts remain important new
 evidence. A correct industry forecast, a correct company forecast and a profitable
 investment at the entry valuation are three different achievements.
 
-## Scope in this repository
+## Scope and ownership
 
-- Extend this application rather than duplicating it: reuse financial ingestion, dated
-  research, the forecast compiler, the valuation calculator and the UI.
-- First study: **AI infrastructure**, with **NVDA, MU and AVGO** as research subjects
-  spanning compute, memory and networking/custom silicon. This is a research scope, not
-  stock recommendations or a portfolio. Horizon **12–24 months**, with observable
-  next-quarter and six-month milestones on real issuer fiscal periods and publication dates.
-- Keep Jev experiments separate from the live application until evaluated.
-- Do not run the full application pipeline merely to inspect it: it may spend model
-  usage or modify live records. No real brokerage orders, account funding or credit redemption.
-- Planning and audit records stay in the planning project under
-  `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/`. The technical Paper Pilot 008 is independent and unaffected.
+- This file is the execution plan for the new thesis-led work, including Jev.
+  It does not replace the earlier technical-analysis research archive.
+- Extend `/Users/yiming/Desktop/equity-research-system`; reuse its financial
+  ingestion, dated research, forecast compiler, valuation calculator and UI.
+  Read that project's current instructions before implementing there.
+- Keep planning/audit records under `research/thesis-led/` in this repository.
+  Keep Jev experiments separate from the live application until evaluated.
+- `equity-research-system/docs/thesis-led-plan.md` is a scoped snapshot of this plan
+  for that repository. This file stays canonical; refresh the snapshot (and commit it
+  there) at each phase gate.
+- Working first study: **AI infrastructure**, with **NVDA, MU and AVGO** as three
+  research subjects spanning compute, memory and networking/custom silicon.
+  These are a proposed research scope, not stock recommendations or a portfolio.
+- Working horizon: **12–24 months**, with observable next-quarter and six-month
+  milestones. Use real issuer fiscal periods and publication dates.
+- Preserve technical Paper Pilot 008/run-v5, its automation, frozen rules, accounts
+  and finite schedule. Its existing scheduled work continues independently.
+- Keep the historical strategy holdout closed and episode-source review paused.
+  Do not restart numerical fundamental screens as the default research direction.
+- No real brokerage orders, account funding or credit redemption. Do not invoke
+  the existing full application pipeline merely to inspect it: it may spend model
+  usage or modify live records.
 
 ## Phase gates
 
 1. Complete only the current approved phase and its acceptance checks.
-2. Save artifacts, results, costs and material limitations; update the canonical plan
-   (and refresh this snapshot) and
-   `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/state.json`.
+2. Save artifacts, results, costs and material limitations; update this plan and
+   `research/thesis-led/state.json`.
 3. End the turn with a review packet and **stop before the next phase**. This pause
    is explicitly requested by the user, not an inferred approval requirement.
 4. A user instruction to continue after that review releases **one next phase**.
@@ -81,46 +96,181 @@ frozen pilot nor activates later research budgets; those require their phase gat
 
 ## Phase overview
 
-| Phase | Outcome | Status |
+| Phase | Outcome | Completion evidence | Status |
+|---|---|---|---|
+| 1 | Bounded scope, reuse audit and measurement contract | Source-linked findings, contract, offline verification | Complete; reviewed |
+| 2 | Trustworthy prediction storage and grading | Focused regression tests and reviewed migration plan | Complete; reviewed and published; not deployed |
+| 3 | External evidence pipeline and first competing theses | One dated industry evidence pack and three company thesis cards | Complete; awaiting review |
+| 4 | Real-evidence Jev evaluation | Fixed held-out results, errors, costs and integration recommendation | Not started |
+| 5 | Prospective probability study | Approximately 20 timestamped future-event forecasts and resolution rules | Not started |
+| 6 | Long-horizon paper research portfolio | Reviewed policy, tested accounting and initialized separate paper ledger | Not started |
+| 7 | Bounded monitoring and outcome review | A finite observation report; subsequent blocks need their own review | Not started |
+
+## Phase 1 — Scope, audit and measurement contract
+
+### Steps
+
+1. Locate existing journal, forecast, grading, calibration, evidence, cache and
+   model-transport components; inspect code rather than relying on roadmap claims.
+2. Record reusable components, concrete defects, source locations and source hashes.
+3. Define the minimum records for sources, thesis versions, forecast events,
+   probabilities, resolutions and model-call receipts.
+4. Separate three scorecards: evidence interpretation, forecasting and investment
+   returns. Define how ambiguity and missing observations are handled.
+5. Specify Phase 2 acceptance cases and execution boundaries. Validate the saved
+   records offline; make no model calls, trades or application/database changes.
+
+### Deliverables and acceptance
+
+- `research/thesis-led/phase-1/audit.json`: findings traceable to inspected code;
+  distinguish confirmed code behavior from untested live consequences.
+- `research/thesis-led/phase-1/contract.json`: proposed data/measurement contract,
+  explicit defaults and Phase 2 regression cases.
+- `research/thesis-led/phase-1/verification.json`: parse, reference, hash and
+  focused offline behavior checks; no claim of full application test coverage.
+- `research/thesis-led/state.json`: phase state and review gate.
+- **Gate:** review study scope, proposed contract and implementation priorities.
+
+### Completed Phase 1 review packet — October 6
+
+The existing application has useful financial provenance, forecast arithmetic,
+valuation and subscription transport. We can extend those components. The audit
+identified eight issues relevant to this study:
+
+| Finding | Observed behavior | Planned work |
 |---|---|---|
-| 1 | Bounded scope, reuse audit and measurement contract | Complete; reviewed |
-| 2 | Trustworthy prediction storage and grading | Complete; reviewed; committed `b07555e`; not deployed |
-| 3 | External evidence pipeline and first competing theses | Not started |
-| 4 | Real-evidence Jev evaluation | Not started |
-| 5 | Prospective probability study | Not started |
-| 6 | Long-horizon paper research portfolio | Not started |
-| 7 | Bounded monitoring and outcome review | Not started |
-
-## Phases 1–2 in this repository (condensed)
-
-The Phase 1 audit of this codebase found the defects that Phase 2 repaired:
-
-| Finding | Observed behavior | Resolution |
-|---|---|---|
-| F01 | Fiscal-quarter labels mapped to calendar quarter ends without issuer context | Phase 2: exact fiscal identities |
-| F02 | EPS actuals matched a nearby date without publication/vintage eligibility | Phase 2: explicit period and resolution rules |
-| F03 | Fundamental grading saw later stock prices and loosely bounded later financials | Phase 2: event-specific resolving packets |
-| F04 | Same-day thesis and forecast runs could overwrite original predictions | Phase 2: immutable revisions |
-| F05 | Generic conviction was reused as probability for different outcomes | Phase 2: event-specific probabilities; legacy labels |
-| F06 | Undetermined outcomes could be skipped permanently or close a thesis | Phase 2: unresolved-state lifecycle |
-| F07 | Returned grader IDs and labels lacked validation against requested events | Phase 2: strict response validation |
+| F01 | Fiscal-quarter labels map to calendar quarter ends without issuer context | Phase 2: exact fiscal identities |
+| F02 | EPS actuals match a nearby date without publication/vintage eligibility | Phase 2: explicit period and resolution rules |
+| F03 | Fundamental grading sees later stock prices and loosely bounded later financials | Phase 2: event-specific resolving packets |
+| F04 | Same-day thesis and forecast runs can overwrite original predictions | Phase 2: immutable revisions |
+| F05 | Generic conviction is reused as probability for different outcomes | Phase 2: event-specific probabilities and separate legacy labels |
+| F06 | Undetermined outcomes can be skipped permanently or close a thesis | Phase 2: unresolved-state lifecycle |
+| F07 | Returned grader IDs and labels lack validation against requested events | Phase 2: strict response validation |
 | F08 | Industry context/cache lacks direct external technology/customer/supplier evidence | Phase 3: external evidence context |
 
-Phase 2 (`app/accountability`, migration `f6a2c9e01844`; details in `CLAUDE.md`,
-"Accountability v2") delivered append-only thesis/forecast revisions, explicit event
-contracts with exact period/basis/vintage resolution, proper event-probability scores,
-and visibly frozen legacy grading. Stock-versus-SPY price marks continue separately and
-are labelled as diagnostics, not fundamental evidence. An independent review found six
-defects (including forecasts accepted after a result's release window opened, and
-duplicate thesis rows on every run); all were fixed with regression tests. 153 backend
-tests pass. Review records: `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-2/`.
+Verification passed for **10 source snapshots, 20 source references and three
+isolated behavior probes**. The probes reproduce the issuer-independent date
+mapping, acceptance of a 31-day-away actual, and reuse of one conviction value in
+two different scores. They are not full application tests or evidence that every
+live historical grade is wrong. Seven proposed record types and twelve future
+Phase 2 regression cases are saved in the contract.
 
-**Deployment** (not yet done): back up the production database, apply the commit,
-run `alembic upgrade head`, then restart the backend. Pulling into the bind-mounted
-checkout is itself a deployment. Do not use research/LLM pipeline runs as a smoke test.
-Between deployment and Phase 3 event registration, price marks update but no new
-fundamental grades are produced. Before Phase 7 adds concurrent workers, review the
-per-issuer lock held during qualitative inference.
+- [Audit and source references](research/thesis-led/phase-1/audit.json)
+- [Measurement and record contract](research/thesis-led/phase-1/contract.json)
+- [Offline verification](research/thesis-led/phase-1/verification.json)
+- Reproduce the offline checks: `python3 research/thesis-led/phase-1/verify.py`.
+
+No application/database changes, new research analyst calls or Jev calls occurred.
+Paper008's independent schedule remains unchanged. Review the first-study scope
+(AI infrastructure; NVDA/MU/AVGO; 12–24 months) and these repair priorities before
+authorizing Phase 2. All later model budgets and paper allocations remain proposals
+for their respective review gates.
+
+## Phase 2 — Repair accountability before relying on results
+
+### Steps
+
+1. Introduce append-only, timestamped forecast/thesis versions and explicit links
+   to immutable evidence snapshots. Do not overwrite same-day predictions or
+   retroactively assign probabilities to old narrative convictions.
+2. Resolve events by issuer, metric, unit/accounting basis, exact fiscal period,
+   deadline and predeclared resolving source. Check when evidence became public
+   and when it was observed; approximate quarter proximity cannot prove a match.
+3. Grade numerical events with code. Give qualitative resolution only the
+   evidence allowed by that event's resolution policy. Keep subsequent prices
+   out of fundamental grading; price-return events have their own path.
+4. Preserve unresolved, missing and disputed cases. Define their later review or
+   expiry; do not turn them into a miss or permanently close them as resolved.
+5. Score event-specific probabilities against corresponding outcomes. Keep generic
+   conviction and existing legacy metrics separately labeled. Preserve old results
+   with their original grading versions; do not silently rewrite their history.
+6. Use mocks and a throwaway database for tests. Prepare migration/backward-
+   compatibility evidence before applying changes to an existing database.
+
+### Acceptance and review
+
+Regression cases cover non-calendar fiscal years, unavailable/revised actuals,
+same-day revisions, accounting-basis mismatch, post-deadline information, irrelevant
+price information, unresolved events, duplicate/foreign grader IDs and correct
+Brier/log-loss arithmetic. Existing relevant application tests pass. Changes do
+not alter Paper008. At review, show the diff, test results, migration implications
+and limitations. **Do not start evidence/model experiments yet.**
+
+### Completed Phase 2 review packet — October 6
+
+Implemented in the isolated checkout
+`/Users/yiming/Desktop/equity-research-thesis-phase2` on branch
+`codex/thesis-accountability`. **Not deployed:** the primary checkout is bind-mounted
+into an auto-reloading app, so this phase keeps code and schema changes together for
+review before touching that running system. Its existing user edits are preserved.
+
+- Thesis and forecast writers append immutable revisions and hashed input snapshots;
+  identical forecast inputs/content reuse the latest record. After review, thesis
+  identity uses opinion fields: a changed price/score alone no longer appends a
+  thesis. The original price/score snapshot is retained. Changed opinions remain separate.
+- Explicit events resolve against exact issuer periods, metric/unit/basis, source,
+  publication and observation clocks, and a declared original/restated-vintage policy.
+  Fundamental packets exclude stock prices and unrelated quarters. Numerical grades
+  and probability arithmetic run in code.
+- Missing/disputed evidence remains unscored and may resolve after new evidence.
+  Grader IDs, outcomes and exact cited spans must validate as a complete batch.
+  Failed/interrupted model requests cannot be automatically rerolled, including
+  when other events change the batch membership.
+- Probability scores use the first registered submission for each event/forecaster;
+  revisions and correlated event clusters remain explicit. Generic conviction is
+  labeled as a legacy diagnostic and no longer drives the calibration sizing factor.
+- Legacy records/outcomes are preserved. Approximate quarter projections and vague
+  narrative criteria receive no new automatic grades without explicit registration.
+  Source/calendar qualification and external evidence retrieval remain Phase 3 work.
+
+**Checks passed:** 131 backend tests (92 existing + 39 new); 40 of those also pass
+against the actual migrated schema; an independent upgrade/downgrade and history-
+preservation rehearsal; and the frontend TypeScript/Vite build. Tests used disposable
+PostgreSQL containers with external networking blocked and mocked model boundaries.
+The review patch applies cleanly to the existing checkout, and all 277 previously
+tracked primary files retain their original hashes. These are engineering checks,
+not forecasts or evidence of a trading edge.
+
+- [Review, migration implications and limitations](research/thesis-led/phase-2/review.json)
+- [Verification and changed-file hashes](research/thesis-led/phase-2/verification.json)
+- [Only this phase's changes](research/thesis-led/phase-2/phase-2.patch)
+- [Preserved engineering failures and repairs](research/thesis-led/phase-2/engineering-history.json)
+
+Migration `f6a2c9e01844` adds revision/evidence/event tables and immutability guards.
+It preserves old data; downgrade refuses once new history exists. Before deployment,
+review the patch, back up production, and coordinate backend downtime with the schema
+upgrade. Do not copy the entire isolated checkout over the primary directory: it
+also mirrors pre-existing unrelated user changes.
+
+No production database migration, real analyst/Jev inference, external evidence
+study, new automation or strategy activation occurred. Paper008 remains independent.
+**Pause here for review before Phase 3 or live deployment.**
+
+### Phase 2 review follow-up — October 6
+
+- Restore dated, immutable stock-versus-SPY price diagnostics separately from
+  fundamental grading. They are changes in stored close prices, not trade P&L or
+  total returns; old quote adjustment basis can be unverified. Show dates and
+  limitations in the track record, judge context and newly generated notes.
+- Keep legacy EPS and narrative grading **visibly frozen under accountability-v2**.
+  Existing outcomes remain intact. Between deployment and event registration,
+  market marks may update, but there are no new fundamental grades without
+  registered events and qualified observations. No deployment date is invented.
+- Enforce forecast cutoff at or before the first eligible release time and reject
+  new submissions at the cutoff. Every equality rule declares an absolute tolerance
+  in the metric's units, including explicit zero for exact equality.
+- Persist numeric resolutions independently of qualitative failures. Preserve each
+  admitted call and returned failure. Allow only an explicit, logged operator retry
+  when provider evidence confirms no response was produced; generic timeouts,
+  invalid replies and interrupted calls do not establish that. This service is not
+  wired to a scheduler or a live provider adapter.
+- Resolution currently holds a per-issuer transaction lock during qualitative
+  inference. Before Phase 7 adds concurrent workers, review lock duration, worker
+  ownership and crash recovery without weakening immutable call admission.
+
+The follow-up adds 22 regression cases; **153 backend tests pass**, with the database
+and frontend checks recorded in the follow-up verification. No live migration,
+model call, deployment, commit or push is part of this review repair.
 
 ## Phase 3 — External evidence and the first industry study
 
@@ -156,29 +306,40 @@ Stop with an explicit coverage report rather than collecting indefinitely.
 **Gate:** review evidence quality, competing theses, missing sources and thesis
 cards. No paper positions or claims of forecast accuracy are created in this phase.
 
-### Phase 3 review packet — October 7
+### Completed Phase 3 review packet — October 7
 
-Implemented in `/Users/yiming/Desktop/equity-research-thesis-phase3`: immutable external
-source/capture/pack records, reviewed exact spans, source clocks/coverage, duplicate
-clusters and industry-agent context/cache/citation receipts. See
-[`thesis-evidence.md`](thesis-evidence.md) for commands, operational boundaries and limits.
-The canonical artifacts are in
-`/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-3/`:
-`industry-study.md`, three `thesis-{NVDA,MU,AVGO}.json` cards, `evidence-pack.json`,
-`review.json`, `verification.json` and the phase-only patch.
+Phase 3 is complete in `/Users/yiming/Desktop/equity-research-thesis-phase3`, based on
+Claude's published Phase 2 and plan snapshot (`e79cfae`). The industry agent now receives
+reviewed external evidence, source dates/coverage, exact spans, shared-announcement
+clusters and gaps. Immutable sources/captures/packs reuse Phase 2's guarded evidence
+store. Changed evidence invalidates both cache modes; identical re-observation reuses
+an analysis. Invalid external citations become errors with original receipts preserved.
 
-Eighteen primary documents: twelve direct HTML captures, six limited web sections;
-failed direct transports and originals retained. Management delivery checks are
-retrospective, and162 EPS sensitivity cases are not calibrated forecasts or price targets.
-Independent customer utilization/project returns, longer management history, confirmed
-future release dates and entry valuation remain explicit gaps. 171 backend tests and80
-checks on actual migrated guards pass; real-pack import rehearsal creates zero events
-or forecasts. No separate analyst/Jev calls; coordinating subscription/search overhead
-is additional and unmetered. No production change, holdout access or Paper008 change.
-A local scoped commit is prepared for review; no automatic push or deployment.
+- [Study and competing explanations](research/thesis-led/phase-3/industry-study.md)
+- [Review and limitations](research/thesis-led/phase-3/review.json)
+- [NVDA](research/thesis-led/phase-3/thesis-NVDA.json),
+  [MU](research/thesis-led/phase-3/thesis-MU.json),
+  [AVGO](research/thesis-led/phase-3/thesis-AVGO.json)
+- [Evidence packet](research/thesis-led/phase-3/evidence-pack.json)
+- [Verification](research/thesis-led/phase-3/verification.json)
 
-**Stop for user review before Phase 4.** Coordinated Phase2/3 app/schema deployment is
-still a separate review decision.
+Eighteen primary documents were retained: twelve direct HTML captures and six limited
+web-retrieved sections after preserved direct HTTP failures. No incomplete section is
+labeled a complete original filing. One prior guide/result pair per company provides
+retrospective delivery diagnostics, not forecasting credit. The 162 declared arithmetic
+sensitivities are not price targets or a validated owner-earnings model. Independent
+utilization/project returns, longer management history, confirmed future release dates
+and entry-price valuation remain gaps for review, not inferred facts.
+
+171 backend tests pass; 80 tests also pass on actual migrated guards. A real-pack import
+rehearsal built all three industry contexts, created zero events/submissions, and rejected
+evidence mutation. Zero separate analyst/Jev calls; coordinating subscription reasoning
+and search overhead are additional and unmetered. No production migration/deployment,
+paid fallback, holdout access, new portfolio or Paper008 change. A local phase commit
+and the scoped plan snapshot are prepared for review; nothing is pushed automatically.
+
+**Pause for user review before Phase 4.** Deployment of Phase 2 plus Phase 3 remains a
+separate coordinated migration/app operation, not implied by this research gate.
 
 ## Phase 4 — Evaluate Jev on real financial evidence
 
@@ -229,6 +390,11 @@ approve the precise next experiment. No automatic trade authority follows accura
 3. Timestamp original predictions and all subsequent revisions. Freeze the primary
    forecast used for each score. Never count correlated events, multiple horizons
    or updated forecasts as independent replications.
+   Every scored main-model forecast must link to a recorded physical call with the
+   actual model ID, hashed prompt, immutable input snapshot, usage receipt and
+   admission before the event cutoff. Coordinating-chat research cards are not
+   eligible. Already released events remain unscored; missed registration never
+   justifies a backdated forecast or crossing an unapproved phase gate.
 4. Plan paired Brier/log-loss comparisons and event-cluster uncertainty. Assess
    narrative/wording sensitivity separately. Do not infer probability calibration
    from confidence fields or multiply correlated event probabilities.
@@ -335,10 +501,63 @@ If reliable evidence, affordable execution or meaningful grading is unavailable,
 finish the bounded phase with that limitation and a concrete recommendation.
 Do not expand into another strategy search simply to manufacture a positive result.
 
-## Records in the planning project
+## Background records
 
-- Canonical plan: `/Users/yiming/Desktop/stock-knowledge-pipeline/plan.md`
-- Thesis-led direction: `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led-direction-2026-10-03.json`
-- Jev diagnostic and proposed evaluation: `/Users/yiming/Desktop/stock-knowledge-pipeline/research/jev-evaluation-2026-10-04.json`
-- Phase 1 audit and contract: `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-1/`
-- Phase 2 review, follow-up and verification: `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-2/`
+- [Thesis-led direction](research/thesis-led-direction-2026-10-03.json)
+- [Jev diagnostic and proposed evaluation](research/jev-evaluation-2026-10-04.json)
+- [Existing equity-system roadmap](/Users/yiming/Desktop/equity-research-system/ANALYST_ROADMAP.md)
+- [Independent ongoing Paper008](research/paper-trading/pilot-008/README.md)
+
+## Review log
+
+- 2026-10-06: user requested `plan.md`, sequential phases and a pause after every
+  phase. Phase 1 is authorized in this turn; no later gate has been released.
+- 2026-10-06: Phase 1 completed. Source audit, record contract and offline checks
+  are saved; work is paused for review. Phase 2 has not begun.
+
+- 2026-10-06: user approved continuing. Phase 2 is authorized; implementation is isolated in
+  `/Users/yiming/Desktop/equity-research-thesis-phase2` to avoid live auto-reload.
+
+- 2026-10-06: Phase 2 completed in an isolated checkout. Tests, migration rehearsal and
+  review-only patch are saved; paused for review. Phase 3 and live deployment have not begun.
+
+- 2026-10-06: independent review (Claude) did **not** approve commit/push/deploy yet. Fix
+  P1 (track record silently freezes), P2 (cutoff may follow release) and P3 (daily duplicate
+  thesis rows) with regression tests first; P4–P6 and plan revisions are in
+  [the review](research/thesis-led/phase-2/claude-review-2026-10-06.md).
+
+- 2026-10-06: user requested fixes or reasoned pushback on Claude's review. P1–P6 are
+  addressed in an isolated follow-up, with a stricter evidence requirement for
+  transport retries. Added deployment behavior, proposed statistical gates, sector
+  comparators and provider-specific usage coordination. Paused again for Phase 2
+  review; Phase 3, deployment and publishing remain unstarted.
+
+- 2026-10-06: Claude re-verified the follow-up (153 backend tests on a disposable database, original
+  leak probe now rejected, clean frontend build) and published Phase 2 as commit `b07555e` on
+  `equity-research-system` `main`, built from clean `main` plus the Phase 2 delta only. The user's
+  unrelated uncommitted frontend/docs edits were not included. **Not deployed or migrated.**
+  Phase 3 is not authorized.
+
+- 2026-10-07: at the user's request, the plan's scope for the equity repository was
+  snapshotted to `equity-research-system/docs/thesis-led-plan.md` (commit `e79cfae` on
+  `main`, with a pointer from its `CLAUDE.md`). This plan remains canonical. Phase 2 is
+  still not deployed; Phase 3 is not authorized.
+
+- 2026-10-07: verified Claude published Phase 2 (`b07555e`) and the repository plan snapshot
+  (`e79cfae`). User explicitly authorized Phase 3 after clarifying the phase numbering.
+  Implementation proceeds in isolated `equity-research-thesis-phase3` from `e79cfae`;
+  pause before Phase 4. No live deployment or model-budget expansion is implied.
+
+- 2026-10-24: independent review of Phase 3 (Claude): evidence and arithmetic verified, 171 tests
+  pass. Fix C1 (tickers without an evidence pack can lose the whole industry report) before
+  deploying; address R1–R3 (claim-specific citations, recorded-model provenance, market-implied
+  expectations) before Phase 5 relies on the cards; mind T1 timing. See
+  [the review](research/thesis-led/phase-3/claude-review-2026-10-24.md). Phase 4 not authorized.
+
+- 2026-11-21: user authorized Phase 3 review follow-up then Paper008 repair. C1 and
+  R1–R3 addressed; R4 broadened within the 24-document cap with remaining pricing/ROI
+  gaps explicit. Three single-attempt IndustryAgent calls are retained, including
+  one JSON failure and semantic defects in the two citation-valid reports. T1
+  calendar checked; no backdated forecasts or early Phase 5 activation. See
+  [follow-up](research/thesis-led/phase-3/claude-followup-001/response.md). Pause before
+  Phase 4; proceed with the separately authorized paper-runtime repair.

@@ -65,14 +65,20 @@ changes can conservatively invalidate the cache; no semantic deduplication model
 The prompt distinguishes results, management forecasts, vendor claims and inference;
 it asks for contradictory evidence, customer economics and observable discriminators.
 External claims must cite an exact span supplied to that run. A response/context receipt
-is retained before citation validation failure is exposed as an error; the failed answer
-is not returned as an accepted report. This checks reference integrity, not whether the
-quote truly proves the interpretation or whether every uncited claim was detected.
+retains the original answer before validation. Without supplied documents the optional
+assessment is discarded. Invalid external citations discard that assessment and expose
+an explicit invalid status, while preserving the core report and its cache behavior.
+The core narrative is not independently fact-checked by this fallback. Citation validation
+checks reference integrity, not whether the quote proves the interpretation or whether
+every uncited claim was detected. Context building clears any previous packet first.
 New evidence arriving during inference cannot silently replace the saved packet identity.
 An oversized packet fails before inference rather than being silently truncated.
 
 The existing application BaseAgent has a legacy retry policy for ordinary analysis.
-Phase 3 did not invoke it, and this feature is not an evaluation harness. Future bounded
+The original Phase 3 did not invoke it. The November 21 follow-up exercises the actual
+IndustryAgent through a recorded single-attempt subscription transport, with the ordinary
+retry policy disabled. Its receipts, input scope and failures live in the follow-up packet.
+This feature itself is not an evaluation harness. Future bounded
 Jev/forecast experiments must use their own admitted no-reroll transport and budgets;
 do not treat a routine application report as a registered prospective assessment.
 
@@ -90,3 +96,16 @@ retrievals. It lacks independent utilization, full customer project economics, a
 management track record, current entry prices and reconciled owner-cash-flow valuations.
 The 162 arithmetic cases are declared EPS sensitivities, not price targets, fitted
 forecasts or evidence that the system can beat a benchmark.
+
+## November 21 review follow-up
+
+The append-only `phase-3/claude-followup-001` packet addresses Claude's C1 and R1–R4,
+and records a timing response to T1. Four added regression cases bring the full backend
+suite to 175 passing tests; 84 focused tests pass on an actual migrated disposable DB.
+The revised cards retain their original knowledge cutoff and coordinating-chat provenance.
+New November facts are separate. Six primary releases bring the pack to its 24-document
+cap; independent observed memory pricing and customer project returns remain gaps.
+The 216 reverse EPS cases use dated observations and are conditional diagnostics, not
+investment recommendations. The recorded analyst calls are process evaluations, not
+scored forecasts. See the follow-up verification and response for actual usage/results.
+No production deployment, Phase 4 benchmark or Phase 5 event activation is implied.
