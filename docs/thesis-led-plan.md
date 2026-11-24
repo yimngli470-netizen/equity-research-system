@@ -3,7 +3,7 @@
 Created: 2026-10-06 (America/Los_Angeles)
 
 **Current phase: 3 — external evidence pipeline and industry study.**
-**Status: Phase 3 complete, awaiting review. Pause before Phase 4; application changes are not deployed.**
+**Status: Phase 3 review follow-up accepted for release; Phase 2/3 code published and deployed November 23. Pause before Phase 4.**
 
 Latest review follow-up: Claude's Phase 3 findings are addressed in the isolated
 checkout and append-only [review packet](research/thesis-led/phase-3/claude-followup-001/response.md).
@@ -99,8 +99,8 @@ frozen pilot nor activates later research budgets; those require their phase gat
 | Phase | Outcome | Completion evidence | Status |
 |---|---|---|---|
 | 1 | Bounded scope, reuse audit and measurement contract | Source-linked findings, contract, offline verification | Complete; reviewed |
-| 2 | Trustworthy prediction storage and grading | Focused regression tests and reviewed migration plan | Complete; reviewed and published; not deployed |
-| 3 | External evidence pipeline and first competing theses | One dated industry evidence pack and three company thesis cards | Complete; awaiting review |
+| 2 | Trustworthy prediction storage and grading | Focused regression tests and reviewed migration plan | Complete; reviewed, published and deployed November 23 |
+| 3 | External evidence pipeline and first competing theses | One dated industry evidence pack and three company thesis cards | Review follow-up complete; published and deployed November 23 |
 | 4 | Real-evidence Jev evaluation | Fixed held-out results, errors, costs and integration recommendation | Not started |
 | 5 | Prospective probability study | Approximately 20 timestamped future-event forecasts and resolution rules | Not started |
 | 6 | Long-horizon paper research portfolio | Reviewed policy, tested accounting and initialized separate paper ledger | Not started |
@@ -561,3 +561,10 @@ Do not expand into another strategy search simply to manufacture a positive resu
   calendar checked; no backdated forecasts or early Phase 5 activation. See
   [follow-up](research/thesis-led/phase-3/claude-followup-001/response.md). Pause before
   Phase 4; proceed with the separately authorized paper-runtime repair.
+
+- 2026-11-23: User explicitly authorized GitHub publication and deployment. Phase 2/3
+  code through 6987bf3 is live in the existing laptop app; production migration
+  preserves all prior table contents. 175 backend tests, combined frontend build,
+  remote CI and read-only application checks pass. Local mobile edits preserved.
+  No model call, evidence import or Phase 4 activation. See
+  research/thesis-led/deployments/2026-11-23/report.md.

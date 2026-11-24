@@ -1,5 +1,10 @@
 # Dated industry evidence — Phase 3
 
+**November 23: reviewed code and its prerequisite schema are now deployed.**
+See [deployment verification](deployment-2026-11-23.md). The dated implementation
+notes below retain their original scope; the research pack was not imported into
+the live DB. Phase 4 remains paused.
+
 Implemented in the isolated Phase 3 worktree on top of published Phase 2 (`e79cfae`).
 Not deployed to the bind-mounted application. The canonical phase review packet is
 `/Users/yiming/Desktop/stock-knowledge-pipeline/research/thesis-led/phase-3/`.

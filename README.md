@@ -16,6 +16,11 @@ same ruler.
 - **Docs:** [`CLAUDE.md`](./CLAUDE.md) (architecture) · [`ANALYST_ROADMAP.md`](./ANALYST_ROADMAP.md)
   (direction + progress log).
 
+## Latest deployment
+
+Phase 2/3 code and schema were deployed to the existing local app on November 23, 2026.
+See [deployment verification](docs/deployment-2026-11-23.md). Phase 4 remains paused.
+
 ## Tests
 
 One **end-to-end test** (`backend/tests/test_pipeline_e2e.py`) drives the whole backend workflow in
